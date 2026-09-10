@@ -106,6 +106,19 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
       }
     }
     const { eventStart, msgs0, oldAssistantIndex, oldSeq, oldTurn, oldSource } = selection
+    // V3 hosts may reject assistant replacements. Check an isolated copy before
+    // rolling back the Chat, cancelling settlement or paying for a new reply.
+    if (session.header?.version >= 3) {
+      const preview = session.constructor.fromRestore(session.id, structuredClone(sessionEvents(session)), structuredClone(session.header), session.inheritedEventCount, 'detached')
+      try {
+        appendSessionEvent(preview, 'assistant/message', {
+          turn: oldTurn, step: 1,
+          message: { id: randomUUID(), role: 'assistant', content: [{ type: 'text', text: msgs0[oldAssistantIndex].text }], source: oldSource }
+        }, { surfaceOp: { op: 'replace', start: oldSeq, end: oldSeq }, sourceEventSeqs: [oldSeq] })
+      } catch (error) {
+        throw new Error('当前 DSH 不支持正文替换，未启动重新生成。' + str(error?.message || error), { cause: error })
+      }
+    }
     const originalUserText = str(msgs0[oldAssistantIndex - 1].text).trim()
     const originalChat = structuredClone(chat)
     let restored = false

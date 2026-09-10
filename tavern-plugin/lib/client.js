@@ -203,8 +203,36 @@ window.__ModuleLoader__.load({
 			catch (_error) { throw failure("服务返回非 JSON 或不完整的响应，请稍后重试", true); }
 		}
 
+		const pagePerformance = { observedMs: 0, longTaskCount: 0, longTaskTotalMs: 0, longTaskMaxMs: 0, slowRpcCount: 0, slowRpcMaxMs: 0, longTaskSupported: false };
+		const pagePerformanceStarted = Date.now();
+		let performanceReportAt = 0;
+		if (typeof window !== "undefined" && typeof PerformanceObserver !== "undefined") {
+			try {
+				if (window.__dshTavernPerformanceObserver) window.__dshTavernPerformanceObserver.disconnect();
+				if (PerformanceObserver.supportedEntryTypes.includes("longtask")) {
+					const observer = new PerformanceObserver(function (list) {
+						for (const entry of list.getEntries()) {
+							if (entry.duration < 100) continue;
+							pagePerformance.longTaskCount++;
+							pagePerformance.longTaskTotalMs += Math.round(entry.duration);
+							pagePerformance.longTaskMaxMs = Math.max(pagePerformance.longTaskMaxMs, Math.round(entry.duration));
+						}
+					});
+					observer.observe({ type: "longtask" });
+					window.__dshTavernPerformanceObserver = observer;
+					pagePerformance.longTaskSupported = true;
+				}
+			} catch (_) {}
+		}
+
 		function rpc(method, args, sessionId, requestOptions) {
+			const started = Date.now();
 			const payload = Object.assign({}, args || {});
+			if (started - performanceReportAt >= 60000 || /diagnostic|export/i.test(method)) {
+				pagePerformance.observedMs = started - pagePerformanceStarted;
+				payload._performance = Object.assign({}, pagePerformance);
+				performanceReportAt = started;
+			}
 			if (sessionId) payload.sessionId = sessionId;
 			const request = {
 				method: "POST",
@@ -221,6 +249,9 @@ window.__ModuleLoader__.load({
 			}).catch(function (error) {
 				if (method === "generateSceneImage") recordImageInteraction(payload.sessionId, payload.turn, payload.requestId, "failed", "rpc-error");
 				throw error;
+			}).finally(function () {
+				const elapsed = Date.now() - started;
+				if (elapsed >= 1000) { pagePerformance.slowRpcCount++; pagePerformance.slowRpcMaxMs = Math.max(pagePerformance.slowRpcMaxMs, elapsed); }
 			});
 		}
 

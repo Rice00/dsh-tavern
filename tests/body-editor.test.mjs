@@ -4,12 +4,13 @@ import { Session } from './fixtures/dsh-session-host.mjs'
 import { createBodyEditor, synchronizeBodyEdits } from '../tavern-plugin/lib/domain/body-editor.js'
 import { editableReplyParts, projectReplyLayers, projectReplyHistory } from '../tavern-plugin/lib/domain/reply-presentation.js'
 import { createStoryTimeline } from '../tavern-plugin/lib/domain/story-timeline.js'
-import { sessionEvents } from '../tavern-plugin/lib/domain/session-events.js'
+import { sessionEvents, appendSessionEvent } from '../tavern-plugin/lib/domain/session-events.js'
 
-function fixture(text = '原正文') {
+function fixture(text = '原正文', seeded = false) {
   let session = Session.create('body-edit-test')
-  session.append('user/message', { id: 'user', role: 'user', content: [{ type: 'text', text: '继续' }], source: { kind: 'user' } }, { surfaceOp: 'append' })
-  session.append('assistant/message', { turn: 2, step: 1, message: { id: 'reply', role: 'assistant', content: [{ type: 'text', text }], source: { kind: 'model', provider: 'fixture', model: 'fixture' } } }, { surfaceOp: 'append', sourceEventSeqs: [] })
+  appendSessionEvent(session, 'user/message', { id: 'user', role: 'user', content: [{ type: 'text', text: '继续' }], source: { kind: 'user' } }, { surfaceOp: 'append' })
+  appendSessionEvent(session, 'assistant/message', { turn: 2, step: 1, message: { id: 'reply', role: 'assistant', content: [{ type: 'text', text }], source: { kind: 'model', provider: 'fixture', model: 'fixture' } } }, { surfaceOp: 'append', sourceEventSeqs: [] })
+  if (seeded) session = Session.create(session.id, sessionEvents(session), { ...session.header, isSeeded: true }, session.seq)
   let chat = { id: 'chat', sessionId: session.id, mode: 'story', _storageRevision: 1, messages: [{ role: 'user', text: '继续' }, { role: 'assistant', turn: 2, text, sourceText: text, swipes: [text], swipeId: 0, variables: [{ hp: 9 }] }], settleStatus: 'done', posture: '原状态', scriptState: { cursor: 5 }, variables: { hp: 9 } }
   const agent = { get session() { return session }, phase: { kind: 'idle', lastTurn: 2 } }
   let busy = false, failWrite = false, failFlush = false
@@ -117,4 +118,34 @@ test('editing distinguishes narrative tags from HTML, custom UI and code samples
     assert.equal(parts.map(part => part.text).join(''), text)
     assert.ok(parts.some(part => part.kind === 'text' && part.text.trim()))
   }
+})
+
+
+test('host rejection is checked before publishing an edit to the Chat journal', async () => {
+  const h = fixture()
+  const edit = await h.editor.read(h.session.id)
+  const before = structuredClone(h.chat), events = structuredClone(sessionEvents(h.session))
+  const originalConstructor = h.session.constructor
+  Object.defineProperty(h.session, 'constructor', { value: { fromRestore(...args) {
+    const preview = originalConstructor.fromRestore(...args)
+    preview.append = () => { throw Error('host rejects replacement') }
+    return preview
+  } }, configurable: true })
+  await assert.rejects(h.editor.save(h.session.id, { token: edit.token, texts: ['不能保存'] }), /host rejects replacement/)
+  assert.deepEqual(h.chat, before)
+  assert.deepEqual(sessionEvents(h.session), events)
+  Object.defineProperty(h.session, 'constructor', { value: originalConstructor, configurable: true })
+  await h.editor.read(h.session.id)
+})
+
+
+for (const seeded of [false, true]) test('official V3 rejects unsupported edits without changing Chat or native history (seeded=' + seeded + ')', async t => {
+  const h = fixture('原正文', seeded)
+  if (h.session.header.version < 3) return t.skip('requires V3 host')
+  const edit = await h.editor.read(h.session.id)
+  const before = structuredClone(h.chat), events = structuredClone(sessionEvents(h.session))
+  await assert.rejects(h.editor.save(h.session.id, { token: edit.token, texts: ['新正文'] }), /cannot carry sourceEventSeqs/)
+  assert.deepEqual(h.chat, before)
+  assert.deepEqual(sessionEvents(h.session), events)
+  await h.editor.read(h.session.id)
 })

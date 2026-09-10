@@ -13,8 +13,8 @@ test('README、安装提示和独立版本查询使用同一适配版本', async
   const config = JSON.parse(await readFile(new URL('../config/dsh-compatibility.json', import.meta.url), 'utf8'))
   assert.equal(adaptedDshVersion, config.adaptedDshVersion)
   const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8')
-  assert.ok(readme.includes(dshCompatibilityNotice().replace(adaptedDshVersion, '`' + adaptedDshVersion + '`')))
-  assert.ok(readme.includes('$(node bin/dsh-compatibility.mjs --version)'))
+  assert.ok(readme.includes('`' + adaptedDshVersion + '`'))
+  assert.ok(readme.includes('https://github.com/anywhere-labs/dsh-desktop/releases'))
   const result = spawnSync(process.execPath, ['bin/dsh-compatibility.mjs', '--version'], { cwd: root, encoding: 'utf8' })
   assert.equal(result.status, 0, result.stderr)
   assert.equal(result.stdout.trim(), adaptedDshVersion)
@@ -23,8 +23,8 @@ test('README、安装提示和独立版本查询使用同一适配版本', async
 test('匹配版本与其他新旧版本均只提示，不抛错或要求切换版本', () => {
   for (const version of [adaptedDshVersion, '0.1.1-rc.2', '99.0.0']) {
     const notice = dshCompatibilityNotice(version)
-    assert.match(notice, /允许使用其他版本/)
-    assert.match(notice, /可能导致本插件异常，请自行斟酌/)
+    assert.match(notice, /不强制锁定/)
+    assert.match(notice, /如遇兼容报错/)
     if (version !== adaptedDshVersion) {
       assert.ok(notice.includes('当前 DSH ' + version))
       assert.match(notice, /保留当前版本，继续安装/)
@@ -32,15 +32,13 @@ test('匹配版本与其他新旧版本均只提示，不抛错或要求切换�
   }
 })
 
-test('两平台都在下载源码后读取版本，补装采用精确版本', () => {
+test('两平台都在下载源码后读取推荐版本，DSH 下载交给共享安装模块', () => {
   assert.ok(unix.indexOf('ADAPTED_DSH_VERSION=$(node') > unix.indexOf('[ -f "${SOURCE_DIR}/package.json" ]'))
   assert.ok(windows.indexOf('$AdaptedDshVersion = (& node') > windows.indexOf("Join-Path $SourceDir.FullName 'package.json'"))
-  assert.match(unix, /@deepseek-ai\/dsh@\$\{ADAPTED_DSH_VERSION\}/)
-  assert.match(windows, /@deepseek-ai\/dsh@\$AdaptedDshVersion/)
   assert.doesNotMatch(unix + windows, /@deepseek-ai\/dsh["']/)
 })
 
-test('Unix 实际补装分支：只装缺失工具，已有 DSH 与 Desktop 不重装', { skip: process.platform === 'win32' }, () => {
+test('Unix 工具准备只处理 pnpm，不提前复用或更换 DSH', { skip: process.platform === 'win32' }, () => {
   const start = unix.indexOf('# Read the downloaded release')
   const end = unix.indexOf('if [ "${INSTALL_HOST}" = "cli" ] && [ -f', start)
   assert.ok(start >= 0 && end > start)
@@ -62,8 +60,8 @@ npm() { printf 'INSTALL:%s\\n' "$*"; HAS_DSH=1; HAS_PNPM=1; }
 fail() { printf 'FAIL:%s\\n' "$1"; exit 1; }
 `
   for (const row of [
-    { host: 'cli', dsh: '0', pnpm: '0', packages: ['pnpm@11.25.0', '@deepseek-ai/dsh@' + adaptedDshVersion] },
-    { host: 'cli', dsh: '0', pnpm: '1', packages: ['@deepseek-ai/dsh@' + adaptedDshVersion] },
+    { host: 'cli', dsh: '0', pnpm: '0', packages: ['pnpm@11.25.0'] },
+    { host: 'cli', dsh: '0', pnpm: '1', packages: [] },
     { host: 'cli', dsh: '1', pnpm: '0', packages: ['pnpm@11.25.0'] },
     { host: 'cli', dsh: '1', pnpm: '1', pnpmVersion: '12.3.4', packages: ['pnpm@11.25.0'] },
     { host: 'cli', dsh: '1', pnpm: '1', packages: [] },
@@ -78,4 +76,24 @@ fail() { printf 'FAIL:%s\\n' "$1"; exit 1; }
     const installed = result.stdout.split('\n').filter(line => line.startsWith('INSTALL:'))
     assert.deepEqual(installed, row.packages.length ? ['INSTALL:install --global --prefix /unused-mocked-runtime ' + row.packages.join(' ')] : [])
   }
+})
+
+
+test('Desktop 和 DSHA 各有一个明确推荐版本，提示与安装文档包含下载入口', async () => {
+  const config = JSON.parse(await readFile(new URL('../config/dsh-compatibility.json', import.meta.url), 'utf8'))
+  const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8')
+  const manual = await readFile(new URL('../docs/index.html', import.meta.url), 'utf8')
+  for (const [host, version, url] of [
+    ['desktop', config.recommendedDesktopVersion, config.desktopReleasesUrl],
+    ['android', config.recommendedDshaVersion, config.dshaReleasesUrl],
+  ]) {
+    assert.equal(typeof version, 'string')
+    for (const text of [dshCompatibilityNotice('99.0.0', host), readme, manual]) {
+      assert.ok(text.includes(version))
+      assert.ok(text.includes(url))
+    }
+  }
+  const android = await readFile(new URL('../docs/android-install.md', import.meta.url), 'utf8')
+  assert.ok(android.includes(config.recommendedDshaVersion))
+  assert.ok(android.includes(config.dshaReleasesUrl))
 })

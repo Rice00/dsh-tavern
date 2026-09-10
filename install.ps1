@@ -10,8 +10,13 @@ $CommitUrl = if ($env:DSH_TAVERN_COMMIT_URL) { $env:DSH_TAVERN_COMMIT_URL } else
 $CdnMetadataUrl = if ($env:DSH_TAVERN_CDN_METADATA_URL) { $env:DSH_TAVERN_CDN_METADATA_URL } else { "https://cdn.jsdelivr.net/gh/$Repository@main/dsh-tavern-runtime.json" }
 $CdnRootUrl = if ($env:DSH_TAVERN_CDN_ROOT_URL) { $env:DSH_TAVERN_CDN_ROOT_URL.TrimEnd('/') } else { "https://cdn.jsdelivr.net/gh/$Repository" }
 $DshRoot = if ($env:DSH_HOME) { $env:DSH_HOME } else { Join-Path ([Environment]::GetFolderPath('UserProfile')) '.dsh' }
+$LegacyDshRoot = if ($env:DSH_TAVERN_LEGACY_DSH_HOME) { $env:DSH_TAVERN_LEGACY_DSH_HOME } else { $DshRoot }
+if ($InstallHost -eq 'cli') {
+  $DshRoot = if ($env:DSH_TAVERN_CLI_HOME) { $env:DSH_TAVERN_CLI_HOME } else { Join-Path ([Environment]::GetFolderPath('UserProfile')) '.dsh-tavern' }
+}
+
 $AppDir = if ($env:DSH_TAVERN_APP_DIR) { $env:DSH_TAVERN_APP_DIR } else { Join-Path $DshRoot 'apps\dsh-tavern' }
-$RuntimeRoot = Join-Path $DshRoot 'runtime'
+$RuntimeRoot = Join-Path $DshRoot 'tools'
 $PnpmVersion = '11.25.0'
 $CommandBin = Join-Path $DshRoot 'bin'
 $SourceCache = Join-Path $DshRoot 'source-cache\dsh-tavern.git'
@@ -47,9 +52,18 @@ function Assert-LastCommand([string]$Message) {
   if ($LASTEXITCODE -ne 0) { throw $Message }
 }
 
+$PreviousDshHome = $env:DSH_HOME
+$PreviousCliHome = $env:DSH_TAVERN_CLI_HOME
+$PreviousLegacyHome = $env:DSH_TAVERN_LEGACY_DSH_HOME
+$PreviousPath = $env:Path
 $PreviousNpmRegistry = $env:npm_config_registry
 $PreviousPnpmRegistry = $env:pnpm_config_registry
 try {
+  $env:DSH_HOME = $DshRoot
+  if ($InstallHost -eq 'cli') {
+    $env:DSH_TAVERN_CLI_HOME = $DshRoot
+    $env:DSH_TAVERN_LEGACY_DSH_HOME = $LegacyDshRoot
+  }
   # Child npm/pnpm processes, including Profile and plugin installs, inherit this.
   $env:npm_config_registry = if ($env:DSH_TAVERN_NPM_REGISTRY) { $env:DSH_TAVERN_NPM_REGISTRY } else { 'https://registry.npmmirror.com' }
   # pnpm 11 reads pnpm_config_* instead of npm_config_*.
@@ -68,12 +82,8 @@ try {
   $NpmCommand = Resolve-Command 'npm'
   if ($InstallHost -eq 'cli' -and $null -eq $NpmCommand) { throw '未找到 npm，请重新安装 Node.js。' }
 
-  # UI updates start in a fresh process that may not inherit the install-time PATH.
-  # Prefer the DSH/pnpm shims already installed in Tavern's managed runtime before
-  # deciding that either package is missing and downloading it again.
-  $env:Path = "$RuntimeRoot;$env:Path"
-
   if ($InstallHost -eq 'cli') {
+    $env:Path = "$RuntimeRoot;$env:Path"
     $env:DSH_TAVERN_BIN_DIR = $CommandBin
     $env:Path = "$CommandBin;$env:Path"
     $UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
@@ -183,7 +193,7 @@ try {
   $AdaptedDshVersion = (& node $CompatibilityScript --version)
   Assert-LastCommand '读取 DSH 适配版本失败。'
   $AdaptedDshVersion = $AdaptedDshVersion.Trim()
-  & node $CompatibilityScript --notice
+  & node $CompatibilityScript --notice $InstallHost
   Assert-LastCommand '读取 DSH 兼容提示失败。'
   $MissingPackages = @()
   $PnpmCommand = Resolve-Command 'pnpm'
@@ -198,10 +208,6 @@ try {
     }
   }
   if ($PnpmNeedsInstall) { $MissingPackages += "pnpm@$PnpmVersion" }
-  $DshCommand = Resolve-Command 'dsh'
-  if ($InstallHost -eq 'cli' -and $null -eq $DshCommand) {
-    $MissingPackages += "@deepseek-ai/dsh@$AdaptedDshVersion"
-  }
   if ($MissingPackages.Count -gt 0) {
     Write-Host ("正在安装缺失依赖：" + ($MissingPackages -join '、') + '……')
     New-Item -ItemType Directory -Force -Path $RuntimeRoot | Out-Null
@@ -211,7 +217,7 @@ try {
   $PnpmCommand = Resolve-Command 'pnpm'
   if ($null -eq $PnpmCommand) { throw '未找到 pnpm。Desktop 版请从 DSH Desktop 托盘打开 DSH Terminal 后运行本命令。' }
   $DshCommand = Resolve-Command 'dsh'
-  if ($null -eq $DshCommand) { throw '未找到 DSH。Desktop 版请从 DSH Desktop 托盘打开 DSH Terminal 后运行本命令。' }
+  if ($InstallHost -ne 'cli' -and $null -eq $DshCommand) { throw '未找到 DSH。Desktop 版请从 DSH Desktop 托盘打开 DSH Terminal 后运行本命令。' }
 
   $OldLauncher = Join-Path $AppDir 'bin\dsh-tavern.mjs'
   if ($InstallHost -eq 'cli' -and (Test-Path $OldLauncher)) {
@@ -253,6 +259,10 @@ catch {
 finally {
   $env:npm_config_registry = $PreviousNpmRegistry
   $env:pnpm_config_registry = $PreviousPnpmRegistry
+  $env:DSH_HOME = $PreviousDshHome
+  $env:DSH_TAVERN_CLI_HOME = $PreviousCliHome
+  $env:DSH_TAVERN_LEGACY_DSH_HOME = $PreviousLegacyHome
+  $env:Path = $PreviousPath
   if (Test-Path $TempDir) {
     Remove-Item -LiteralPath $TempDir -Recurse -Force
   }

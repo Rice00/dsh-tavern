@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export DSH_TAVERN_RUNTIME_HOST=android
 
 export npm_config_registry="${DSH_TAVERN_NPM_REGISTRY:-https://registry.npmmirror.com}"
 # pnpm 11 reads pnpm_config_* instead of npm_config_*.

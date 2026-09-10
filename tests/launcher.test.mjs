@@ -384,10 +384,8 @@ test('Tavern applies sidebar migrations before every service start', () => {
 test('installers accept the installed DSH host without pinning its release', () => {
   assert.match(windowsInstaller, /if \(\$InstallHost -eq 'cli'\)/)
   assert.doesNotMatch(windowsInstaller, /RequiredDshVersion|Test-DshVersion/)
-  assert.match(windowsInstaller, /"@deepseek-ai\/dsh@\$AdaptedDshVersion"/)
   assert.match(unixInstaller, /if \[ "\$\{INSTALL_HOST\}" = "cli" \]/)
   assert.doesNotMatch(unixInstaller, /REQUIRED_DSH_VERSION|dsh_version_is_compatible/)
-  assert.match(unixInstaller, /"@deepseek-ai\/dsh@\$\{ADAPTED_DSH_VERSION\}"/)
   assert.doesNotMatch(launcherSource, /MINIMUM_DSH_VERSION|supportsDshVersion|requireDshVersion/)
 })
 
@@ -474,7 +472,7 @@ test('一键安装直接启动 Tavern，不通过包管理器托管后台进程'
 })
 
 test('启动器保留显式 Android 运行宿主，普通命令行仍默认 CLI', () => {
-  assert.match(serviceSource, /DSH_TAVERN_RUNTIME_HOST: process\.env\.DSH_TAVERN_RUNTIME_HOST \|\| 'cli'/)
+  assert.match(serviceSource, /env: runtimeEnvironment\(\)/)
 })
 
 test('共享 Profile 不固定端口，CLI Adapter 启动时显式使用 3081', () => {

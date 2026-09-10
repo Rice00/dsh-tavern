@@ -1,13 +1,15 @@
 import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, renameSync, symlinkSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { stopService } from './service-lifecycle.mjs'
+import { installCliRuntime, migrateCliHome } from './cli-runtime.mjs'
 import { dshCompatibilityNotice } from './dsh-compatibility.mjs'
 import { installPluginDependencies } from './plugin-dependencies.mjs'
 import { migrateLegacyTavernData, resolveTavernDataRoot } from '../tavern-plugin/lib/domain/tavern-data.js'
 import { ensureUserExtensions } from '../tavern-plugin/lib/domain/user-extensions.js'
 import { beginProfileConfigurationUpdate, loadProfileManifest, mergeProfileManifest, prepareProfilePatch, syncProfileDependencyPatches } from './profile-configuration.mjs'
 import { ensureSidebarDefaults } from './launcher-settings.mjs'
-import { INSTALL_HOSTS, SOURCE_ROOT, DSH_ROOT, PROFILE_DIR, LOG_DIR, SCRIPT_PATH, PROFILE, RELEASE_FILE, DEFAULT_COMMIT_URL, REQUIRED_SOURCE_FILES, findDshCommand, requireCommand, run, runDsh } from './launcher-environment.mjs'
+import { INSTALL_HOSTS, SOURCE_ROOT, DSH_ROOT, LEGACY_DSH_ROOT, CLI_RUNTIME_ROOT, RUNTIME_HOST, PROFILE_DIR, LOG_DIR, SCRIPT_PATH, PROFILE, RELEASE_FILE, DEFAULT_COMMIT_URL, REQUIRED_SOURCE_FILES, findDshCommand, requireCommand, run, runDsh } from './launcher-environment.mjs'
 
 // Own installation transaction and legacy-source discovery. Desktop never installs a CLI shim.
 export function extractDshVersion(output) {
@@ -17,7 +19,7 @@ export function extractDshVersion(output) {
 }
 
 export function parseInstallHost(args = []) {
-  let host = 'cli'
+  let host = RUNTIME_HOST
   for (let index = 0; index < args.length; index += 1) {
     const argument = args[index]
     if (argument === '--host') {
@@ -209,68 +211,80 @@ export async function recordInstalledRelease(options = {}) {
   return release
 }
 
-export async function installProfile(host = 'cli') {
-  const dsh = findDshCommand()
+export async function installProfile(host = RUNTIME_HOST) {
   requireCommand('node', '请安装 Node.js 22.19 或更高版本')
   requireCommand('pnpm', '请运行 npm install -g pnpm')
   verifySource()
-  const dshVersion = extractDshVersion(runDsh(dsh, ['--version'], { capture: true, host }))
-  console.log(dshCompatibilityNotice(dshVersion))
-
-  mkdirSync(PROFILE_DIR, { recursive: true })
-  mkdirSync(LOG_DIR, { recursive: true })
-  const dataRoot = resolveTavernDataRoot({ dshHome: DSH_ROOT })
-  const migration = await migrateLegacyTavernData({
-    targetRoot: dataRoot,
-    backupRoot: path.join(DSH_ROOT, 'backups', 'dsh-tavern-data-upgrade'),
-    legacyRoots: legacyDataRoots(),
-  })
-  for (const directory of ['cards', 'chats', 'scripts', 'sources', 'skills', 'diffs']) {
-    mkdirSync(path.join(dataRoot, directory), { recursive: true })
+  if (host === 'cli' && existsSync(path.join(LOG_DIR, 'tavern.pid.json'))) await stopService()
+  if (host === 'cli' && migrateCliHome({ source: LEGACY_DSH_ROOT, target: DSH_ROOT })) {
+    console.log(`已复制旧 CLI 配置与游戏数据到 ${DSH_ROOT}；原数据保持不变。`)
   }
-  await ensureUserExtensions(dataRoot)
-  if (migration.migratedSources > 0) console.log(`已迁移 ${migration.migratedSources} 处旧数据；冲突保留 ${migration.conflicts} 个。`)
-
-  const hostDependencies = installPluginDependencies({ pluginDirectory: path.join(SOURCE_ROOT, 'tavern-plugin'), dsh, host, run })
-  for (const dependency of hostDependencies) console.log(`复用当前 DSH 依赖：${dependency.name} ${dependency.version}`)
-  const configuration = prepareProfileConfiguration(host, dshVersion)
-  const transaction = await beginProfileConfigurationUpdate({
-    profileDir: PROFILE_DIR,
-    manifest: configuration.manifest,
-    patchText: configuration.patchText,
-  })
-  for (const backup of Object.values(transaction.backups)) {
-    if (backup !== null) console.log(`已备份原配置：${backup}`)
-  }
+  const runtime = host === 'cli' ? installCliRuntime({ root: CLI_RUNTIME_ROOT, run }) : null
   try {
-    const workspaceText = readFileSync(path.join(SOURCE_ROOT, 'pnpm-workspace.yaml'), 'utf8')
-    copyFileSync(path.join(SOURCE_ROOT, 'pnpm-workspace.yaml'), path.join(PROFILE_DIR, 'pnpm-workspace.yaml'))
-    syncProfileDependencyPatches({ sourceRoot: SOURCE_ROOT, profileDir: PROFILE_DIR, workspaceText })
-    run('pnpm', ['install'], { cwd: PROFILE_DIR })
-    runDsh(dsh, ['--profile', PROFILE, '--dump-config'], { host })
-    ensureSidebarDefaults()
-    transaction.commit()
+    const dsh = runtime?.command || findDshCommand(host)
+    const dshVersion = extractDshVersion(runDsh(dsh, ['--version'], { capture: true, host }))
+    console.log(dshCompatibilityNotice(dshVersion, host))
+
+    mkdirSync(PROFILE_DIR, { recursive: true })
+    mkdirSync(LOG_DIR, { recursive: true })
+    const dataRoot = resolveTavernDataRoot({ dshHome: DSH_ROOT })
+    const migration = await migrateLegacyTavernData({
+      targetRoot: dataRoot,
+      backupRoot: path.join(DSH_ROOT, 'backups', 'dsh-tavern-data-upgrade'),
+      legacyRoots: legacyDataRoots(),
+    })
+    for (const directory of ['cards', 'chats', 'scripts', 'sources', 'skills', 'diffs']) {
+      mkdirSync(path.join(dataRoot, directory), { recursive: true })
+    }
+    await ensureUserExtensions(dataRoot)
+    if (migration.migratedSources > 0) console.log(`已迁移 ${migration.migratedSources} 处旧数据；冲突保留 ${migration.conflicts} 个。`)
+
+    const hostDependencies = installPluginDependencies({ pluginDirectory: path.join(SOURCE_ROOT, 'tavern-plugin'), dsh, host, run })
+    for (const dependency of hostDependencies) console.log(`复用当前 DSH 依赖：${dependency.name} ${dependency.version}`)
+    const configuration = prepareProfileConfiguration(host, dshVersion)
+    const transaction = await beginProfileConfigurationUpdate({
+      profileDir: PROFILE_DIR,
+      manifest: configuration.manifest,
+      patchText: configuration.patchText,
+    })
+    for (const backup of Object.values(transaction.backups)) {
+      if (backup !== null) console.log(`已备份原配置：${backup}`)
+    }
+    try {
+      const workspaceText = readFileSync(path.join(SOURCE_ROOT, 'pnpm-workspace.yaml'), 'utf8')
+      copyFileSync(path.join(SOURCE_ROOT, 'pnpm-workspace.yaml'), path.join(PROFILE_DIR, 'pnpm-workspace.yaml'))
+      syncProfileDependencyPatches({ sourceRoot: SOURCE_ROOT, profileDir: PROFILE_DIR, workspaceText })
+      run('pnpm', ['install'], { cwd: PROFILE_DIR })
+      runDsh(dsh, ['--profile', PROFILE, '--dump-config'], { host })
+      ensureSidebarDefaults()
+      transaction.commit()
+    } catch (error) {
+      await transaction.rollback()
+      throw error
+    }
+    if (host === 'cli') installCommand()
+    try {
+      await recordInstalledRelease()
+    } catch (error) {
+      console.warn(`未能记录安装提交号，不影响本次安装：${String(error?.message || error)}`)
+    }
+
+    writeFileSync(path.join(SOURCE_ROOT, '.dsh-tavern-local.json'), JSON.stringify({ host, dshHome: DSH_ROOT }) + '\n')
+    runtime?.commit()
+    console.log('DSH Tavern 已安装。')
+    console.log(host === 'cli' ? `已安装独立 DSH ${dshVersion}：${CLI_RUNTIME_ROOT}；不使用全局 DSH。` : `已复用当前 DSH ${dshVersion} 的本地依赖；未升级或降级宿主。`)
+    if (host === 'desktop') {
+      console.log('请重启 DSH Desktop，然后从托盘的 Profile 菜单切换到 tavern。')
+    } else if (host === 'android') {
+      console.log('Android Tavern Profile 已配置。')
+    } else {
+      console.log('启动：dsh-tavern start')
+    }
+    if (host === 'cli' && process.platform === 'win32') {
+      console.log('如果当前 PowerShell 尚未识别新命令，也可以在仓库目录运行：pnpm run start:tavern')
+    }
   } catch (error) {
-    await transaction.rollback()
+    runtime?.rollback()
     throw error
-  }
-  if (host === 'cli') installCommand()
-  try {
-    await recordInstalledRelease()
-  } catch (error) {
-    console.warn(`未能记录安装提交号，不影响本次安装：${String(error?.message || error)}`)
-  }
-
-  console.log('DSH Tavern 已安装。')
-  console.log(`已复用当前 DSH ${dshVersion} 的本地依赖；未升级或降级 DSH。`)
-  if (host === 'desktop') {
-    console.log('请重启 DSH Desktop，然后从托盘的 Profile 菜单切换到 tavern。')
-  } else if (host === 'android') {
-    console.log('Android Tavern Profile 已配置。')
-  } else {
-    console.log('启动：dsh-tavern start')
-  }
-  if (host === 'cli' && process.platform === 'win32') {
-    console.log('如果当前 PowerShell 尚未识别新命令，也可以在仓库目录运行：pnpm run start:tavern')
   }
 }

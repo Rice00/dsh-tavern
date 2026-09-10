@@ -1,6 +1,6 @@
 > [!IMPORTANT]
-> 本版适配 DSH `0.1.2-rc.1`。允许使用其他版本，但 DSH 更新较激进，可能导致本插件异常，请自行斟酌。
-> 安装时复用当前 DSH 自带的必需依赖，不强制依赖版本，也不自动替换 DSH；缺少依赖或所需接口时会明确提示。
+> 命令行版每次安装都会独立下载 DSH `0.1.2-rc.1`，不复用或修改全局 DSH。
+> Desktop 推荐 **2.0.5**（内置 DSH `0.1.2-rc.1`），不强制锁定；如遇兼容报错，请自行从 [Desktop 历史版本下载页面](https://github.com/anywhere-labs/dsh-desktop/releases) 下载安装推荐版本。DSHA 推荐 **1.2.0-rc1.4**，同样不强制锁定，报错时请从 [DSHA 历史版本下载页面](https://github.com/DSH-APP/DSHA/releases) 下载推荐版本。
 
 # dsh-tavern
 
@@ -79,7 +79,7 @@
 
 #### 多平台支持
 
-dsh-tavern 正式支持 Windows、macOS 和 Linux。Windows 与 macOS 可使用 DSH Desktop 客户端，也可以通过命令行运行；Linux 使用命令行运行。Android 可尝试通过 [DSHA](https://github.com/qiannianhuanxiang/DSHA) 安装，但属于实验性支持，不保证一定可用。
+dsh-tavern 正式支持 Windows、macOS 和 Linux。Windows 与 macOS 可使用 DSH Desktop 客户端，也可以通过命令行运行；Linux 使用命令行运行。Android 可尝试通过 [DSHA](https://github.com/DSH-APP/DSHA) 安装，但属于实验性支持，不保证一定可用。
 
 #### 自由安装插件
 
@@ -169,7 +169,7 @@ dsh-tavern 使用尽可能少而精的提示词，把流程和状态交给程序
 
 适合不想单独配置运行环境和管理服务的用户。推荐使用 [DSH Desktop](https://github.com/anywhere-labs/deepseek-harness-desktop) **2.0.5 版本**（支持 Windows x64 和 macOS，暂不支持 Linux）。
 
-由于 DSH Desktop 经常进行破坏性更新，不建议直接使用最新版，建议使用最新版的上一个版本。旧版可从 [历史版本下载页面](https://github.com/anywhere-labs/dsh-desktop/releases) 获取。
+推荐使用 **DSH Desktop 2.0.5**（内置 DSH `0.1.2-rc.1`），其他版本也允许安装。如遇兼容报错，请自行打开 [历史版本下载页面](https://github.com/anywhere-labs/dsh-desktop/releases)，找到 **v2.0.5**，展开 **Assets**，下载适合自己系统的安装包；不要下载 Source code。
 
 安装后，从系统托盘（macOS 菜单栏）打开 **Open DSH Terminal**，运行对应命令：
 
@@ -191,7 +191,7 @@ curl -fsSL https://cdn.jsdelivr.net/gh/flizzywine/dsh-tavern@main/install.sh | D
 
 ### 命令行版
 
-适合希望通过浏览器访问、自己管理服务的用户。需要 Node.js 22.19 或更高版本。未安装 DSH 时，安装器默认安装本版适配版本；已有 DSH 则保留原版本，仅提示兼容风险。建议安装 Git：安装器会建立持久化稀疏缓存，首次只获取运行文件，后续只拉取变化内容，不下载 `docs/`、文档图片、`demo/`、`references/` 和测试文件；没有 Git 时自动回退到完整 ZIP。
+适合希望通过浏览器访问、自己管理服务的用户。需要 Node.js 22.19 或更高版本。不论电脑是否已有 DSH，安装器都会重新下载一份固定版本的独立 DSH，不复用或修改全局安装。建议安装 Git：安装器会建立持久化稀疏缓存，首次只获取运行文件，后续只拉取变化内容，不下载 `docs/`、文档图片、`demo/`、`references/` 和测试文件；没有 Git 时自动回退到完整 ZIP。
 
 #### Windows
 
@@ -215,6 +215,8 @@ curl -fsSL https://cdn.jsdelivr.net/gh/flizzywine/dsh-tavern@main/install.sh | D
 
 首次使用时，在左侧栏底部打开 **设置 → 模型**，填写模型服务的 API 密钥。
 
+命令行版的运行时、Profile、配置和游戏数据默认位于 `~/.dsh-tavern/`，与外部 DSH 分开。可通过 `DSH_TAVERN_CLI_HOME` 指定位置；安装后启动器会记住该路径。首次升级时会复制旧 CLI 的配置和游戏数据，保留原件；Desktop / DSHA 数据不会自动迁入。Node.js 仍使用系统安装的版本。
+
 #### 手动安装
 
 如果一键命令仍然无法使用：
@@ -222,11 +224,7 @@ curl -fsSL https://cdn.jsdelivr.net/gh/flizzywine/dsh-tavern@main/install.sh | D
 1. 在 GitHub 项目页点击 **Code → Download ZIP**，或直接下载 [`main.zip`](https://github.com/flizzywine/dsh-tavern/archive/refs/heads/main.zip)；
 2. 解压后进入 `dsh-tavern-main` 文件夹；
 3. 在这个文件夹中打开 PowerShell（Windows）或终端（macOS / Linux），确认当前目录可以看到 `package.json`；
-4. 如果尚未安装 `pnpm`，先运行 `npm install -g pnpm`。如果尚未安装 DSH，再运行（从本版配置读取适配版本）：
-
-```bash
-npm install -g "@deepseek-ai/dsh@$(node bin/dsh-compatibility.mjs --version)"
-```
+4. 如果尚未安装 `pnpm`，先运行 `npm install -g pnpm@11.25.0`，然后运行 `pnpm install --frozen-lockfile`。无需手动安装 DSH，下一步会下载独立版本。
 
 5. 命令行版安装并启动：
 
@@ -249,7 +247,9 @@ node ./bin/dsh-tavern.mjs install --host desktop
 
 > **Android 属于实验性支持，不保证一定可用。** 不同手机系统、DSHA 版本、网络和后台限制都可能导致安装或运行失败。
 
-借助 [DSHA](https://github.com/qiannianhuanxiang/DSHA)，可以尝试在 Android 手机上运行本项目。首次安装步骤：
+推荐使用 **DSHA 1.2.0-rc1.4**（预览版，内置 DSH `0.1.2-rc.1`）。其他版本也允许使用，不强制锁定；如遇兼容报错，请自行打开 [DSHA 历史版本下载页面](https://github.com/DSH-APP/DSHA/releases)，找到 **v1.2.0-rc1.4**，展开 **Assets**，下载适合手机系统的 APK；不要下载 Source code。
+
+借助 [DSHA](https://github.com/DSH-APP/DSHA)，可以尝试在 Android 手机上运行本项目。首次安装步骤：
 
 1. 安装 DSHA，配置模型并成功启动一次；
 2. 打开 DSHA 底部的 **终端**，把下面整条命令复制进去并回车。安装脚本会自行完成下载、配置、校验、启动和失败回滚：
@@ -304,9 +304,9 @@ dsh-tavern restart
 dsh-tavern update
 ```
 
-dsh-tavern 是运行在 DSH 上的插件项目，不包含 DSH 本体。DSH 本体可以按其自身方式正常更新，通常不会影响本项目的使用，除非 DSH 进行了不兼容的破坏性更新。更新 DSH 本体不需要运行 `dsh-tavern update`；这个命令只用于更新 dsh-tavern 的插件内容。Desktop 版不使用这些启停命令，由 DSH Desktop 统一管理。
+命令行版的 `dsh-tavern update` 更新插件，并重新安装该版指定的独立 DSH；全局 DSH 的升级不会改变这份运行时。Desktop / DSHA 更新只更新酒馆，保留宿主版本；兼容报错时请自行下载推荐宿主版本。Desktop 版由 DSH Desktop 统一管理启停。
 
-用户数据统一保存在 DSH 的 Tavern Profile 数据目录中。
+命令行版数据独立保存在 `~/.dsh-tavern/profile-data/tavern/`（自定义安装以实际目录为准）；Desktop / DSHA 使用各自宿主的 Tavern Profile 数据目录。
 
 ## 社区交流
 

@@ -102,6 +102,18 @@ export function resolveDshCliEntry({ dsh, env = process.env, platform = process.
   return realpathSync(path.resolve(cli.directory, bin))
 }
 
+// Invoke npm through Node on Windows so private prefixes containing spaces or
+// shell metacharacters are passed as argv, never reparsed by cmd.exe.
+export function resolveNpmCliEntry({ env = process.env, platform = process.platform } = {}) {
+  const commandFile = resolveCommandFile('npm', env, platform)
+  const cli = findPackage('npm', commandFile, false)
+  if (!cli) throw new Error(`无法定位 npm CLI 包：${commandFile}`)
+  const manifest = JSON.parse(readFileSync(path.join(cli.directory, 'package.json'), 'utf8'))
+  const bin = typeof manifest.bin === 'string' ? manifest.bin : manifest.bin?.npm
+  if (!bin) throw new Error('当前 npm 包没有声明 npm 命令入口。')
+  return realpathSync(path.resolve(cli.directory, bin))
+}
+
 export function resolveDshBootModule({ dsh, host = 'cli', env = process.env, execPath = process.execPath, platform = process.platform }) {
   const anchor = resolveHostAnchor({ dsh, host, env, execPath, platform })
   const dependency = findPackage('@deepseek-ai/dsh-app-boot', anchor)

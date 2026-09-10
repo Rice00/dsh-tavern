@@ -5,7 +5,7 @@ import { resolveDshCliEntry } from './plugin-dependencies.mjs'
 import path from 'node:path'
 import { migrateSessionPrefixEvents } from './session-prefix-migration.mjs'
 import { ensureSidebarDefaults } from './launcher-settings.mjs'
-import { PROFILE_DIR, PID_FILE, PROFILE, SOURCE_ROOT, CLI_PORT, CLI_HOST, LOG_DIR, LOG_FILE, DSH_ROOT, FRONTEND_BOOTSTRAP_FILE, FRONTEND_BOOTSTRAP_VERSION, commandExists, findDshCommand, resolveDshInvocation, sleep } from './launcher-environment.mjs'
+import { PROFILE_DIR, PID_FILE, PROFILE, SOURCE_ROOT, CLI_PORT, CLI_HOST, LOG_DIR, LOG_FILE, DSH_ROOT, FRONTEND_BOOTSTRAP_FILE, FRONTEND_BOOTSTRAP_VERSION, commandExists, runtimeEnvironment, RUNTIME_HOST, findDshCommand, resolveDshInvocation, sleep } from './launcher-environment.mjs'
 
 // Own process identity, readiness, shutdown, and validated browser access.
 export function webUrlFromLogChunk(source) {
@@ -256,8 +256,8 @@ export async function startService() {
   })
   if (prefixRepairs.length) console.log(`已兼容修复 ${prefixRepairs.length} 份旧会话的固定背景事件，原文件已备份。`)
 
-  const dsh = findDshCommand()
-  const runtimeHost = process.env.DSH_TAVERN_RUNTIME_HOST || 'cli'
+  const runtimeHost = RUNTIME_HOST
+  const dsh = findDshCommand(runtimeHost)
   const invocation = resolveDshInvocation(
     dsh,
     ['--profile', PROFILE, '--host', CLI_HOST, '--port', String(CLI_PORT), '--no-open'],
@@ -276,7 +276,7 @@ export async function startService() {
       cwd: SOURCE_ROOT,
       // Track the actual Node service, not a cmd shim that can exit separately.
       detached: true,
-      env: { ...process.env, DSH_TAVERN_RUNTIME_HOST: process.env.DSH_TAVERN_RUNTIME_HOST || 'cli' },
+      env: runtimeEnvironment(),
       shell: false,
       windowsHide: true,
       stdio: ['ignore', logDescriptor, logDescriptor],

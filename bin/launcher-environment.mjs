@@ -1,8 +1,9 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, readdirSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { resolveDshCliEntry, resolveNpmCliEntry } from './plugin-dependencies.mjs'
 
 // Shared installation paths and process invocation; no install/start/update effects on import.
 export const PROFILE = 'tavern'
@@ -11,7 +12,20 @@ export const CLI_HOST = '127.0.0.1'
 export const CLI_PORT = resolveServicePort(process.env.DSH_TAVERN_PORT)
 export const SCRIPT_PATH = fileURLToPath(new URL('./dsh-tavern.mjs', import.meta.url))
 export const SOURCE_ROOT = path.resolve(path.dirname(SCRIPT_PATH), '..')
-export const DSH_ROOT = process.env.DSH_HOME || path.join(os.homedir(), '.dsh')
+const installationFile = path.join(SOURCE_ROOT, '.dsh-tavern-local.json')
+const installation = existsSync(installationFile) ? JSON.parse(readFileSync(installationFile, 'utf8')) : {}
+const hostArgument = process.argv.find((arg) => arg.startsWith('--host='))?.slice(7)
+  || (process.argv.includes('--host') ? process.argv[process.argv.indexOf('--host') + 1] : '')
+export const RUNTIME_HOST = hostArgument || process.env.DSH_TAVERN_RUNTIME_HOST || process.env.DSH_TAVERN_HOST || installation.host || 'cli'
+export const LEGACY_DSH_ROOT = process.env.DSH_TAVERN_LEGACY_DSH_HOME || process.env.DSH_HOME || path.join(os.homedir(), '.dsh')
+export const DSH_ROOT = path.resolve(RUNTIME_HOST === 'cli'
+  ? (process.env.DSH_TAVERN_CLI_HOME || (installation.host === 'cli' && installation.dshHome) || path.join(os.homedir(), '.dsh-tavern'))
+  : (process.env.DSH_HOME || path.join(os.homedir(), '.dsh')))
+export const CLI_RUNTIME_ROOT = path.join(DSH_ROOT, 'runtime')
+export function runtimeEnvironment() {
+  return { ...process.env, DSH_HOME: DSH_ROOT, DSH_TAVERN_RUNTIME_HOST: RUNTIME_HOST,
+    ...(RUNTIME_HOST === 'cli' ? { DSH_TAVERN_CLI_HOME: DSH_ROOT, DSH_TAVERN_LEGACY_DSH_HOME: LEGACY_DSH_ROOT } : {}) }
+}
 export const PROFILE_DIR = path.join(DSH_ROOT, 'profiles', PROFILE)
 export const LOG_DIR = path.join(DSH_ROOT, 'logs')
 export const LOG_FILE = path.join(LOG_DIR, 'tavern.log')
@@ -76,10 +90,12 @@ export function commandName(name, platform = process.platform) {
 }
 
 export function run(command, args, options = {}) {
-  const result = spawnSync(commandName(command), args, {
+  const nativeNpm = process.platform === 'win32' && command === 'npm'
+  const result = spawnSync(nativeNpm ? process.execPath : commandName(command), nativeNpm ? [resolveNpmCliEntry(), ...args] : args, {
     cwd: options.cwd,
+    env: runtimeEnvironment(),
     encoding: 'utf8',
-    shell: process.platform === 'win32',
+    shell: process.platform === 'win32' && !nativeNpm,
     stdio: options.capture ? 'pipe' : 'inherit',
   })
   if (result.error) {
@@ -97,16 +113,16 @@ export function commandExists(command) {
   return spawnSync(probe[0], probe[1], { stdio: 'ignore' }).status === 0
 }
 
-export function findDshCommand() {
+export function findDshCommand(host = RUNTIME_HOST) {
+  if (host === 'cli') {
+    const command = process.platform === 'win32' ? path.join(CLI_RUNTIME_ROOT, 'dsh.cmd') : path.join(CLI_RUNTIME_ROOT, 'bin', 'dsh')
+    if (!existsSync(command)) throw new Error('Tavern 独立 DSH 尚未安装，请重新运行 Tavern 安装器；不会回退到全局 DSH。')
+    return command
+  }
   if (commandExists('dsh')) {
     if (process.platform === 'win32') return 'dsh'
     return run('sh', ['-c', 'command -v dsh'], { capture: true })
   }
-
-  const bundledDsh = process.platform === 'win32'
-    ? path.join(DSH_ROOT, 'runtime', 'dsh.cmd')
-    : path.join(DSH_ROOT, 'runtime', 'bin', 'dsh')
-  if (existsSync(bundledDsh)) return bundledDsh
 
   if (process.platform !== 'win32') {
     const versionsDir = path.join(os.homedir(), '.nvm', 'versions', 'node')
@@ -136,11 +152,14 @@ export function requireCommand(command, installHint = '') {
 }
 
 export function runDsh(command, args, options = {}) {
-  const invocation = resolveDshInvocation(command, args, options.host)
+  const nativeCli = process.platform === 'win32' && (options.host || RUNTIME_HOST) === 'cli'
+  const invocation = nativeCli
+    ? { command: process.execPath, args: [resolveDshCliEntry({ dsh: command }), ...args] }
+    : resolveDshInvocation(command, args, options.host)
   const spawnOptions = { ...options }
   delete spawnOptions.host
   const result = spawnSync(invocation.command, invocation.args, {
-    encoding: 'utf8', shell: process.platform === 'win32', ...spawnOptions,
+    encoding: 'utf8', shell: process.platform === 'win32' && !nativeCli, env: runtimeEnvironment(), ...spawnOptions,
   })
   if (result.error) throw new Error(`无法运行 dsh：${result.error.message}`)
   if (result.status !== 0) {

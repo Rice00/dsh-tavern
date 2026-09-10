@@ -80,11 +80,11 @@ export const installation = `
 
 桌面版与命令行版选择一种即可，不要同时运行。下方命令会下载并执行本项目安装脚本，请在确认项目来源可信后运行；网页本身不会自动执行安装。
 
-本版适配 DSH {{dshVersion}}。安装器不会强制替换已安装的其他 DSH 版本；版本不一致时请留意兼容性提示。
+命令行版独立安装固定的 DSH {{dshVersion}}。Desktop / DSHA 复用宿主，只推荐版本、不强制锁定；如遇兼容报错，请自行下载安装推荐版本。
 
 ## 方式一：桌面版
 
-1. 先安装 [DSH Desktop](https://github.com/anywhere-labs/deepseek-harness-desktop) 2.0.2 或更高版本。
+1. 推荐安装 **DSH Desktop 2.0.5**（内置 DSH {{dshVersion}}）。打开 [历史版本下载页面](https://github.com/anywhere-labs/dsh-desktop/releases)，找到 **v2.0.5**，展开 **Assets**，下载适合自己系统的安装包；不要下载 Source code。其他版本也允许使用，兼容报错时请自行换回推荐版本。
 2. 启动后，从系统托盘或 macOS 菜单栏打开 **Open DSH Terminal**。
 3. 在这个终端里，运行你所用平台的命令。
 
@@ -96,7 +96,7 @@ export const installation = `
 
 ## 方式二：命令行版
 
-先准备 Node.js 22.19 或更高版本。建议安装 Git，便于增量更新；没有 Git 时安装器会回退到 ZIP 下载。未安装 DSH 时，安装器会安装本版适配版本；已有 DSH 则保留原版本。
+先准备 Node.js 22.19 或更高版本。建议安装 Git，便于增量更新；没有 Git 时安装器会回退到 ZIP 下载。不论电脑是否已有 DSH，每次安装都会下载独立的固定版本，不复用或修改全局 DSH。运行时、Profile 和数据默认在 ~/.dsh-tavern/；首次升级复制旧 CLI 数据并保留原件。Node.js 仍使用系统版本。
 
 ### Windows PowerShell
 ` + code('powershell', installCommands.cliWindows) + `
@@ -139,9 +139,11 @@ export const installation = `
 
 ## Android：通过 DSHA 安装
 
+推荐使用 **DSHA 1.2.0-rc1.4**（预览版，内置 DSH {{dshVersion}}）。其他版本也允许使用，不强制锁定；如遇兼容报错，请自行打开 [DSHA 历史版本下载页面](https://github.com/DSH-APP/DSHA/releases)，找到 **v1.2.0-rc1.4**，展开 **Assets**，下载适合手机系统的 APK；不要下载 Source code。
+
 **Android 属于实验性支持，不保证一定可用。** 不同手机系统、DSHA 版本、网络和后台限制都可能导致安装或运行失败。
 
-1. 安装 [DSHA](https://github.com/qiannianhuanxiang/DSHA)，配置模型并成功启动一次。
+1. 安装 [DSHA](https://github.com/DSH-APP/DSHA)，配置模型并成功启动一次。
 2. 打开 DSHA 底部的“终端”，把下面整条命令复制进去并回车。安装脚本会自行完成下载、配置、校验、启动和失败回滚。
 ` + code('bash', installCommands.android) + `
 3. 如果不会使用终端，也可以打开“创造模式”，完整复制下面这一整段话发给 Agent：

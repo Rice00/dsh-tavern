@@ -14,8 +14,8 @@ const quote = value => "'" + value.replaceAll("'", "'\\''") + "'"
 
 test('实际 CLI 创建、复用、重启和停止自己的子进程，不修改其他服务', { skip: process.platform === 'win32', timeout: 30000 }, async t => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'tavern-lifecycle-'))
-  const bin = path.join(root, 'bin'), profile = path.join(root, 'profiles/tavern')
-  await mkdir(bin)
+  const bin = path.join(root, 'runtime/bin'), profile = path.join(root, 'profiles/tavern')
+  await mkdir(bin, { recursive: true })
   await mkdir(profile, { recursive: true })
   await writeFile(path.join(profile, 'package.json'), '{}')
   await writeFile(path.join(profile, 'cordis.patch.yml'), '[]')
@@ -37,7 +37,7 @@ server.listen(port,'127.0.0.1',()=>console.log('dsh web: http://127.0.0.1:'+port
 process.on('SIGTERM',()=>server.close(()=>process.exit(0)));
 `)
   await writeFile(path.join(bin, 'dsh'), '#!/bin/sh\nexec '+quote(process.execPath)+' '+quote(childScript)+' "$@"\n', { mode: 0o755 })
-  const env = { ...process.env, DSH_HOME: root, DSH_TAVERN_PORT: String(port), DSH_TAVERN_NO_OPEN: '1', PATH: bin + path.delimiter + process.env.PATH }
+  const env = { ...process.env, DSH_HOME: root, DSH_TAVERN_CLI_HOME: root, DSH_TAVERN_PORT: String(port), DSH_TAVERN_NO_OPEN: '1', PATH: bin + path.delimiter + process.env.PATH }
   const run = action => execute(process.execPath, [launcher, action], { env, timeout: 12000 })
   assert.match((await run('start')).stdout, /已启动/)
   ownedPid = JSON.parse(await readFile(pidFile, 'utf8')).pid

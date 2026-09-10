@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process'
 import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { INSTALL_HOSTS, SOURCE_ROOT, RELEASE_FILE, commandExists, sleep } from './launcher-environment.mjs'
+import { INSTALL_HOSTS, SOURCE_ROOT, RELEASE_FILE, RUNTIME_HOST, runtimeEnvironment, commandExists, sleep } from './launcher-environment.mjs'
 
 // Own update execution and durable terminal outcomes, including installed-but-needs-restart.
 export function encodeWindowsPowerShellScript(source) {
@@ -20,7 +20,7 @@ export function decodeUpdateOutput(value) {
 }
 
 export function parseUpdateOptions(args) {
-  let host = 'cli'
+  let host = RUNTIME_HOST
   let statusFile = ''
   let delay = 0
   let targetCommit = ''
@@ -52,7 +52,7 @@ function writeUpdateStatus(file, value) {
   recordUpdateDiagnostic(path.dirname(file), { event: 'installer.status', ...value })
 }
 
-export async function updateApplication(options = { host: 'cli', statusFile: '', delay: 0 }) {
+export async function updateApplication(options = { host: RUNTIME_HOST, statusFile: '', delay: 0 }) {
   const sourceRoot = path.resolve(options.sourceRoot || SOURCE_ROOT)
   const log = typeof options.log === 'function' ? options.log : console.log
   const startedAt = Date.now()
@@ -86,7 +86,7 @@ export async function updateApplication(options = { host: 'cli', statusFile: '',
       if (capture) outputDescriptor = openSync(outputFile, 'w')
       result = spawnSync(command, args, {
         env: {
-          ...process.env,
+          ...runtimeEnvironment(),
           DSH_TAVERN_HOST: options.host,
           DSH_TAVERN_SOURCE_ROOT: SOURCE_ROOT,
           ...(options.targetCommit ? { DSH_TAVERN_TARGET_COMMIT: options.targetCommit } : {}),

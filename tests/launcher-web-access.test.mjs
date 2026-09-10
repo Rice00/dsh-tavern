@@ -70,7 +70,7 @@ test('实际 CLI 的 status、重复 start、open 都使用当前链接；过期
   await writeFile(path.join(logs, 'tavern.log'), `dsh web: ${url}\n`)
   const opened = path.join(root, 'opened-url')
   await writeFile(path.join(mocks, process.platform === 'darwin' ? 'open' : 'xdg-open'), '#!/bin/sh\nprintf "%s" "$1" > "$TAVERN_TEST_OPENED"\n', { mode: 0o755 })
-  const env = { ...process.env, DSH_HOME: root, DSH_TAVERN_PORT: String(port), PATH: `${mocks}:${process.env.PATH}`, TAVERN_TEST_OPENED: opened }
+  const env = { ...process.env, DSH_HOME: root, DSH_TAVERN_CLI_HOME: root, DSH_TAVERN_PORT: String(port), PATH: `${mocks}:${process.env.PATH}`, TAVERN_TEST_OPENED: opened }
   const run = action => execute(process.execPath, [launcher, action], { env, timeout: 10000 })
   for (const action of ['status', 'start', 'open']) {
     const { stdout } = await run(action)

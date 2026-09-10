@@ -30,3 +30,6 @@ references/ST-Prompt-Template/
 
 # 私人请求快照，仅供本地诊断
 docs/research/sillytavern-successful-prompt-snapshot-*.json
+
+# Local installation context (host and isolated home)
+.dsh-tavern-local.json

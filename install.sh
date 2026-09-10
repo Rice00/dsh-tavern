@@ -19,9 +19,18 @@ ARCHIVE_URL=${DSH_TAVERN_ARCHIVE_URL:-https://codeload.github.com/${REPOSITORY}/
 COMMIT_URL=${DSH_TAVERN_COMMIT_URL:-https://api.github.com/repos/${REPOSITORY}/commits/main}
 CDN_METADATA_URL=${DSH_TAVERN_CDN_METADATA_URL:-https://cdn.jsdelivr.net/gh/${REPOSITORY}@main/dsh-tavern-runtime.json}
 CDN_ROOT_URL=${DSH_TAVERN_CDN_ROOT_URL:-https://cdn.jsdelivr.net/gh/${REPOSITORY}}
+LEGACY_DSH_ROOT=${DSH_TAVERN_LEGACY_DSH_HOME:-${DSH_HOME:-${HOME}/.dsh}}
 DSH_ROOT=${DSH_HOME:-${HOME}/.dsh}
+if [ "${INSTALL_HOST}" = "cli" ]; then
+  DSH_ROOT=${DSH_TAVERN_CLI_HOME:-${HOME}/.dsh-tavern}
+  DSH_TAVERN_CLI_HOME=${DSH_ROOT}
+  DSH_TAVERN_LEGACY_DSH_HOME=${LEGACY_DSH_ROOT}
+  export DSH_TAVERN_CLI_HOME DSH_TAVERN_LEGACY_DSH_HOME
+fi
+DSH_HOME=${DSH_ROOT}
+export DSH_HOME
 APP_DIR=${DSH_TAVERN_APP_DIR:-${DSH_ROOT}/apps/dsh-tavern}
-RUNTIME_ROOT=${DSH_ROOT}/runtime
+RUNTIME_ROOT=${DSH_ROOT}/tools
 RUNTIME_BIN=${RUNTIME_ROOT}/bin
 PNPM_VERSION=11.25.0
 COMMAND_BIN=${HOME}/.local/bin
@@ -59,9 +68,11 @@ if [ "${INSTALL_HOST}" = "cli" ] && ! command -v npm >/dev/null 2>&1; then
 fi
 
 # UI updates start in a fresh process that may not inherit the install-time PATH.
-# Reuse pnpm and DSH from Tavern's managed runtime before treating them as missing.
-PATH=${RUNTIME_BIN}:${PATH}
-export PATH
+# Only CLI may use Tavern-managed tools; Desktop must keep its host PATH.
+if [ "${INSTALL_HOST}" = "cli" ]; then
+  PATH=${RUNTIME_BIN}:${PATH}
+  export PATH
+fi
 
 if [ "${INSTALL_HOST}" = "cli" ]; then
   DSH_TAVERN_BIN_DIR=${COMMAND_BIN}
@@ -150,15 +161,12 @@ fi
 
 # Read the downloaded release's version, not the bootstrap script's or npm's latest.
 ADAPTED_DSH_VERSION=$(node "${SOURCE_DIR}/bin/dsh-compatibility.mjs" --version)
-node "${SOURCE_DIR}/bin/dsh-compatibility.mjs" --notice
+node "${SOURCE_DIR}/bin/dsh-compatibility.mjs" --notice "${INSTALL_HOST}"
 if [ "${INSTALL_HOST}" = "cli" ]; then
   set --
   INSTALLED_PNPM_VERSION=$(pnpm --version 2>/dev/null || true)
   if [ "${INSTALLED_PNPM_VERSION}" != "${PNPM_VERSION}" ]; then
     set -- "$@" "pnpm@${PNPM_VERSION}"
-  fi
-  if ! command -v dsh >/dev/null 2>&1; then
-    set -- "$@" "@deepseek-ai/dsh@${ADAPTED_DSH_VERSION}"
   fi
   if [ "$#" -gt 0 ]; then
     echo "正在安装缺失依赖：$*……"
@@ -167,7 +175,7 @@ if [ "${INSTALL_HOST}" = "cli" ]; then
   fi
 fi
 command -v pnpm >/dev/null 2>&1 || fail "未找到 pnpm。Desktop 版请从 DSH Desktop 托盘打开 DSH Terminal 后运行本命令。"
-command -v dsh >/dev/null 2>&1 || fail "未找到 DSH。Desktop 版请从 DSH Desktop 托盘打开 DSH Terminal 后运行本命令。"
+[ "${INSTALL_HOST}" = "cli" ] || command -v dsh >/dev/null 2>&1 || fail "未找到 DSH。Desktop 版请从 DSH Desktop 托盘打开 DSH Terminal 后运行本命令。"
 
 if [ "${INSTALL_HOST}" = "cli" ] && [ -f "${APP_DIR}/bin/dsh-tavern.mjs" ]; then
   DSH_HOME=${DSH_ROOT} node "${APP_DIR}/bin/dsh-tavern.mjs" stop >/dev/null 2>&1 || true

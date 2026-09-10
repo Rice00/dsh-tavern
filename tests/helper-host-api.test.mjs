@@ -229,3 +229,17 @@ test('旧聊天 MVU 清理提示静默拒绝，不弹窗、不修改或清理历
     assert.equal(JSON.stringify(run.window.getVariables({ type: 'message', message_id: 0 })), before)
   }
 })
+
+test('script context exposes the bound character avatar and follows chat changes', () => {
+  const run = helperHostHarness({ chatId: 'one', character: { name: 'A', path: 'cards/a.png' } })
+  const ctx = run.window.SillyTavern.getContext()
+  assert.equal(ctx.characters[ctx.characterId].avatar, 'cards/a.png')
+  run.receive({ type: 'dsh-tavern-helper-context', context: { chatId: 'two', character: { name: 'B', path: 'cards/b.json', avatar: 'b.png' } } })
+  assert.equal(ctx.characters[ctx.characterId].avatar, 'b.png')
+  assert.equal(ctx.characters[ctx.characterId].name, 'B')
+  ctx.characters[0].name = 'local mutation'
+  assert.equal(ctx.characters[0].name, 'B')
+  run.receive({ type: 'dsh-tavern-helper-context', context: { character: null } })
+  assert.equal(ctx.characters.length, 0)
+  assert.equal(ctx.characterId, undefined)
+})

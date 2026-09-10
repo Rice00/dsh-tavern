@@ -1697,8 +1697,14 @@ window.__ModuleLoader__.load({
 				POPUP_TYPE: Object.freeze({ DISPLAY: "display", TEXT: "text", CONFIRM: "confirm", INPUT: "input" }),
 				POPUP_RESULT: Object.freeze({ AFFIRMATIVE: 1, NEGATIVE: 0, CANCELLED: null, CUSTOM1: 2 }),
 				extensionSettings: extensionSettings,
-				characters: [],
-				characterId: 0,
+				get characters() {
+					const character = context().character;
+					if (!character || typeof character !== "object") return [];
+					const current = copy(character);
+					if (!current.avatar) current.avatar = String(current.path || "");
+					return [current];
+				},
+				get characterId() { return context().character && typeof context().character === "object" ? 0 : undefined; },
 				chatCompletionSettings: {},
 				ToolManager: Object.freeze({ isToolCallingSupported: function () { return false; } }),
 				isToolCallingSupported: function () { return false; },

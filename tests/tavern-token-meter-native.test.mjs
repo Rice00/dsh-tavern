@@ -1,3 +1,4 @@
+import { appendSessionEvent } from '../tavern-plugin/lib/domain/session-events.js'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
@@ -23,7 +24,7 @@ const source = { kind: 'model', provider: 'fixture', model: 'text' }
 function completed(session) {
   session.append('turn/start', { turn: 1 })
   session.append('step/start', { turn: 1, step: 1 })
-  const e = session.append('assistant/message', { turn: 1, step: 1, message: { id: 'body', role: 'assistant', content: [{ type: 'text', text: 'Story '.repeat(1000) }], source } }, { surfaceOp: 'append' })
+  const e = appendSessionEvent(session, 'assistant/message', { turn: 1, step: 1, message: { id: 'body', role: 'assistant', content: [{ type: 'text', text: 'Story '.repeat(1000) }], source } }, { surfaceOp: 'append' })
   session.append('step/end', { turn: 1, step: 1 })
   session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
   return e
@@ -49,7 +50,7 @@ test('原生 Token Meter 在闭合回合后统计后台回退和正文替换', n
   completed(session)
   const before = ctx.tokenMeter.measure(session).totalTokens
   const seq = session.surface.nodes[0]
-  session.append('assistant/message', { turn: 1, step: 1, message: { id: 'replacement', role: 'assistant', content: [], source } }, { surfaceOp: { op: 'replace', start: seq, end: seq }, sourceEventSeqs: [seq] })
+  appendSessionEvent(session, 'assistant/message', { turn: 1, step: 1, message: { id: 'replacement', role: 'assistant', content: [], source } }, { surfaceOp: { op: 'replace', start: seq, end: seq }, sourceEventSeqs: [seq] })
   assert.throws(() => ctx.tokenMeter.measure(session), /assistant\/message.*no matching step\/start/)
   t.after(installTavernTokenMeter(ctx.tokenMeter))
   assert.ok(ctx.tokenMeter.measure(session).totalTokens < before)
@@ -59,12 +60,12 @@ test('适配不放过真实模型回复缺步骤或其他预设历史', native, 
   const { ctx, Session } = await harness(t)
   t.after(installTavernTokenMeter(ctx.tokenMeter))
   const session = Session.create('bad-model')
-  session.append('assistant/message', { turn: 1, step: 1, message: { id: 'real', role: 'assistant', content: [], source } }, { surfaceOp: 'append' })
+  appendSessionEvent(session, 'assistant/message', { turn: 1, step: 1, message: { id: 'real', role: 'assistant', content: [], source } }, { surfaceOp: 'append' })
   assert.throws(() => ctx.tokenMeter.measure(session), /no matching step\/start/)
   const other = Session.create('other')
   completed(other)
   const seq = other.surface.nodes[0]
-  other.append('assistant/message', { turn: 1, step: 1, message: { id: 'unknown-replace', role: 'assistant', content: [], source } }, { surfaceOp: { op: 'replace', start: seq, end: seq }, sourceEventSeqs: [seq] })
+  appendSessionEvent(other, 'assistant/message', { turn: 1, step: 1, message: { id: 'unknown-replace', role: 'assistant', content: [], source } }, { surfaceOp: { op: 'replace', start: seq, end: seq }, sourceEventSeqs: [seq] })
   assert.throws(() => ctx.tokenMeter.measure(other), /no matching step\/start/)
 })
 
@@ -84,7 +85,7 @@ test('原生手动压缩可处理种子和后台替换，压缩后仍能计量�
     completed(session)
     if (preset === 'tavern-background') {
       const seq = session.surface.nodes[0]
-      session.append('assistant/message', { turn: 1, step: 1, message: { id: 'edited-body', role: 'assistant', content: [{ type: 'text', text: 'Updated story '.repeat(1000) }], source } }, { surfaceOp: { op: 'replace', start: seq, end: seq }, sourceEventSeqs: [seq] })
+      appendSessionEvent(session, 'assistant/message', { turn: 1, step: 1, message: { id: 'edited-body', role: 'assistant', content: [{ type: 'text', text: 'Updated story '.repeat(1000) }], source } }, { surfaceOp: { op: 'replace', start: seq, end: seq }, sourceEventSeqs: [seq] })
     }
     session.append('user/message', { id: 'latest', role: 'user', content: [{ type: 'text', text: '继续' }], source: { kind: 'human' } }, { surfaceOp: 'append' })
     const before = ctx.tokenMeter.measure(session).totalTokens

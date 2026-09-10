@@ -6,6 +6,17 @@ export function sessionEvents(session) {
   return Array.isArray(session.events) ? session.events : []
 }
 
+// V3 compaction pins only surface node zero. Reserve the host's empty system
+// slot before Tavern seeds, so the first real Agent step fills that same slot.
+// Existing surfaces are never reordered or rewritten.
+export function ensureSessionSystemHead(session) {
+  if (!(session?.header?.version >= 3) || session.surface.nodes.length > 0) return
+  appendSessionEvent(session, 'system/message', { turn: 1, step: 1, message: {
+    id: 'tavern-system-head:' + session.id, role: 'system', content: [],
+    source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt' }
+  } }, { surfaceOp: 'append' })
+}
+
 // Normalize only new writes at the host boundary. Existing events, seqs and
 // provenance stay untouched; V3 migrations remain owned by DSH.
 export function sessionEventData(session, type, data) {

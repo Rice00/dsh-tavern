@@ -1,4 +1,4 @@
-import { sessionEvents, appendSessionEvent } from './session-events.js'
+import { ensureSessionSystemHead, sessionEvents, appendSessionEvent } from './session-events.js'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { createDurableFilePromotion } from '../durable-file-promotion.js'
@@ -98,6 +98,7 @@ function fixedContextMessage(session, text) {
 
 /** Persist fixed system text in native snapshot metadata; empty content cannot become summary material. */
 export async function ensureSessionStablePrefix(session, text, storage) {
+  ensureSessionSystemHead(session)
   const existing = readSessionStablePrefix(session)
   if (existing) {
     const activeLegacy = sessionEvents(session).find(event => messageRecord(event)?.message.content.length && session.surface?.nodes.includes(event.seq))

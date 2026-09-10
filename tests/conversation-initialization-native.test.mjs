@@ -4,6 +4,20 @@ import test from 'node:test'
 import { createInitializationNative } from './fixtures/conversation-initialization-native.mjs'
 
 const native = { skip: !process.env.DSH_BOOT_MODULE, timeout: 30000 }
+test('V3 opening reserves the native system head before story seeds', native, async t => {
+  const h = await createInitializationNative(process.env.DSH_BOOT_MODULE)
+  t.after(() => h.dispose())
+  await h.open().start(h.input)
+  if (h.target.session.header.version < 3) return
+  const opening = structuredClone(sessionEvents(h.target.session))
+  assert.equal(opening[0].type, 'system/message')
+  await h.continueWithAgent()
+  const session = h.target.session
+  assert.equal(session.eventAt(session.surface.nodes[0]).type, 'system/message')
+  assert.equal(h.requests[0].messages[0].role, 'system')
+  assert.match(JSON.stringify(h.requests[0].messages[0].content), /不可丢失的固定背景/)
+  assert.deepEqual(sessionEvents(session).slice(0, opening.length), opening)
+})
 for (const phase of ['front', 'back']) test(`native Agent preserves fixed system background with ${phase} preset`, native, async t => {
   const h = await createInitializationNative(process.env.DSH_BOOT_MODULE, { preset: { [phase]: { entries: [{ role: 'system', content: '预设验证要求' }] } } })
   t.after(() => h.dispose())

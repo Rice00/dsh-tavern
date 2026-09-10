@@ -1,4 +1,4 @@
-import { sessionEvents, appendSessionEvent, sessionEventData } from './session-events.js'
+import { ensureSessionSystemHead, sessionEvents, appendSessionEvent, sessionEventData } from './session-events.js'
 import { createForegroundFrameBuilder } from './agent-input-frame.js'
 import { createForegroundFrameSessionAdapter } from './foreground-frame-session-adapter.js'
 import { foregroundFrameInputs } from './turn-orchestration.js'
@@ -86,6 +86,7 @@ export async function buildImportedConversation(chat, parsed, { operationId, fil
 
 /** Resume only our exact contiguous event prefix; never rewrite append-only history. */
 export async function appendImportedEvents(session, plan, flush) {
+  ensureSessionSystemHead(session)
   const events = sessionEvents(session).filter(event => event.type !== 'session/end-seed')
   let start = events.findIndex(event => event.type === 'turn/start' || event.type === 'assistant/message' ||
     (event.type === 'user/message' && event.data?.id !== 'tavern-session-prefix:' + session.id))

@@ -39,7 +39,7 @@ test('原生 Token Meter 可统计既有无 step 的 Tavern 种子消息，且�
   t.after(dispose)
   const measured = ctx.tokenMeter.measure(session)
   assert.ok(measured.totalTokens > 0)
-  assert.equal(measured.nodes.length, 3)
+  assert.equal(measured.nodes.length, session.header.version >= 3 ? 4 : 3)
   assert.equal(JSON.stringify(session.snapshotEvents()), before)
 })
 
@@ -108,8 +108,9 @@ test('前后台固定系统背景连续压缩三次仍不变，原事件和恢�
   class FixtureCompaction extends BasicCompactionEngine {
     async summarize(input) {
       calls++
-      assert.equal(input.system, fixed)
-      assert.ok(input.messages.every(message => !JSON.stringify(message.content).includes('固定人物形象')))
+      const systemText = input.system ?? input.messages.filter(m => m.role === 'system').map(m => m.content.map(b => b.text || '').join('')).join('\n')
+      assert.equal(systemText, fixed)
+      assert.ok(input.messages.filter(m => m.role !== 'system').every(message => !JSON.stringify(message.content).includes('固定人物形象')))
       return { summary: [{ type: 'text', text: '剧情摘要。' }], provider: 'fixture', model: 'summary', maxTokens: 128 }
     }
   }
@@ -118,14 +119,19 @@ test('前后台固定系统背景连续压缩三次仍不变，原事件和恢�
     const session = ctx.sessions.create('fixed-' + preset, { meta: { agentPreset: preset } })
     await ensureSessionStablePrefix(session, fixed)
     const system = sessionStablePrefixSections(session).map(s => s.text).join('\n')
-    session.append('request/header', { header: { config: { provider: 'fixture', model: 'summary' }, system }, reason: 'initial' })
+    session.append('request/header', { header: { config: { provider: 'fixture', model: 'summary' }, ...(session.header.version < 3 ? { system } : {}) }, reason: 'initial' })
+    if (session.header.version >= 3) {
+      const head = session.surface.nodes[0]
+      session.append('system/message', { message: { id: 'assembled', role: 'system', content: [{ type: 'text', text: system }], source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt' } } }, { surfaceOp: { op: 'replace', startSeq: head, endSeq: head }, sourceEventSeqs: [head] })
+    }
     for (let n = 0; n < 3; n++) {
       session.append('user/message', { id: 'history-' + n, role: 'user', content: [{ type: 'text', text: '剧情进展。'.repeat(500) }], source: { kind: 'user' } }, { surfaceOp: 'append' })
       session.append('user/message', { id: 'tail-' + n, role: 'user', content: [{ type: 'text', text: '最新剧情' }], source: { kind: 'user' } }, { surfaceOp: 'append' })
       const original = session.snapshotEvents()
       const signal = new AbortController().signal
       assert.ok(await engine.compactNow({ session, options: {}, runMaintenance: fn => fn(signal) }, signal))
-      assert.equal(session.requestHeader().system, fixed)
+      if (session.header.version < 3) assert.equal(session.requestHeader().system, fixed)
+      else assert.equal(session.deriveEventMessage(session.eventAt(session.surface.nodes[0])).content[0].text, fixed)
       assert.deepEqual(session.snapshotEvents().slice(0, original.length), original)
       const restored = Session.create(session.id, session.snapshotEvents(), session.header)
       assert.equal(sessionStablePrefixSections(restored).map(s => s.text).join('\n'), fixed)

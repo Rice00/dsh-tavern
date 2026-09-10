@@ -1,3 +1,4 @@
+import { surfaceReplacementRange } from './session-events.js'
 const installations = new WeakMap()
 
 function isTavernSurfaceEdit(session, event) {
@@ -13,7 +14,8 @@ function isTavernSurfaceEdit(session, event) {
   if (replacement?.op !== 'replace' || !Array.isArray(refs) || refs.length === 0) return false
   // Tavern cites replaced surface messages, not provider streaming chunks.
   // Keep genuine malformed provider replies subject to the native validation.
-  return refs.every(seq => Number.isSafeInteger(seq) && seq >= replacement.start && seq <= replacement.end && seq < event.seq &&
+  const range = surfaceReplacementRange(replacement)
+  return refs.every(seq => Number.isSafeInteger(seq) && seq >= range.start && seq <= range.end && seq < event.seq &&
     ['user/message', 'assistant/message', 'tool/result'].includes(session.eventAt(seq).type))
 }
 
@@ -31,14 +33,27 @@ export function installTavernTokenMeter(meter) {
   if (!entry) {
     const original = meter._foldEvent
     const hadOwn = Object.hasOwn(meter, '_foldEvent')
-    function fold(session, state, event) {
-      const accountingEvent = isTavernSurfaceEdit(session, event)
+    const compactSignature = original.length === 2
+    const originalSync = meter._sync
+    const hadOwnSync = Object.hasOwn(meter, '_sync')
+    if (compactSignature && typeof originalSync !== 'function') throw new Error('当前 DSH Token Meter 缺少同步入口')
+    let activeSession
+    function sync(session, ...args) {
+      const previous = activeSession
+      activeSession = session
+      try { return originalSync.call(this, session, ...args) }
+      finally { activeSession = previous }
+    }
+    function fold(...args) {
+      const [session, state, event] = compactSignature ? [activeSession, ...args] : args
+      const accountingEvent = session && isTavernSurfaceEdit(session, event)
         ? { ...event, type: 'user/message', data: event.data.message }
         : event
-      return original.call(this, session, state, accountingEvent)
+      return compactSignature ? original.call(this, state, accountingEvent) : original.call(this, session, state, accountingEvent)
     }
     meter._foldEvent = fold
-    entry = { original, fold, hadOwn, users: 0 }
+    if (compactSignature) meter._sync = sync
+    entry = { original, fold, hadOwn, originalSync, hadOwnSync, compactSignature, users: 0 }
     installations.set(meter, entry)
   }
   entry.users++
@@ -49,6 +64,10 @@ export function installTavernTokenMeter(meter) {
     if (--entry.users !== 0) return
     if (entry.hadOwn) meter._foldEvent = entry.original
     else delete meter._foldEvent
+    if (entry.compactSignature) {
+      if (entry.hadOwnSync) meter._sync = entry.originalSync
+      else delete meter._sync
+    }
     installations.delete(meter)
   }
 }

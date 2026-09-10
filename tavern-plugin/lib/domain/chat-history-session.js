@@ -1,4 +1,4 @@
-import { sessionEvents } from './session-events.js'
+import { sessionEvents, appendSessionEvent, sessionEventData } from './session-events.js'
 import { createForegroundFrameBuilder } from './agent-input-frame.js'
 import { createForegroundFrameSessionAdapter } from './foreground-frame-session-adapter.js'
 import { foregroundFrameInputs } from './turn-orchestration.js'
@@ -94,8 +94,8 @@ export async function appendImportedEvents(session, plan, flush) {
   for (let index = 0; index < plan.events.length; index++) {
     const expected = plan.events[index], existing = events[start + index]
     if (existing) {
-      if (existing.type !== expected.type || JSON.stringify(existing.data) !== JSON.stringify(expected.data)) throw new Error('导入事件与当前 Session 不一致，拒绝重复追加')
-    } else session.append(expected.type, expected.data, expected.intent)
+      if (existing.type !== expected.type || JSON.stringify(existing.data) !== JSON.stringify(sessionEventData(session, expected.type, expected.data))) throw new Error('导入事件与当前 Session 不一致，拒绝重复追加')
+    } else appendSessionEvent(session, expected.type, expected.data, expected.intent)
   }
   await flush(session)
 }

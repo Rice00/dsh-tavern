@@ -11,7 +11,7 @@ import { scriptPromptScanText } from './domain/tavern-script-prompts.js'
 import { createOpeningPreparation } from './domain/opening-preparation.js'
 import { createChatHistoryImportService } from './domain/chat-history-import-service.js'
 import { createImportContextPreparation, needsImportContextPreparation } from './domain/import-context-preparation.js'
-import { sessionEvents } from './domain/session-events.js'
+import { sessionEvents, appendSessionEvent } from './domain/session-events.js'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
@@ -2872,7 +2872,7 @@ export async function apply(ctx) {
     if (result === null || result.text === bodyText) return
     const previous = result.event && result.event.data && result.event.data.message
     if (previous === null || typeof previous !== 'object') return
-    session.append('assistant/message', {
+    appendSessionEvent(session, 'assistant/message', {
       turn: Number(result.event.data && result.event.data.turn) || 0,
       step: Number(result.event.data && result.event.data.step) || 1,
       message: Object.assign({}, previous, {

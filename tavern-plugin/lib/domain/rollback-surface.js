@@ -1,4 +1,4 @@
-import { sessionEvents } from './session-events.js'
+import { sessionEvents, appendSessionEvent, surfaceReplacementRange } from './session-events.js'
 import { randomUUID } from 'node:crypto'
 
 function object(value) {
@@ -90,14 +90,14 @@ export function supersededRegenerationErrorTurns(input) {
     if (event.type !== 'assistant/message' || modelSourceOf(event) === null || !op || op.op !== 'replace') continue
     const content = event.data.message.content
     if (!Array.isArray(content) || content.length !== 0) continue
-    const body = bySeq.get(op.end)
+    const body = bySeq.get(surfaceReplacementRange(op).end)
     const turn = Number(body && body.data && body.data.turn)
     const end = endings.get(turn)
     if (!body || body.type !== 'assistant/message' || modelSourceOf(body) === null || !syntheticTurns.has(turn) || turn === Number(event.data.turn)) continue
     if (!end || end.seq <= body.seq || end.seq >= event.seq || end.data.reason.kind !== 'completed') continue
     if (!Array.isArray(body.data.message.content) || !body.data.message.content.some(block => block.type === 'text' && typeof block.text === 'string' && block.text.trim() !== '')) continue
     for (const failure of failures) {
-      if (failure.seq >= op.start && failure.seq <= op.end) hidden.add(Number(failure.data.turn))
+      if (failure.seq >= surfaceReplacementRange(op).start && failure.seq <= surfaceReplacementRange(op).end) hidden.add(Number(failure.data.turn))
     }
   }
   return [...hidden].sort((a, b) => a - b)
@@ -240,7 +240,7 @@ export function clearFailedTurnSurface(input) {
   const makeId = typeof input.id === 'function' ? input.id : function () { return randomUUID() }
   // DSH permits plugin-injected user messages, but assistant messages must be
   // model-sourced on restore. Keep this empty tombstone explicitly plugin-owned.
-  session.append('user/message', {
+  appendSessionEvent(session, 'user/message', {
     id: makeId(),
     role: 'user',
     content: [],
@@ -266,7 +266,7 @@ export function clearRegenerationAttemptSurface(input) {
     throw new Error('重新生成临时消息不是连续区间，无法安全清理')
   }
   const makeId = typeof input.id === 'function' ? input.id : function () { return randomUUID() }
-  session.append('user/message', {
+  appendSessionEvent(session, 'user/message', {
     id: makeId(),
     role: 'user',
     content: [],

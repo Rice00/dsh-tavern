@@ -1,4 +1,4 @@
-import { sessionEvents } from './session-events.js'
+import { sessionEvents, appendSessionEvent } from './session-events.js'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { createDurableFilePromotion } from '../durable-file-promotion.js'
@@ -107,7 +107,7 @@ export async function ensureSessionStablePrefix(session, text, storage) {
       // Freeze that same evaluated snapshot once when migrating, never reevaluate per turn.
       const context = needsSnapshot && /<%[\s\S]*?%>/.test(existing.text) && str(text).trim() ? str(text).trim() : existing.text
       const message = { ...fixedContextMessage(session, context), id: 'tavern-session-prefix:' + session.id + ':system-migration' }
-      const event = session.append('user/message', message, activeLegacy ? {
+      const event = appendSessionEvent(session, 'user/message', message, activeLegacy ? {
         surfaceOp: { op: 'replace', start: activeLegacy.seq, end: activeLegacy.seq }, sourceEventSeqs: [activeLegacy.seq]
       } : { surfaceOp: 'append' })
       return messageRecord(event)
@@ -121,7 +121,7 @@ export async function ensureSessionStablePrefix(session, text, storage) {
     const context = legacyEventText(session) || str(saved && saved.text).trim() || str(text).trim()
     if (context === '') return null
     const message = fixedContextMessage(session, context)
-    const event = session.append('user/message', message, { surfaceOp: 'append' })
+    const event = appendSessionEvent(session, 'user/message', message, { surfaceOp: 'append' })
     return messageRecord(event)
   })()
   pending.set(session, operation)

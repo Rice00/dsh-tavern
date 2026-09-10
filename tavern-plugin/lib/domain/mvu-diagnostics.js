@@ -160,7 +160,16 @@ export async function createMvuDiagnosticExport({ updateDiagnostics, sessionId, 
     try {
       const live = sessions?.get(id)
       if (live) await sessions.flush(live)
-      const raw = await persistence?.readRaw(id)
+      let raw
+      if (typeof persistence?.readRaw === 'function') raw = await persistence.readRaw(id)
+      else if (typeof persistence?.open === 'function') {
+        const handle = await persistence.open(id, 'read')
+        try {
+          const { events } = await handle.read(0)
+          raw = { content: [handle.header, ...events].map(value => JSON.stringify(value)).join('\n') + '\n' }
+          notes.push('Session ' + id + ' 由宿主只读接口导出逻辑日志，非原始文件字节；继承事件数：' + handle.inheritedEventCount)
+        } finally { await handle.close() }
+      }
       if (!raw) { notes.push('缺失 Session 日志：' + id); continue }
       if (bytes + Buffer.byteLength(raw.content) > logLimit) { notes.push('容量限制，跳过 Session 日志：' + id); continue }
       const content = raw.content.split('\n').map(line => {

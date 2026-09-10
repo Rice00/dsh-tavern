@@ -11,6 +11,7 @@ test('one repaint entry opens optional feedback; blank repaints and feedback adj
   let cursor = 0, failure = false, requestId = 0
   const record = { key: 'turn-key', status: 'succeeded', enabled: true, versions: [{ id: 'old-picture' }] }
   const context = vm.createContext({
+    recordImageInteraction() {},
     React: {
       Fragment: 'fragment', createElement: (type, props, ...children) => ({ type, props, children }), useEffect() {},
       useState(initial) { const i = cursor++; if (!(i in slots)) slots[i] = initial; return [slots[i], v => { slots[i] = v }] },
@@ -56,11 +57,13 @@ test('image action is hidden until explicitly enabled, including loading and leg
   const slots = [], calls = []
   let cursor = 0
   const context = vm.createContext({
+    recordImageInteraction() {},
     React: {
       Fragment: 'fragment', createElement: (type, props, ...children) => ({ type, props, children }),
       useState(initial) { const i = cursor++; if (!(i in slots)) slots[i] = initial; return [slots[i], value => { slots[i] = value }] },
       useRef(initial) { const i = cursor++; return slots[i] ||= { current: initial } }, useEffect() {}
     },
+    sceneImageRequestId: () => "blocked-click",
     useSceneImageRecord: () => ({ key: 'turn', status: 'idle', versions: [] }),
     rpc: async (...args) => calls.push(args)
   })
@@ -90,7 +93,8 @@ test('image action is hidden until explicitly enabled, including loading and leg
 })
 
 test('scene request identifiers also work on LAN HTTP without crypto.randomUUID', () => {
-  const context = vm.createContext({ window: {} })
+  const context = vm.createContext({
+    recordImageInteraction() {}, window: {} })
   const make = vm.runInContext(extract('sceneImageRequestId', 'sceneImageStageLabel') + ';sceneImageRequestId', context)
   const ids = Array.from({ length: 1000 }, make)
   assert.equal(new Set(ids).size, ids.length)
@@ -102,6 +106,7 @@ test('main image action preserves request ID on ambiguous transport errors and c
   let cursor = 0, fail = true
   const record = { key: 'target-key', status: 'idle', versions: [] }
   const context = vm.createContext({
+    recordImageInteraction() {},
     React: {
       Fragment: 'fragment', createElement: (type, props, ...children) => ({ type, props, children }),
       useState: initial => { const n = cursor++; if (!(n in slots)) slots[n] = initial; return [slots[n], value => { slots[n] = value }] },
@@ -138,6 +143,7 @@ test('received image can be saved from the renderer while generation is disabled
   let cursor = 0
   const record = { key: 'frozen-key', requestId: 'original-image', status: 'failed', recovery: 'save', versions: [], enabled: false }
   const context = vm.createContext({
+    recordImageInteraction() {},
     React: { Fragment: 'fragment', createElement: (type, props, ...children) => ({ type, props, children }), useEffect() {},
       useState(initial) { const n = cursor++; if (!(n in slots)) slots[n] = initial; return [slots[n], value => { slots[n] = value }] },
       useRef(initial) { const n = cursor++; return slots[n] ||= { current: initial } }
@@ -180,6 +186,7 @@ test('ComfyUI file chooser stores the parsed graph only on explicit save and has
   const slots = [], calls = []
   let cursor = 0
   const context = vm.createContext({
+    recordImageInteraction() {},
     React: { createElement: (type, props, ...children) => ({ type, props, children }), useEffect() {}, useState(initial) { const n = cursor++; if (!(n in slots)) slots[n] = initial; return [slots[n], value => { slots[n] = typeof value === 'function' ? value(slots[n]) : value }] } },
     window: { dispatchEvent() {} }, CustomEvent: class {},
     rpc: async (method, args) => { calls.push({ method, args }); return { settings: slots[0] } }
@@ -208,6 +215,7 @@ test('setup order, read-only draft checks, model selection and stale status clea
   const slots = [], calls = []
   let cursor = 0
   const context = vm.createContext({
+    recordImageInteraction() {},
     React: { createElement: (type, props, ...children) => ({ type, props, children }), useEffect() {}, useState(initial) { const n = cursor++; if (!(n in slots)) slots[n] = initial; return [slots[n], value => { slots[n] = typeof value === 'function' ? value(slots[n]) : value }] } },
     window: { dispatchEvent() {} }, CustomEvent: class {},
     rpc: async (method, args) => { calls.push({ method, args }); return method === 'testSceneImageConnection' ? { status: 'reachable', apiKeyStatus: 'unverified', httpStatus: 404, probePath: '/models', message: '连接成功，但服务暂时无法完成 Key 验证。可展开连接诊断查看状态。' } : { models: ['new-image'], message: '已获取' } }
@@ -262,6 +270,7 @@ test('reference chooser never preselects a group member, freezes consent and per
     reference: { supported: true, service: 'Gemini local test', gateway: 'gateway-a', bindings: [] },
     versions: [{ id: 'picture', referencePeople: [{ id: 'left-id', name: '同名', description: '左侧黑发' }, { id: 'right-id', name: '同名', description: '右侧红发' }] }] }
   const context = vm.createContext({
+    recordImageInteraction() {},
     React: { Fragment: 'fragment', createElement: (type, props, ...children) => ({ type, props, children }), useEffect() {},
       useState(initial) { const n = cursor++; if (!(n in slots)) slots[n] = initial; return [slots[n], value => { slots[n] = value }] },
       useRef(initial) { const n = cursor++; return slots[n] ||= { current: initial } }

@@ -104,3 +104,15 @@ export function sceneAttemptDiagnostic(sessionId, record, event) {
       plan: record.plan, prompt: record.prompt, generation: version?.generation, attachment: version?.attachment,
       versionId: version?.id } }
 }
+
+// Small allowlisted UI/transport trail. Never accept arbitrary prompt/config fields.
+export async function recordSceneImageInteraction(diagnostics, chatId, value = {}) {
+  const stages = ['click', 'blocked', 'cancelled', 'sent', 'received', 'returned', 'failed'];
+  if (!diagnostics || !stages.includes(value.stage) || typeof value.requestId !== 'string' || !value.requestId) return;
+  await diagnostics.record(chatId, {
+    requestId: value.requestId.slice(0, 120), targetKey: 'interaction',
+    stage: value.stage, status: 'interaction',
+    turn: Number.isSafeInteger(value.turn) ? value.turn : undefined,
+    event: { reason: ['not-ready', 'busy-or-existing', 'confirmation', 'rpc-error', 'start-error'].includes(value.reason) ? value.reason : undefined }
+  });
+}

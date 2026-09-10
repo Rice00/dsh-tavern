@@ -21,7 +21,7 @@ import { CANDIDATE_SUBMIT_TOOL, SCRIPT_POINT_TOOL, SCRIPT_READ_TOOL, createCandi
 import { createSceneIllustrations, sceneTarget } from './domain/scene-illustration.js'
 import { legacyImageConfigurationReader } from './domain/image-generation-host.js'
 import { createSceneWorldbooks, sceneWorldbookBinding } from './domain/scene-worldbook.js'
-import { createSceneImageDiagnostics, createSceneImageHostLogger } from './domain/scene-image-diagnostics.js'
+import { createSceneImageDiagnostics, createSceneImageHostLogger, recordSceneImageInteraction } from './domain/scene-image-diagnostics.js'
 import { TAVERN_RELEASE_CAPABILITIES } from './domain/release-capabilities.js'
 import { createSessionStablePrefixStorage, ensureSessionStablePrefix, readSessionStablePrefix, sessionStablePrefixSections, withCurrentWorldbook } from './domain/session-stable-prefix.js'
 import { waitForWritableSession } from './domain/agent-readiness.js'
@@ -2419,7 +2419,21 @@ export async function apply(ctx) {
       case 'testSceneImageConnection': return await enabledSceneIllustrations().testConnection(args)
       case 'listSceneImageModels': return await enabledSceneIllustrations().listModels(args)
       case 'sceneImageStatus': return { illustration: await enabledSceneIllustrations().status(args.sessionId, args.turn) }
-      case 'generateSceneImage': return { illustration: await enabledSceneIllustrations().start(args.sessionId, args.turn, args.key, args) }
+      case 'recordSceneImageInteraction': {
+        const chat = await chatForSession(str(args.sessionId))
+        if (chat) await recordSceneImageInteraction(sceneDiagnostics, chat.id, args).catch(() => {})
+        return { recorded: Boolean(chat) }
+      }
+      case 'generateSceneImage': {
+        const chat = await chatForSession(str(args.sessionId))
+        const record = (stage, reason) => recordSceneImageInteraction(sceneDiagnostics, chat?.id, { requestId: args.requestId, turn: args.turn, stage, reason }).catch(() => {})
+        await record('received')
+        try {
+          const illustration = await enabledSceneIllustrations().start(args.sessionId, args.turn, args.key, args)
+          await record('returned')
+          return { illustration }
+        } catch (error) { await record('failed', 'start-error'); throw error }
+      }
       case 'retrySceneImageSave': return { illustration: await enabledSceneIllustrations().retrySave(args.sessionId, args.turn, args.key, args.requestId) }
       case 'cancelSceneImage': return { illustration: await enabledSceneIllustrations().cancel(args.sessionId, args.turn, args.key, args.requestId) }
       case 'removeSceneImage': return { illustration: await enabledSceneIllustrations().removeImage(args.sessionId, args.turn, args.key, args.versionId) }
@@ -2623,7 +2637,7 @@ export async function apply(ctx) {
         const readsRuntimeAsset = req.method === 'GET' && pathname.startsWith(TAVERN_RUNTIME_ASSET_PREFIX)
         const readsClientAsset = req.method === 'GET' && pathname.startsWith(TAVERN_CLIENT_ASSET_PREFIX)
         const origin = req.headers.origin
-        const sceneImageRoute = TAVERN_RELEASE_CAPABILITIES.sceneImages && /^\/api\/dsh-tavern\/(?:scene-image|getSceneImageSettings|saveSceneImageSettings|testSceneImageConnection|listSceneImageModels|sceneImageStatus|generateSceneImage|retrySceneImageSave|cancelSceneImage|removeSceneImage|setSceneImageReference)$/.test(pathname)
+        const sceneImageRoute = TAVERN_RELEASE_CAPABILITIES.sceneImages && /^\/api\/dsh-tavern\/(?:scene-image|getSceneImageSettings|saveSceneImageSettings|testSceneImageConnection|listSceneImageModels|sceneImageStatus|recordSceneImageInteraction|generateSceneImage|retrySceneImageSave|cancelSceneImage|removeSceneImage|setSceneImageReference)$/.test(pathname)
         const sceneSameOrigin = sceneImageRoute && (origin === 'http://' + req.headers.host || origin === 'https://' + req.headers.host)
         if (sceneImageRoute && origin && !sceneSameOrigin) {
           res.writeHead(403)

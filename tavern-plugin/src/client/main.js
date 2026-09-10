@@ -167,11 +167,19 @@ window.__ModuleLoader__.load({
 			};
 			if (requestOptions && requestOptions.signal) request.signal = requestOptions.signal;
 			if (requestOptions && requestOptions.keepalive === true) request.keepalive = true;
+			if (method === "generateSceneImage") recordImageInteraction(payload.sessionId, payload.turn, payload.requestId, "sent");
 			return fetch("/api/dsh-tavern/" + method, request).then(readTavernJsonResponse).then(function (result) {
 				tavernRuntimeGenerationMonitor.observe(result && result.runtimeGeneration);
 				if (!result || !result.ok) throw new Error(result && result.error ? result.error : "操作失败");
 				return result;
+			}).catch(function (error) {
+				if (method === "generateSceneImage") recordImageInteraction(payload.sessionId, payload.turn, payload.requestId, "failed", "rpc-error");
+				throw error;
 			});
+		}
+
+		function recordImageInteraction(sessionId, turn, requestId, stage, reason) {
+			void rpc("recordSceneImageInteraction", { turn: turn, requestId: requestId, stage: stage, reason: reason }, sessionId).catch(function () {});
 		}
 
 		function rpcWithTimeout(method, args, sessionId) {
@@ -4460,13 +4468,16 @@ window.__ModuleLoader__.load({
 					finally { setBusy(false); notify(); }
 				}
 				async function generate(kind) {
-					if (!version || busy || state.status === "running") return;
+				const reusable = requestRef.current && !(state && requestRef.current.id === state.requestId && ["failed", "cancelled"].includes(state.status));
+				const clickId = reusable && requestRef.current.signature === kind + ":" + (version && version.id) + ":" + instruction ? requestRef.current.id : sceneImageRequestId();
+				recordImageInteraction(props.sessionId, props.turn, clickId, "click");
+					if (!version || busy || state.status === "running") { recordImageInteraction(props.sessionId, props.turn, clickId, "blocked", "busy-or-existing"); return; }
 					const confirmNewRequestId = sceneImagePurchaseConfirmation(state);
-					if (confirmNewRequestId === false) return;
+					if (confirmNewRequestId === false) { recordImageInteraction(props.sessionId, props.turn, clickId, "cancelled", "confirmation"); return; }
 					if (requestRef.current && requestRef.current.id === state.requestId && ["failed", "cancelled"].includes(state.status)) requestRef.current = null;
 					setBusy(true); setError("");
 					const signature = kind + ":" + version.id + ":" + instruction;
-					if (!requestRef.current || requestRef.current.signature !== signature) requestRef.current = { signature: signature, id: sceneImageRequestId() };
+					if (!requestRef.current || requestRef.current.signature !== signature) requestRef.current = { signature: signature, id: clickId };
 					try {
 						await rpc("generateSceneImage", { turn: props.turn, key: state.key, kind: kind, versionId: version.id, instruction: kind === "adjust" ? instruction : "", requestId: requestRef.current.id, confirmNewRequestId: confirmNewRequestId }, props.sessionId);
 						requestRef.current = null; setAdjusting(false); setInstruction("");
@@ -5625,12 +5636,15 @@ window.__ModuleLoader__.load({
 				return function () { active = false; window.clearInterval(timer); window.removeEventListener("dsh-tavern-image-settings-changed", refresh); window.removeEventListener("focus", refresh); };
 			}, []);
 			async function generate() {
-				if (!settings || !settings.enabled || !settings.ready || settings.migrationPending || !state || busy || props.running || state.status === "running" || state.recovery === "save" || state.versions && state.versions.length) return;
+				const reusable = requestRef.current && !(state && requestRef.current.id === state.requestId && ["failed", "cancelled"].includes(state.status));
+				const clickId = reusable && state && requestRef.current.key === state.key ? requestRef.current.id : sceneImageRequestId();
+				recordImageInteraction(props.sessionId, props.turn, clickId, "click");
+				if (!settings || !settings.enabled || !settings.ready || settings.migrationPending || !state || busy || props.running || state.status === "running" || state.recovery === "save" || state.versions && state.versions.length) { recordImageInteraction(props.sessionId, props.turn, clickId, "blocked", "not-ready"); return; }
 				const confirmNewRequestId = sceneImagePurchaseConfirmation(state);
-				if (confirmNewRequestId === false) return;
+				if (confirmNewRequestId === false) { recordImageInteraction(props.sessionId, props.turn, clickId, "cancelled", "confirmation"); return; }
 				if (requestRef.current && requestRef.current.id === state.requestId && ["failed", "cancelled"].includes(state.status)) requestRef.current = null;
 				setBusy(true); setError("");
-				if (!requestRef.current || requestRef.current.key !== state.key) requestRef.current = { key: state.key, id: sceneImageRequestId() };
+				if (!requestRef.current || requestRef.current.key !== state.key) requestRef.current = { key: state.key, id: clickId };
 				try { await rpc("generateSceneImage", { turn: props.turn, key: state.key, requestId: requestRef.current.id, confirmNewRequestId: confirmNewRequestId }, props.sessionId); requestRef.current = null; }
 				catch (e) { setError(String(e.message || e)); }
 				finally { setBusy(false); window.dispatchEvent(new CustomEvent("dsh-tavern-image-changed", { detail: { sessionId: props.sessionId } })); }

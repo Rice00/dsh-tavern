@@ -1068,7 +1068,7 @@ test('游戏准备预热与正式启动不再操纵通知连接槽', () => {
   assert.doesNotMatch(sidebar, /withConnectionSlot/)
   assert.match(sidebar, /tavernSessionTransition\.begin\(\{ projection: transitionOpening && transitionOpening\.projection/)
   assert.match(sidebar, /busy && selectedOpening[\s\S]*renderTavernProjection\(selectedOpening\.projection/)
-  assert.match(sidebar, /busy \? h\("div", \{ className: "dsh-tavern-session-switching", role: "status" \}, "正在完成游戏初始化…"\)/)
+  assert.match(sidebar, /busy \? h\("div", \{ className: "dsh-tavern-session-switching", role: "status", "aria-live": "polite" \}, openingPicker\.preparing \? "正在准备开场与脚本资源…" : "正在完成游戏初始化…"/)
   assert.match(assistantRenderer, /renderTavernProjection\(sessionTransitioning\.projection/)
   assert.match(assistantRenderer, /正在完成游戏初始化/)
   assert.match(serverSource, /case 'preparePlayStart':[\s\S]*await runtimePresets\.prepareFullSnapshot\(\)/)

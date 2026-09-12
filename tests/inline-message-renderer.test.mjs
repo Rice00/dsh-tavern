@@ -2086,10 +2086,11 @@ test('opening refresh submits the same preparation draft that its iframe writes'
   const response = { preparationId: 'new-draft', trustedCardMode: true, openings: [
     { id: 'alternate:0', openingPreview: { preparationId: 'new-draft' } }, { id: 'primary' }
   ] }
-  const refresh = vm.runInNewContext('(function(current){' + updater + '})', { response, cardPath: 'card.json', userName: '你' })
+  const refresh = vm.runInNewContext('(function(current){' + updater + '})', { response, cardPath: 'card.json', userName: '你', preparedKey: '["你","dsh"]' })
   const next = refresh({ card: { path: 'card.json' }, userName: '你', preparationId: 'old-draft', index: 1, openings: [{ id: 'primary' }, { id: 'alternate:0' }] })
   assert.equal(next.openings[next.index].id, 'alternate:0')
   assert.equal(next.preparationId, next.openings[next.index].openingPreview.preparationId)
+  assert.equal(next.preparedKey, '["你","dsh"]')
 })
 
 test('pending opening frame can initialize its private MVU draft before becoming visible', async () => {

@@ -1,6 +1,6 @@
-import { readFile, readdir, writeFile } from 'node:fs/promises'
+import { readFile, readdir, writeFile, rename, rm } from 'node:fs/promises'
 import path from 'node:path'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { decodeZstdFrames } from '../../bin/session-prefix-migration.mjs'
 import { createChatJournalStore } from '../../tavern-plugin/lib/domain/chat-journal-store.js'
 import { sceneTarget } from '../../tavern-plugin/lib/domain/scene-illustration.js'
@@ -51,7 +51,7 @@ export function createEvidence({ home, dataRoot }) {
   return { chats, chat: id => store.read(id), native, requests, image, resources }
 }
 export function nativeResult(events, afterSeq) {
-  const added = events.filter(event => Number(event.seq) > afterSeq)
+  const added = eventsAfterSeq(events, afterSeq)
   const start = added.find(event => event.type === 'turn/start')
   if (!start) return { ready: false }
   const end = added.find(event => event.type === 'turn/end' && event.data?.turn === start.data?.turn)
@@ -61,4 +61,16 @@ export function nativeResult(events, afterSeq) {
   const errorEvent = added.find(event => /error|fail/.test(event.type))
   return { ready: true, turn: start.data.turn, reason: end.data.reason, text, error: errorEvent ? errorEvent.type : null, events: added }
 }
-export async function saveJson(file, value) { await writeFile(file, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 }) }
+export async function saveJson(file, value) {
+  const temporary = file + '.' + randomUUID() + '.tmp'
+  try {
+    await writeFile(temporary, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 })
+    await rename(temporary, file)
+  } finally { await rm(temporary, { force: true }) }
+}
+
+// Compacted reasoning/tool chunks have no seq; retain them between numbered events.
+export function eventsAfterSeq(events, afterSeq = 0) {
+  const start = events.findIndex(event => Number(event.seq) > afterSeq)
+  return start < 0 ? [] : events.slice(start)
+}

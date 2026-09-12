@@ -1,4 +1,4 @@
-name: 001 段莹莹_自由 · 自由模式 · 继续
+name: 001 段莹莹_自由 · 自由模式 · 三轮继续
 model:
   provider: deepseek-official
   model: deepseek-v4-flash
@@ -27,3 +27,15 @@ steps:
       state:
         - path: settleStatus
           equals: done
+  - action: say
+    input: 继续，承接上一轮的情节。
+    expect:
+      refused: false
+      minChars: 1
+      backgroundRequired: true
+  - action: say
+    input: 继续，保持人物与事件的连续性。
+    expect:
+      refused: false
+      minChars: 1
+      backgroundRequired: true

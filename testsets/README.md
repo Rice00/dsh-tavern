@@ -40,3 +40,5 @@ node testsets/run.mjs 001-duan-yingying-continue
 运行器单元测试：`node --test testsets/tests/*.test.mjs`，也包含在项目 `pnpm test` 中。
 
 同一案例不能同时运行。测试 Profile 按场景文件绝对路径区分，保存在 `testsets/profiles/`；正式玩家存档不受影响。需要重置时，在测试停止后删除对应 Profile 目录（路径见报告 `profileHome`），下次重新导入。异常退出留下的 `run.lock` 需确认运行器及其 DSH 子进程均已停止后再删除。
+
+案例支持在一个 `play` 后连续写多个 `say`；第一个编号案例现为三轮。每轮等待前台和后台链路完成，成功和失败均保留输出、工具结果及运行事件；未执行的后续步骤会明确列出。

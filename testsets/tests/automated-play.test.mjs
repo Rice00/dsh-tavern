@@ -80,3 +80,41 @@ test('persistent profiles preserve cards and exclude concurrent runs', async () 
     await second.release()
   } finally { await rm(root, { recursive: true, force: true }) }
 })
+
+test('foreground success cannot pass a missing or failed background chain', async () => {
+  const { backgroundChain } = await import('../lib/recording.mjs')
+  const foreground = { id: 'fg', scope: 'foreground', status: 'completed' }
+  assert.equal(backgroundChain([foreground]).passed, false)
+  assert.equal(backgroundChain([foreground], false).status, 'not-invoked')
+  assert.equal(backgroundChain([foreground], false).passed, true)
+  for (const status of ['running', 'failed', 'cancelled']) {
+    assert.equal(backgroundChain([{ id: 'bg', scope: 'background', task: 'posture', status }]).passed, false)
+  }
+  assert.equal(backgroundChain([{ id: 'bg', scope: 'background', task: 'posture', status: 'completed' }]).passed, true)
+})
+
+test('recording preserves failed subagent output even if the chat journal is unreadable', async () => {
+  const { captureStep } = await import('../lib/recording.mjs')
+  const root = await mkdtemp(path.join(os.tmpdir(), 'tavern-evidence-'))
+  try {
+    const evidence = {
+      chat: async () => { throw new Error('broken journal') },
+      requests: async () => [{ id: 'old', sessionId: 'old-session' }, { id: 'new', scope: 'background', sessionId: 'bg', status: 'failed', response: { text: 'partial output', error: 'provider error' } }],
+      native: async id => { assert.equal(id, 'bg'); return [{ seq: 1, type: 'error', data: 'provider error' }] },
+    }
+    const result = await captureStep({ evidence, chatId: 'chat', prefix: path.join(root, '02'), beforeRequestIds: ['old'] })
+    assert.deepEqual(result.errors, [{ source: 'chat', error: 'broken journal' }])
+    const requests = JSON.parse(await readFile(path.join(root, '02-requests.json'), 'utf8'))
+    assert.deepEqual(requests.map(r => r.id), ['new'])
+    assert.equal(requests[0].response.text, 'partial output')
+    assert.equal(JSON.parse(await readFile(path.join(root, '02-subagent-native-bg.json'), 'utf8'))[0].type, 'error')
+  } finally { await rm(root, { recursive: true, force: true }) }
+})
+
+test('compacted reasoning and tool chunks remain in per-turn native evidence', async () => {
+  const { eventsAfterSeq } = await import('../lib/evidence.mjs')
+  const events = [{ seq: 10, type: 'turn/end' }, { seq: 11, type: 'turn/start' },
+    { type: 'reasoning-chunks', data: { turn: 2, texts: ['reasoning'] } },
+    { type: 'tool-call-chunks', data: { turn: 2, args: ['partial'] } }, { seq: 25, type: 'turn/end' }]
+  assert.deepEqual(eventsAfterSeq(events, 10), events.slice(1))
+})

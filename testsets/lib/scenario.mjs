@@ -36,8 +36,8 @@ function validateExpect(expect) {
   for (const [key, value] of Object.entries(expect)) {
     if (['contains', 'notContains', 'changedFiles'].includes(key)) {
       if (!Array.isArray(value) || !value.every(item => typeof item === 'string')) throw new Error(key + ' 必须是字符串数组')
-    } else if (key === 'refused') {
-      if (typeof value !== 'boolean') throw new Error('refused 必须是布尔值')
+    } else if (['refused', 'backgroundRequired'].includes(key)) {
+      if (typeof value !== 'boolean') throw new Error(key + ' 必须是布尔值')
     } else if (key === 'minChars') {
       if (!Number.isSafeInteger(value) || value < 0) throw new Error('minChars 必须是非负整数')
     } else if (key === 'state') {

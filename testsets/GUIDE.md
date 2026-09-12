@@ -63,18 +63,22 @@ steps:
 
 ## 完成与证据
 
-正文和卡片 Agent 使用原生 Session 的新 `turn/start` / `turn/end` 关联完成，不把某次工具响应或旧回合完成当成本轮完成。游玩还要等待本轮正文与后台结算写入 Tavern 存档，MVU pending 和失败回执均不通过。
+正文和卡片 Agent 使用原生 Session 的新 `turn/start` / `turn/end` 关联完成，不把某次工具响应或旧回合完成当成本轮完成。游玩还要等待本轮正文与后台结算写入 Tavern 存档，MVU pending 和失败回执均不通过。默认每轮游玩还要求实际发生后台模型调用且请求完成，不能仅凭 `settleStatus=done` 判成功。只有明确测试关闭后台的场景才设置 `expect.backgroundRequired: false`；后台实际报错仍会失败。
 
 每次运行生成：
 
 - `report.md` / `report.json`：四类 Agent 的覆盖状态、各步耗时、断言、请求摘要及失败原因。
 - `NN-chat.json`、`NN-native.json`、`NN-requests.json`：该步存档、原生执行事件、真实模型请求与输出。
+- `NN-agents.json`：按请求和 Agent 轮次整理的回复、工具调用及返回；后台可能只提交工具结果，纯文本为空不代表未执行。
+- `NN-subagent-native-*.json`：后台和生图子 Session 的完整原生事件，保留工具调用与压缩后的推理片段。
+- `events.jsonl`：步骤开始、输入发送、前台完成、后台结算、异常、结束的追加事件日志。
+- `NN-capture.json`：本次证据采集状态；读取某类日志失败不会阻止其他日志保存。
 - `NN-reply.md`、`NN.png`：正文和真实界面截图。
 - 卡片任务的 `NN-resources.json`：修改前后文件哈希，以及报告里的新增、修改、删除路径。
 - 生图的 `NN-image.json` 和 `NN-image.png`（扩展名随实际格式）：场景规划、图片版本记录和正式接口返回的图片字节。
 - 报告 `profileHome` 下的 `profile-data/tavern`：持久保存的完整原生存档，包括后台及生图子 Session，可继续诊断；`runtime.log` 为 DSH 启动日志。
 
-失败保存 `failure-*` 证据并终止场景。未执行的 Agent 明确标为 `not-covered`，结算完成但未调用后台模型时标为 `not-invoked`；报告不会因为前台完成就推断生图或卡片成功。报告检查链路和明确断言，剧情质量仍须人工判断；通过一张演示卡不等于覆盖所有第三方卡、移动端或正式安装环境。
+运行过程中约每 2 秒保存一次已有证据，步骤边界和退出前再保存；JSON 使用临时文件替换，避免中断覆盖上一份完整快照。执行异常保存 `failure-*` 证据并终止场景，剩余步骤标记 `not-run` 并保留原计划输入。强制结束进程或断电只能保留已落盘证据，不能保证捕获之后的事件。未执行的 Agent 明确标为 `not-covered`，未调用后台模型时标为 `not-invoked`，默认判该轮失败；报告不会因为前台完成就推断生图或卡片成功。报告检查链路和明确断言，剧情质量仍须人工判断；通过一张演示卡不等于覆盖所有第三方卡、移动端或正式安装环境。
 
 ## 拒绝标记
 
@@ -107,3 +111,5 @@ steps:
 以上覆盖演示卡、CLI 和桌面 Chromium；没有把它当成第三方 MVU 卡、移动宿主或模型拒绝语义识别准确率的验证。
 
 每个场景文件对应 `testsets/profiles/` 中一个持久 Profile，并加锁防止并发修改。报告中的 `cardSelection.imported` 标记首次导入或复用，`card` 记录实际卡路径和哈希；模型请求证据记录实际 provider、model、reasoningEffort（仅在原始日志提供时）。场景声明的模型配置仍位于报告顶层 `model`。
+
+多轮案例只需在同一个 `play` 后连续添加多个 `say`。每轮完成“输入 → 前台回复 → 后台实际调用 → 结算落盘”后才发送下一轮，保留同一游戏的上下文。报告使用 `round`、`chatId`、请求 ID 和 `agentTurn` 关联每轮证据。

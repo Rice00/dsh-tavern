@@ -67,6 +67,7 @@ async function selectRun(id) {
 async function renderStep(id, step, files, body) {
   const prefix = String(step.index).padStart(2, '0'), names = new Set(files.map(f => f.name))
   const read = async (name, fallback = null, json = true) => names.has(name) ? get(fileUrl(id, name), json) : fallback
+  if (step.inputFrom) body.append(el('p', 'hint', `动态输入：上一轮第 ${step.inputFrom.candidate} 个${step.inputFrom.type === 'scene' ? '场景' : '行动'}候选${step.selectedCandidate ? '（已通过正式界面选用）' : '（尚未执行）'}`))
   if (step.input) { const input = el('div', 'input-block'); input.append(el('div', 'label', '前台输入 / 测试 PROMPT'), el('div', 'prose', step.input)); body.append(input) }
   if (step.error || step.reason) body.append(el('div', 'error', step.error || step.reason))
   if (step.background) body.append(el('p', 'hint', `后台链路：${labels[step.background.status] || step.background.status} · ${step.background.requestIds?.length || 0} 个请求${step.background.required ? ' · 必须完成后再进入下一轮' : ''}`))

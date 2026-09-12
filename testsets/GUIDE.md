@@ -115,3 +115,18 @@ steps:
 多轮案例只需在同一个 `play` 后连续添加多个 `say`。每轮完成“输入 → 前台回复 → 后台实际调用 → 结算落盘”后才发送下一轮，保留同一游戏的上下文。报告使用 `round`、`chatId`、请求 ID 和 `agentTurn` 关联每轮证据。
 
 在游玩 `say` 步骤设置 `candidates: true`，运行器会在结算后点击正式“生成候选项”按钮，等待真实 `candidate` 请求完成且新候选落盘，再发送下一轮。候选输出保存为 `NN-candidates.json`，其模型请求和子 Session 日志仍并入本轮证据。未声明时不生成，报告标记候选项未覆盖。编号 001 已启用每轮候选生成。
+
+动态行动：以 `inputFrom` 替代固定 `input`，从同一游戏上一轮生成的候选中选择。`candidate` 是该类型内从 1 开始的序号；`type` 默认为 `action`，也可用 `scene`。上一轮必须设置 `candidates: true`。
+
+```yaml
+  - action: say
+    input: 继续
+    candidates: true
+  - action: say
+    inputFrom:
+      candidate: 1
+      type: action
+    candidates: true
+```
+
+运行器在正式界面选择候选、填入输入框并发送。报告中的 `input` 是实际发送文本，`selectedCandidate` 记录候选来源请求、消息 ID、类型和位置；不重新生成或偷偷退回固定输入。候选缺失、来源变化、界面不一致均保存失败证据并停止。

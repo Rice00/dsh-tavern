@@ -8,9 +8,9 @@ import os from 'node:os'
 import { parseArgs } from 'node:util'
 import { execFileSync } from 'node:child_process'
 import { classifyResponse, requestChecks, refusalPatterns } from './lib/refusal.mjs'
-import { loadScenario, assertions, settledTurn } from './lib/scenario.mjs'
+import { loadScenario, assertions, settledTurn, selectCandidate } from './lib/scenario.mjs'
 import { prepareRuntime, startRuntime, sourceRoot } from './lib/runtime.mjs'
-import { openBrowser, openPlay, openCard, send } from './lib/browser.mjs'
+import { openBrowser, openPlay, openCard, send, sendCandidate } from './lib/browser.mjs'
 import { createEvidence, nativeResult, saveJson } from './lib/evidence.mjs'
 
 const { values, positionals } = parseArgs({ options: { 'runtime-home': { type: 'string' }, output: { type: 'string' }, headed: { type: 'boolean' }, help: { type: 'boolean' } }, allowPositionals: true })
@@ -94,7 +94,7 @@ async function main() {
     log('运行目录：' + runRoot)
     for (const [index, step] of scenario.steps.entries()) {
       controller.signal.throwIfAborted()
-      active = { index: index + 1, action: step.action, input: step.input, status: 'running', phase: 'starting', startedAt: Date.now() }
+      active = { index: index + 1, action: step.action, input: step.input, inputFrom: step.inputFrom, status: 'running', phase: 'starting', startedAt: Date.now() }
       report.steps.push(active)
       await checkpoint(true)
       await recordEvent(eventFile, { type: 'step-start', step: active.index, action: step.action, input: step.input })
@@ -122,6 +122,12 @@ async function main() {
         active.role = role; active.backgroundRequired = step.expect?.backgroundRequired ?? true
         active.round = report.steps.filter(s => s.action === 'say' && s.chatId === chat.id).length + 1
         active.agent = role; active.input = step.input; active.chatId = chat.id; active.sessionId = chat.sessionId
+        if (step.inputFrom) {
+          const previous = report.steps.slice(0, -1).findLast(s => s.action === 'say' && s.chatId === chat.id)
+          active.selectedCandidate = selectCandidate(chat.candidates, step.inputFrom, previous?.candidates?.requestId)
+          active.input = active.selectedCandidate.input
+          await recordEvent(eventFile, { type: 'candidate-resolved', step: active.index, selection: active.selectedCandidate })
+        }
         const events = await evidence.native(chat.sessionId)
         const afterSeq = events.reduce((seq, event) => Math.max(seq, Number(event.seq) || 0), 0)
         const beforeMessages = (chat.messages || []).length
@@ -129,9 +135,11 @@ async function main() {
         active.beforeRequestIds = [...previousRequests]; active.afterSeq = afterSeq
         const beforeResources = role === 'card' ? await evidence.resources() : {}
         if (role === 'card') await saveJson(prefix + '-resources-before.json', beforeResources)
-        active.phase = role + '-running'
+        active.phase = active.selectedCandidate ? 'candidate-selecting' : role + '-running'
         await checkpoint(true)
-        await send(page, step.input)
+        if (active.selectedCandidate) await sendCandidate(page, active.selectedCandidate)
+        else await send(page, active.input)
+        active.phase = role + '-running'
         await recordEvent(eventFile, { type: 'input-sent', step: active.index, round: active.round, chatId: chat.id })
         const result = await poll(role + '执行', async () => {
           const result = nativeResult(await evidence.native(chat.sessionId), afterSeq)
@@ -148,7 +156,7 @@ async function main() {
           const completed = await poll('后台结算落盘', async () => {
             const latest = await evidence.chat(chat.id)
             if (latest.foregroundError) throw new Error('正文执行失败')
-            const progress = settledTurn(latest, beforeMessages, step.input)
+            const progress = settledTurn(latest, beforeMessages, active.input)
             if (progress.error) throw new Error(String(progress.error))
             return progress.ready ? { chat: latest, reply: progress.reply } : null
           })
@@ -295,7 +303,7 @@ async function main() {
     }
     if (report.cleanupErrors.length || report.captureError || report.steps.some(step => step.captureErrors?.length)) { report.status = 'failed'; process.exitCode = 1 }
     for (let index = report.steps.length; index < scenario.steps.length; index++) {
-      report.steps.push({ index: index + 1, action: scenario.steps[index].action, input: scenario.steps[index].input,
+      report.steps.push({ index: index + 1, action: scenario.steps[index].action, input: scenario.steps[index].input, inputFrom: scenario.steps[index].inputFrom,
         status: 'not-run', reason: '前序步骤失败或测试中断，未发送输入' })
     }
     await recordEvent(eventFile, { type: 'run-end', status: report.status }).catch(error => { report.captureError = cleanError(error); report.status = 'failed'; process.exitCode = 1 })

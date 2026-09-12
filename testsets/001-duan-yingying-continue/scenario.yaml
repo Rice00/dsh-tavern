@@ -1,4 +1,4 @@
-name: 001 段莹莹_自由 · 自由模式 · 三轮继续
+name: 001 段莹莹_自由 · 自由模式 · 三轮候选行动
 model:
   provider: deepseek-official
   model: deepseek-v4-flash
@@ -30,14 +30,18 @@ steps:
           equals: done
   - action: say
     candidates: true
-    input: 继续，承接上一轮的情节。
+    inputFrom:
+      candidate: 1
+      type: action
     expect:
       refused: false
       minChars: 1
       backgroundRequired: true
   - action: say
     candidates: true
-    input: 继续，保持人物与事件的连续性。
+    inputFrom:
+      candidate: 1
+      type: action
     expect:
       refused: false
       minChars: 1

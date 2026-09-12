@@ -12,18 +12,25 @@ export async function loadScenario(file) {
   if (!Array.isArray(scenario.steps) || !scenario.steps.length) throw new Error('场景需要至少一个 steps 操作')
   refusalPatterns(scenario.refusalPatterns)
   if (scenario.continueOnFailure !== undefined && typeof scenario.continueOnFailure !== 'boolean') throw new Error('continueOnFailure 必须是布尔值')
-  let mode = null
+  let mode = null, hasCandidates = false
   for (const step of scenario.steps) {
     if (!step || !['play', 'say', 'image', 'card'].includes(step.action)) throw new Error('不支持的操作：' + step?.action)
-    const allowed = { play: ['action', 'card', 'cardName', 'expect'], card: ['action', 'card', 'expect'], say: ['action', 'input', 'candidates', 'expect'], image: ['action', 'expect'] }[step.action]
+    const allowed = { play: ['action', 'card', 'cardName', 'expect'], card: ['action', 'card', 'expect'], say: ['action', 'input', 'inputFrom', 'candidates', 'expect'], image: ['action', 'expect'] }[step.action]
     for (const key of Object.keys(step)) if (!allowed.includes(key)) throw new Error('操作字段不支持：' + key)
     if (['play', 'card'].includes(step.action)) {
       mode = step.action
+      hasCandidates = false
       if (step.card) { step.card = path.resolve(path.dirname(absolute), step.card); await access(step.card) }
       if (mode === 'play' && !step.card && !step.cardName) throw new Error('play 操作需要 card 文件或已在测试库中的 cardName')
     } else if (!mode) throw new Error('必须先用 play 或 card 打开对话')
     if (step.action === 'image' && mode !== 'play') throw new Error('image 只能用于游玩对话')
-    if (step.action === 'say' && (typeof step.input !== 'string' || !step.input.trim())) throw new Error('say 操作需要非空 input')
+    if (step.action === 'say') {
+      if (step.inputFrom !== undefined) {
+        const source = step.inputFrom
+        if (step.input !== undefined || mode !== 'play' || !hasCandidates || !source || !Number.isSafeInteger(source.candidate) || source.candidate < 1 || !['action', 'scene'].includes(source.type || 'action') || Object.keys(source).some(k => !['candidate', 'type'].includes(k))) throw new Error('inputFrom 需要上一轮候选，candidate 为从 1 开始的序号，且不能同时提供 input')
+      } else if (typeof step.input !== 'string' || !step.input.trim()) throw new Error('say 操作需要非空 input')
+      hasCandidates = step.candidates === true
+    }
     if (step.candidates !== undefined && (typeof step.candidates !== 'boolean' || mode !== 'play')) throw new Error('candidates 仅适用于游玩输入，且必须为布尔值')
     if (step.expect) validateExpect(step.expect)
   }
@@ -71,4 +78,14 @@ export function settledTurn(chat, before, input) {
   if (['error', 'failed'].includes(chat.settleStatus)) return { ready: false, error: chat.settleError || '后台结算失败', reply }
   if (reply.mvu?.receipt?.failures?.length) return { ready: false, error: 'MVU 结算回执包含失败项', reply }
   return { ready: chat.settleStatus === 'done' && !reply.mvu?.pending, reply }
+}
+
+export function selectCandidate(saved, source, previousRequestId) {
+  if (!previousRequestId || saved?.requestId !== previousRequestId) throw new Error('上一轮候选不存在或已变化，停止动态输入')
+  const type = source.type || 'action'
+  const choices = (saved.choices || []).map((choice, index) => ({ ...choice, index })).filter(choice => choice.type === type)
+  const choice = choices[source.candidate - 1]
+  if (!choice || typeof choice.text !== 'string' || !choice.text.trim()) throw new Error('指定候选不存在或内容为空')
+  return { requestId: saved.requestId, messageId: saved.messageId, type, candidate: source.candidate, index: choice.index, text: choice.text,
+    input: type === 'scene' ? '【场景变化】' + choice.text : choice.text }
 }

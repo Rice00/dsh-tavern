@@ -111,3 +111,16 @@ async function resolveCardName(step) {
   if (!name) throw new Error('复用人物卡需要 cardName 或 JSON 人物卡名称')
   return name
 }
+
+export async function sendCandidate(page, choice) {
+  const panel = page.locator('.dsh-tavern-candidate-question')
+  await panel.waitFor()
+  if (!await panel.locator('.dsh-tavern-question-option').first().isVisible()) await panel.getByTitle('展开', { exact: true }).click()
+  const option = panel.locator('.dsh-tavern-question-option').nth(choice.index)
+  if (!(await option.innerText()).includes(choice.text)) throw new Error('界面候选与本轮落盘候选不一致')
+  await option.click()
+  await panel.getByRole('button', { name: '填入输入框', exact: true }).click()
+  const composer = page.getByRole('textbox', { name: /发消息或做任务|Message or run a task/ })
+  if (await composer.evaluate(node => 'value' in node ? node.value : node.innerText) !== choice.input) throw new Error('正式候选填入结果与预期不一致')
+  await page.getByRole('button', { name: /^(发送消息|Send message)$/ }).click()
+}

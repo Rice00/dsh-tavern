@@ -140,3 +140,14 @@ test('candidate generation can be requested only for gameplay inputs', async () 
     await assert.rejects(loadScenario(file), /candidates/)
   } finally { await rm(root, { recursive: true, force: true }) }
 })
+
+test('dynamic inputs select by candidate type and reject stale or missing choices', async () => {
+  const { selectCandidate } = await import('../lib/scenario.mjs')
+  const saved = { requestId: 'round-1', messageId: 'reply-1', choices: [{ type: 'scene', text: '次日清晨' }, { type: 'action', text: '推开门' }] }
+  const action = selectCandidate(saved, { candidate: 1 }, 'round-1')
+  assert.equal(action.index, 1)
+  assert.equal(action.input, '推开门')
+  assert.equal(selectCandidate(saved, { candidate: 1, type: 'scene' }, 'round-1').input, '【场景变化】次日清晨')
+  assert.throws(() => selectCandidate(saved, { candidate: 1 }, 'older-round'), /已变化/)
+  assert.throws(() => selectCandidate(saved, { candidate: 2 }, 'round-1'), /不存在/)
+})

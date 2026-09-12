@@ -4,14 +4,9 @@ model:
   model: deepseek-v4-flash
   reasoningEffort: high
 timeoutMs: 300000
-tavernSettings:
-  backgroundTasks:
-    posture: true
-    variables: true
-    characterDesign: false
 steps:
   - action: play
-    card: ../../demo/cards/avra-before.json
+    sourceCard: avra-complete.json
   - action: say
     input: 我把黑蜡信封放到吧台上，请阿芙拉检查。用一小段话回应。
     expect:

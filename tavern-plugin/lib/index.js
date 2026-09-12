@@ -1,3 +1,4 @@
+import { createGameplayApi } from './gameplay-api.js'
 import { cardOpeningChoices } from './domain/card-openings.js'
 import { marked } from 'marked'
 import { presentModelError } from './domain/model-error-presentation.js'
@@ -2420,7 +2421,22 @@ export async function apply(ctx) {
     finally { performanceDiagnostics.record(method, performance.now() - started) }
   }
 
+  const gameplayApi = createGameplayApi({
+    controller: () => ctx.get('sessionController'), registry: agentRegistry, llm, dataRoot,
+    store: profileData, dispatch: (method, args) => dispatchMethod(method, args),
+    chatForSession, listCards,
+    requests: async chat => (await modelRequestLog.evidence(chat.id)).requests,
+    native: async id => {
+      const live = sessionDebugEvidence(id)
+      if (live.loaded) return live.events
+      const handle = await agentRegistry.resume({ resumeSessionId: id })
+      try { return sessionEvents(handle.agent.session) } finally { await handle.dispose() }
+    },
+    requiresBrowser: async chat => hasTavernScriptRuntime(chat, (await readCardExtensions(chat.cardPath))?.helperScripts)
+  })
+
   async function dispatchMethod(method, args) {
+    if (method.startsWith('gameplay.')) return await gameplayApi.call(method.slice(9), args || {})
     switch (method) {
       case 'listCards': return { cards: await listCards() }
       case 'getUpdateStatus': return { status: await applicationUpdater.status() }
@@ -2798,6 +2814,10 @@ export async function apply(ctx) {
         const readsRuntimeAsset = req.method === 'GET' && pathname.startsWith(TAVERN_RUNTIME_ASSET_PREFIX)
         const readsClientAsset = req.method === 'GET' && pathname.startsWith(TAVERN_CLIENT_ASSET_PREFIX)
         const origin = req.headers.origin
+        const gameplayRoute = pathname.startsWith('/api/dsh-tavern/gameplay.')
+        if (gameplayRoute && origin && origin !== 'http://' + req.headers.host && origin !== 'https://' + req.headers.host) {
+          res.writeHead(403); res.end('forbidden'); return
+        }
         const sceneImageRoute = TAVERN_RELEASE_CAPABILITIES.sceneImages && /^\/api\/dsh-tavern\/(?:scene-image|getSceneImageSettings|saveSceneImageSettings|testSceneImageConnection|listSceneImageModels|sceneImageStatus|recordSceneImageInteraction|generateSceneImage|retrySceneImageSave|cancelSceneImage|removeSceneImage|setSceneImageReference)$/.test(pathname)
         const sceneSameOrigin = sceneImageRoute && (origin === 'http://' + req.headers.host || origin === 'https://' + req.headers.host)
         if (sceneImageRoute && origin && !sceneSameOrigin) {
@@ -2947,6 +2967,7 @@ export async function apply(ctx) {
           for await (const chunk of req) {
             const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
             bodyBytes += bytes.length
+            if (gameplayRoute && bodyBytes > 2 * 1024 * 1024) throw new Error('游戏 API 请求超过 2 MB')
             if (sceneImageRoute && bodyBytes > sceneImageBodyLimit) {
               throw new Error(method === 'saveSceneImageSettings'
                 ? '无法保存生图配置：工作流与配置数据超过当前 2 MB 请求大小限制。请精简工作流后重试；这不是图片尺寸或显存不足。'

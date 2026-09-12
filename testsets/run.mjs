@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import os from 'node:os'
-import { readSourceCard } from './lib/card-sync.mjs'
+import { readSourceCard } from './lib/card-source.mjs'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -28,7 +28,7 @@ try {
       if (checkOnly) {
         const card = await readSourceCard(path.resolve(runtimeHome), filename)
         console.log(`正式人物卡：${filename} / SHA-256：${card.sha256}`)
-      } else console.log(`正式人物卡：${filename}（启动前同步最新内容）`)
+      } else console.log(`正式人物卡：${filename}（正式游戏 API 直接读取）`)
     }
   } else {
     const source = JSON.parse(await readFile(path.join(folder, 'card.source.json'), 'utf8'))

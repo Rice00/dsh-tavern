@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import { syncSourceCards } from './lib/card-sync.mjs'
+import { connectGameplay } from './lib/api.mjs'
+import { fileURLToPath } from 'node:url'
 import { captureStep, backgroundChain, recordEvent, cleanError } from './lib/recording.mjs'
 import { createHash } from 'node:crypto'
-import { acquireProfile, existingCardNames } from './lib/profile.mjs'
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
@@ -10,13 +10,12 @@ import { parseArgs } from 'node:util'
 import { execFileSync } from 'node:child_process'
 import { classifyResponse, requestChecks, refusalPatterns } from './lib/refusal.mjs'
 import { loadScenario, assertions, settledTurn, selectCandidate } from './lib/scenario.mjs'
-import { prepareRuntime, startRuntime, sourceRoot } from './lib/runtime.mjs'
-import { openBrowser, openPlay, openCard, send, sendCandidate } from './lib/browser.mjs'
-import { createEvidence, nativeResult, saveJson } from './lib/evidence.mjs'
+const sourceRoot = fileURLToPath(new URL('..', import.meta.url))
+import { nativeResult, saveJson } from './lib/evidence.mjs'
 
-const { values, positionals } = parseArgs({ options: { 'runtime-home': { type: 'string' }, output: { type: 'string' }, headed: { type: 'boolean' }, help: { type: 'boolean' } }, allowPositionals: true })
+const { values, positionals } = parseArgs({ options: { 'runtime-home': { type: 'string' }, output: { type: 'string' }, help: { type: 'boolean' } }, allowPositionals: true })
 if (values.help || positionals.length !== 1) {
-  console.log('Usage: pnpm test:play SCENARIO.yaml [--runtime-home ~/.dsh-tavern] [--output DIRECTORY] [--headed]\n真实模型请求会计费。结果保存在 testsets/results，持久 Profile 保存在 testsets/profiles。')
+  console.log('Usage: pnpm test:play SCENARIO.yaml [--runtime-home ~/.dsh-tavern] [--output DIRECTORY]\n真实模型请求会计费。结果保存在 testsets/results，直接调用正在运行的正式酒馆 API，仅创建独立测试会话。')
   process.exitCode = values.help ? 0 : 2
 } else await main().catch(error => { console.error(String(error.message || error).replace(/https?:\/\/[^\s"']+/g, '[URL]')); process.exitCode = 1 })
 
@@ -43,7 +42,7 @@ async function main() {
   const controller = new AbortController()
   const interrupt = () => controller.abort(new Error('测试已中断'))
   process.on('SIGINT', interrupt); process.on('SIGTERM', interrupt)
-  let runtime, browser, page, evidence, chat, env, active, profile
+  let api, evidence, chat, active
   const log = message => console.log(message)
   const eventFile = path.join(runRoot, 'events.jsonl')
   let lastCapture = 0
@@ -78,22 +77,11 @@ async function main() {
     await saveJson(path.join(runRoot, 'scenario.json'), scenario)
     await checkpoint(true)
     await recordEvent(eventFile, { type: 'run-start' })
-    profile = await acquireProfile(path.join(sourceRoot, 'testsets/profiles'), scenario.file)
-    report.profileHome = profile.home
-    env = await prepareRuntime({ home: profile.home, runtimeHome: path.resolve(values['runtime-home'] || path.join(os.homedir(), '.dsh-tavern')), model: scenario.model,
-      tavernSettings: scenario.tavernSettings || {}, images: scenario.steps.some(step => step.action === 'image') })
-    report.cardSync = await syncSourceCards({ ...env, runRoot, runtimeHome: path.resolve(values['runtime-home'] || path.join(os.homedir(), '.dsh-tavern')), filenames: scenario.steps.map(s => s.sourceCard).filter(Boolean) })
-    await checkpoint(true)
-    evidence = createEvidence(env)
-    runtime = await startRuntime({ ...env, runRoot, signal: controller.signal })
-    const previousChats = await evidence.chats()
-    ;({ browser, page } = await openBrowser(runtime.url, { headed: values.headed, resumeMode: previousChats.length ? (previousChats.some(row => row.mode !== 'card') ? '游玩' : '卡片') : null, timeoutMs: scenario.timeoutMs }))
-    const browserEvent = (type, message) => recordEvent(eventFile, { type, step: active?.index, message: cleanError(message) })
-      .catch(error => { report.captureError = cleanError(error) })
-    page.on('pageerror', error => { void browserEvent('browser-error', error) })
-    page.on('console', message => { if (['error', 'warning'].includes(message.type())) void browserEvent('browser-' + message.type(), message.text()) })
-    page.on('requestfailed', request => { void browserEvent('request-failed', request.failure()?.errorText || 'request failed') })
-    controller.signal.addEventListener('abort', () => { browser.close().catch(() => {}) }, { once: true })
+    api = await connectGameplay({ runtimeHome: path.resolve(values['runtime-home'] || path.join(os.homedir(), '.dsh-tavern')) })
+    evidence = api.evidence
+    report.transport = 'production-api'
+    report.settingsSource = '正式酒馆当前配置'
+    if (scenario.tavernSettings) report.configurationNotes = ['案例 tavernSettings 不再覆盖正式配置；直接使用正式酒馆设置。']
     log('运行目录：' + runRoot)
     for (const [index, step] of scenario.steps.entries()) {
       controller.signal.throwIfAborted()
@@ -105,19 +93,15 @@ async function main() {
       log(`步骤 ${index + 1}/${scenario.steps.length}：${step.action}`)
       let text = '', state = {}
       if (step.action === 'play' || step.action === 'card') {
-        const before = new Set((await evidence.chats()).map(row => row.id))
-        active.beforeChatIds = [...before]
-        const selectedStep = { ...step, ...(step.sourceCard ? { cardName: report.cardSync.find(card => card.filename === step.sourceCard).name } : {}), existingCardNames: await existingCardNames(env.dataRoot) }
-        active.cardSelection = await (step.action === 'play' ? openPlay(page, selectedStep) : openCard(page, selectedStep))
-        chat = await poll('创建对话', async () => {
-          const found = (await evidence.chats()).filter(row => !before.has(row.id))
-          if (found.length > 1) throw new Error('一次操作创建多个对话')
-          return found.length && await evidence.chat(found[0].id)
-        })
-        if (step.action === 'play' && chat.requestMode === 'sillytavern') throw new Error('测试意外进入兼容模式')
-        active.chatId = chat.id; active.sessionId = chat.sessionId
-        active.modelControl = await page.getByRole('button', { name: /^(选择模型|Select model)/ }).getAttribute('aria-label')
-        active.card = { path: chat.cardPath, workspace: (await evidence.resources())['resources/' + chat.cardPath], contextSha256: createHash('sha256').update(JSON.stringify(chat.cardContextSnapshot || null)).digest('hex') }
+        const result = await api.create(step, scenario.model)
+        active.sessionId = result.sessionId
+        chat = result.chat
+        active.chatId = chat?.id
+        active.modelControl = result.model
+        active.requiresBrowser = result.requiresBrowser || false
+        if (result.error) throw new Error(result.error)
+        active.cardSelection = { path: chat.cardPath, imported: false, source: 'production' }
+        active.card = { path: chat.cardPath, contextSha256: createHash('sha256').update(JSON.stringify(chat.cardContextSnapshot || null)).digest('hex') }
         state = chat
       } else if (step.action === 'say') {
         chat = await evidence.chat(chat.id)
@@ -140,8 +124,9 @@ async function main() {
         if (role === 'card') await saveJson(prefix + '-resources-before.json', beforeResources)
         active.phase = active.selectedCandidate ? 'candidate-selecting' : role + '-running'
         await checkpoint(true)
-        if (active.selectedCandidate) await sendCandidate(page, active.selectedCandidate)
-        else await send(page, active.input)
+        const sent = await api.request('send', { sessionId: chat.sessionId, input: step.input,
+          inputFrom: step.inputFrom, previousRequestId: active.selectedCandidate?.requestId })
+        if (sent.input !== active.input) throw new Error('API 接受的输入与案例解析不一致')
         active.phase = role + '-running'
         await recordEvent(eventFile, { type: 'input-sent', step: active.index, round: active.round, chatId: chat.id })
         const result = await poll(role + '执行', async () => {
@@ -177,7 +162,7 @@ async function main() {
             active.phase = 'candidate-generating'
             const previousCandidateId = chat.candidates?.requestId
             await checkpoint(true)
-            await page.getByRole('button', { name: '生成候选项', exact: true }).click()
+            await api.request('candidates', { sessionId: chat.sessionId })
             await recordEvent(eventFile, { type: 'candidate-start', step: active.index, round: active.round })
             const candidates = await poll('候选项生成与落盘', async () => {
               const latest = await evidence.chat(chat.id)
@@ -218,10 +203,7 @@ async function main() {
         await checkpoint(true)
         const before = await evidence.image(chat)
         if (before.record?.versions?.length) throw new Error('本轮已有图片；请在新的正文轮次生图')
-        const button = page.getByRole('button', { name: '生图', exact: true })
-        await button.waitFor()
-        if (!await button.isEnabled()) throw new Error('生图未就绪：' + await button.getAttribute('title'))
-        await button.click()
+        await api.request('image', { sessionId: chat.sessionId })
         const image = await poll('文生图 Agent 与图片保存', async () => {
           const { record } = await evidence.image(chat)
           if (record && ['failed', 'cancelled'].includes(record.status)) throw new Error(record.error || '生图失败')
@@ -229,12 +211,8 @@ async function main() {
         })
         await saveJson(prefix + '-image.json', image)
         const version = image.versions.at(-1)
-        const url = new URL('/api/dsh-tavern/scene-image', runtime.url)
-        url.search = new URLSearchParams({ sessionId: chat.sessionId, turn: String(before.target.turn), key: before.target.key, versionId: version.id }).toString()
-        const response = await page.request.get(url.href)
-        const bytes = await response.body()
-        if (!response.ok() || !response.headers()['content-type']?.startsWith('image/') || !bytes.length) throw new Error('生成图片无法通过真实附件接口读取')
-        const extension = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' }[response.headers()['content-type'].split(';')[0]] || 'image'
+        const { bytes, contentType } = await api.imageBytes({ sessionId: chat.sessionId, turn: String(before.target.turn), key: before.target.key, versionId: version.id })
+        const extension = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' }[contentType.split(';')[0]] || 'image'
         active.imageFile = path.basename(prefix) + '-image.' + extension
         await writeFile(path.join(runRoot, active.imageFile), bytes, { mode: 0o600 })
         const requests = (await evidence.requests(chat.id)).filter(r => !previousRequests.has(r.id))
@@ -255,7 +233,6 @@ async function main() {
       const assertionFailure = active.assertions.some(item => !item.passed)
       if (assertionFailure && active.agent) cover(backgroundRefusals.length || active.background?.passed === false ? 'background' : active.agent, 'failed')
       if (chat) await saveJson(prefix + '-chat.json', await evidence.chat(chat.id))
-      await page.screenshot({ path: prefix + '.png', fullPage: true })
       active.status = assertionFailure ? 'failed' : 'passed'; active.phase = 'finished'; active.durationMs = Date.now() - active.startedAt
       await checkpoint(true)
       await recordEvent(eventFile, { type: 'step-end', step: active.index, status: active.status })
@@ -273,14 +250,8 @@ async function main() {
     if (active) active.error = report.error
     if (active?.candidates?.status === 'running') active.candidates = { ...active.candidates, status: 'failed', error: report.error }
     if (active) { active.status = 'failed'; active.durationMs = Date.now() - active.startedAt; if (active.agent) cover(active.agent, 'failed') }
-    if (active?.beforeChatIds && !active.chatId && evidence) {
-      const created = (await evidence.chats().catch(() => [])).filter(row => !active.beforeChatIds.includes(row.id))
-      for (const row of created) {
-        await captureStep({ evidence, chatId: row.id, sessionId: row.sessionId,
-          prefix: path.join(runRoot, 'failure-created-' + row.id.replace(/[^a-zA-Z0-9_-]/g, '_')) }).catch(error => { report.captureError = cleanError(error) })
-      }
-    }
     await checkpoint(true).catch(error => { report.captureError = cleanError(error) })
+    if (active?.sessionId && !active.chatId && evidence) await saveJson(path.join(runRoot, 'failure-native.json'), await evidence.native(active.sessionId)).catch(error => { report.captureError = cleanError(error) })
     if (chat && evidence) {
       await saveJson(path.join(runRoot, 'failure-chat.json'), await evidence.chat(chat.id)).catch(() => {})
       const failedRequests = await evidence.requests(chat.id).catch(() => [])
@@ -292,18 +263,13 @@ async function main() {
       await saveJson(path.join(runRoot, 'failure-native.json'), await evidence.native(chat.sessionId)).catch(() => {})
       if (active?.action === 'image') await saveJson(path.join(runRoot, 'failure-image.json'), await evidence.image(chat)).catch(() => {})
     }
-    await page?.screenshot({ path: path.join(runRoot, 'failure.png'), fullPage: true }).catch(() => {})
     process.exitCode = 1
   } finally {
     report.cleanupErrors = []
-    for (const [name, close] of [['browser', () => browser?.close()], ['runtime', () => runtime?.stop()]]) {
-      try { await close() } catch (error) { report.cleanupErrors.push({ source: name, error: cleanError(error) }) }
+    if (report.status !== 'passed') {
+      try { await api?.cancel() } catch (error) { report.cleanupErrors.push({ source: 'test-session', error: cleanError(error) }) }
     }
-    // Capture again after DSH stops: cancellation/final error events may arrive during shutdown.
     await checkpoint(true).catch(error => { report.captureError = cleanError(error) })
-    if (!report.cleanupErrors.some(error => error.source === 'runtime')) {
-      try { await profile?.release() } catch (error) { report.cleanupErrors.push({ source: 'profile-lock', error: cleanError(error) }) }
-    }
     if (report.cleanupErrors.length || report.captureError || report.steps.some(step => step.captureErrors?.length)) { report.status = 'failed'; process.exitCode = 1 }
     for (let index = report.steps.length; index < scenario.steps.length; index++) {
       report.steps.push({ index: index + 1, action: scenario.steps[index].action, input: scenario.steps[index].input, inputFrom: scenario.steps[index].inputFrom,
@@ -326,7 +292,7 @@ async function main() {
     }).join('\n')
     const refusalText = report.refusals.map(check => `- 步骤 ${check.step} / ${check.agent}：${check.evidence.replaceAll('\n', ' ').slice(0, 500)}`).join('\n')
     const rows = Object.entries(report.agents).map(([agent, status]) => `| ${agent} | ${status} |`).join('\n')
-    await writeFile(path.join(runRoot, 'report.md'), `# ${report.name}\n\n结果：${report.status}\n\n| Agent | 结果 |\n|---|---|\n${rows}\n\n| 步骤 | Agent | 输入 | 响应判定 | 测试结果 |\n|---|---|---|---|---|\n${results}\n\n拒绝证据（规则识别，需结合原文复核）：\n\n${refusalText || '无'}\n\n${report.error || ''}\n\n每步证据位于同目录，持久测试 Profile：${report.profileHome || '未创建'}；每次运行均新建对话。\n`, { mode: 0o600 })
+    await writeFile(path.join(runRoot, 'report.md'), `# ${report.name}\n\n结果：${report.status}\n\n| Agent | 结果 |\n|---|---|\n${rows}\n\n| 步骤 | Agent | 输入 | 响应判定 | 测试结果 |\n|---|---|---|---|---|\n${results}\n\n拒绝证据（规则识别，需结合原文复核）：\n\n${refusalText || '无'}\n\n${report.error || ''}\n\n每步证据位于同目录，来源：正式酒馆 API；每次运行均新建独立测试对话。\n`, { mode: 0o600 })
     log(`${report.status}：${path.join(runRoot, 'report.md')}`)
     if (report.error) log(report.error)
   }

@@ -62,25 +62,6 @@ test('refusal marks keep service errors and fictional dialogue separate', async 
   assert.equal(checks[1].agent, 'image'); assert.equal(checks[1].refused, false)
 })
 
-test('persistent profiles preserve cards and exclude concurrent runs', async () => {
-  const { acquireProfile } = await import('../lib/profile.mjs')
-  const root = await mkdtemp(path.join(os.tmpdir(), 'tavern-profile-'))
-  try {
-    const first = await acquireProfile(root, '/cases/one.yaml')
-    await mkdir(first.home)
-    await writeFile(path.join(first.home, 'card.json'), 'edited card')
-    await assert.rejects(acquireProfile(root, '/cases/one.yaml'), /已锁定/)
-    const other = await acquireProfile(root, '/cases/two.yaml')
-    assert.notEqual(other.home, first.home)
-    await other.release()
-    await first.release()
-    const second = await acquireProfile(root, '/cases/one.yaml')
-    assert.equal(second.home, first.home)
-    assert.equal(await readFile(path.join(second.home, 'card.json'), 'utf8'), 'edited card')
-    await second.release()
-  } finally { await rm(root, { recursive: true, force: true }) }
-})
-
 test('foreground success cannot pass a missing or failed background chain', async () => {
   const { backgroundChain } = await import('../lib/recording.mjs')
   const foreground = { id: 'fg', scope: 'foreground', status: 'completed' }

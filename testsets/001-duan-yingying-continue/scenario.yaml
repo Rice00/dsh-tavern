@@ -1,0 +1,29 @@
+name: 001 段莹莹 · 自由模式 · 继续
+model:
+  provider: deepseek-official
+  model: deepseek-v4-flash
+  reasoningEffort: high
+timeoutMs: 300000
+tavernSettings:
+  backgroundTasks:
+    posture: true
+    variables: true
+    characterDesign: false
+steps:
+  - action: play
+    card: ./card.json
+    cardName: 段莹莹
+    expect:
+      state:
+        - path: mode
+          equals: story
+        - path: requestMode
+          equals: dsh
+  - action: say
+    input: 继续
+    expect:
+      refused: false
+      minChars: 1
+      state:
+        - path: settleStatus
+          equals: done

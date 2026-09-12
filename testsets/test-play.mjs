@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { createHash } from 'node:crypto'
+import { acquireProfile, existingCardNames } from './lib/profile.mjs'
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
@@ -12,7 +14,7 @@ import { createEvidence, nativeResult, saveJson } from './lib/evidence.mjs'
 
 const { values, positionals } = parseArgs({ options: { 'runtime-home': { type: 'string' }, output: { type: 'string' }, headed: { type: 'boolean' }, help: { type: 'boolean' } }, allowPositionals: true })
 if (values.help || positionals.length !== 1) {
-  console.log('Usage: pnpm test:play SCENARIO.yaml [--runtime-home ~/.dsh-tavern] [--output DIRECTORY] [--headed]\n真实模型请求会计费。结果和独立存档默认保存在 testsets/results。')
+  console.log('Usage: pnpm test:play SCENARIO.yaml [--runtime-home ~/.dsh-tavern] [--output DIRECTORY] [--headed]\n真实模型请求会计费。结果保存在 testsets/results，持久 Profile 保存在 testsets/profiles。')
   process.exitCode = values.help ? 0 : 2
 } else await main().catch(error => { console.error(String(error.message || error).replace(/https?:\/\/[^\s"']+/g, '[URL]')); process.exitCode = 1 })
 
@@ -29,7 +31,7 @@ async function main() {
   const controller = new AbortController()
   const interrupt = () => controller.abort(new Error('测试已中断'))
   process.on('SIGINT', interrupt); process.on('SIGTERM', interrupt)
-  let runtime, browser, page, evidence, chat, env, active
+  let runtime, browser, page, evidence, chat, env, active, profile
   const log = message => console.log(message)
   async function poll(label, check) {
     const deadline = Date.now() + scenario.timeoutMs
@@ -46,11 +48,14 @@ async function main() {
   function cover(role, status) { if (report.agents[role] !== 'failed') report.agents[role] = status }
   try {
     await saveJson(path.join(runRoot, 'scenario.json'), scenario)
-    env = await prepareRuntime({ runRoot, runtimeHome: path.resolve(values['runtime-home'] || path.join(os.homedir(), '.dsh-tavern')), model: scenario.model,
+    profile = await acquireProfile(path.join(sourceRoot, 'testsets/profiles'), scenario.file)
+    report.profileHome = profile.home
+    env = await prepareRuntime({ home: profile.home, runtimeHome: path.resolve(values['runtime-home'] || path.join(os.homedir(), '.dsh-tavern')), model: scenario.model,
       tavernSettings: scenario.tavernSettings || {}, images: scenario.steps.some(step => step.action === 'image') })
     evidence = createEvidence(env)
     runtime = await startRuntime({ ...env, runRoot, signal: controller.signal })
-    ;({ browser, page } = await openBrowser(runtime.url, { headed: values.headed, timeoutMs: scenario.timeoutMs }))
+    const previousChats = await evidence.chats()
+    ;({ browser, page } = await openBrowser(runtime.url, { headed: values.headed, resumeMode: previousChats.length ? (previousChats.some(row => row.mode !== 'card') ? '游玩' : '卡片') : null, timeoutMs: scenario.timeoutMs }))
     controller.signal.addEventListener('abort', () => { browser.close().catch(() => {}) }, { once: true })
     log('运行目录：' + runRoot)
     for (const [index, step] of scenario.steps.entries()) {
@@ -62,7 +67,8 @@ async function main() {
       let text = '', state = {}
       if (step.action === 'play' || step.action === 'card') {
         const before = new Set((await evidence.chats()).map(row => row.id))
-        await (step.action === 'play' ? openPlay(page, step) : openCard(page, step))
+        const selectedStep = { ...step, existingCardNames: await existingCardNames(env.dataRoot) }
+        active.cardSelection = await (step.action === 'play' ? openPlay(page, selectedStep) : openCard(page, selectedStep))
         chat = await poll('创建对话', async () => {
           const found = (await evidence.chats()).filter(row => !before.has(row.id))
           if (found.length > 1) throw new Error('一次操作创建多个对话')
@@ -70,6 +76,8 @@ async function main() {
         })
         if (step.action === 'play' && chat.requestMode === 'sillytavern') throw new Error('测试意外进入兼容模式')
         active.chatId = chat.id; active.sessionId = chat.sessionId
+        active.modelControl = await page.getByRole('button', { name: /^(选择模型|Select model)/ }).getAttribute('aria-label')
+        active.card = { path: chat.cardPath, workspace: (await evidence.resources())['resources/' + chat.cardPath], contextSha256: createHash('sha256').update(JSON.stringify(chat.cardContextSnapshot || null)).digest('hex') }
         state = chat
       } else if (step.action === 'say') {
         chat = await evidence.chat(chat.id)
@@ -116,7 +124,7 @@ async function main() {
         await saveJson(prefix + '-requests.json', requests)
         active.responseChecks = requestChecks(requests, chat.mode, patterns)
         active.response = { agent: role, ...classifyResponse({ text }, patterns) }
-        active.requests = requests.map(r => ({ scope: r.scope, task: r.task, status: r.status, durationMs: r.durationMs, model: r.request?.model, sessionId: r.sessionId }))
+        active.requests = requests.map(r => ({ scope: r.scope, task: r.task, status: r.status, durationMs: r.durationMs, model: r.request?.model, provider: r.request?.provider, reasoningEffort: r.request?.reasoningEffort, sessionId: r.sessionId }))
         active.agent = role
         if (!text.trim()) throw new Error('Agent 未产生正文回复')
         state = chat
@@ -148,7 +156,7 @@ async function main() {
         await writeFile(path.join(runRoot, active.imageFile), bytes, { mode: 0o600 })
         const requests = (await evidence.requests(chat.id)).filter(r => !previousRequests.has(r.id))
         await saveJson(prefix + '-requests.json', requests)
-        active.requests = requests.map(r => ({ scope: r.scope, task: r.task, status: r.status, durationMs: r.durationMs, sessionId: r.sessionId }))
+        active.requests = requests.map(r => ({ scope: r.scope, task: r.task, status: r.status, durationMs: r.durationMs, model: r.request?.model, provider: r.request?.provider, reasoningEffort: r.request?.reasoningEffort, sessionId: r.sessionId }))
         for (const id of new Set(requests.map(r => r.sessionId).filter(Boolean))) await saveJson(prefix + '-image-native-' + id.replace(/[^a-zA-Z0-9_-]/g, '_') + '.json', await evidence.native(id))
         active.imageBytes = bytes.length; active.imageModel = version.model; active.versionId = version.id
         active.responseChecks = requestChecks(requests, chat.mode, patterns)
@@ -191,6 +199,7 @@ async function main() {
   } finally {
     await browser?.close().catch(() => {})
     await runtime?.stop()
+    await profile?.release()
     process.removeListener('SIGINT', interrupt); process.removeListener('SIGTERM', interrupt)
     report.finishedAt = new Date().toISOString()
     report.refusals = report.steps.flatMap(step => [...(step.response?.refused ? [{ step: step.index, ...step.response }] : []), ...(step.responseChecks || []).filter(check => check.refused).map(check => ({ step: step.index, ...check }))])
@@ -206,7 +215,7 @@ async function main() {
     }).join('\n')
     const refusalText = report.refusals.map(check => `- 步骤 ${check.step} / ${check.agent}：${check.evidence.replaceAll('\n', ' ').slice(0, 500)}`).join('\n')
     const rows = Object.entries(report.agents).map(([agent, status]) => `| ${agent} | ${status} |`).join('\n')
-    await writeFile(path.join(runRoot, 'report.md'), `# ${report.name}\n\n结果：${report.status}\n\n| Agent | 结果 |\n|---|---|\n${rows}\n\n| 步骤 | Agent | 输入 | 响应判定 | 测试结果 |\n|---|---|---|---|---|\n${results}\n\n拒绝证据（规则识别，需结合原文复核）：\n\n${refusalText || '无'}\n\n${report.error || ''}\n\n每步证据位于同目录，真实存档位于 home/profile-data/tavern。\n`, { mode: 0o600 })
+    await writeFile(path.join(runRoot, 'report.md'), `# ${report.name}\n\n结果：${report.status}\n\n| Agent | 结果 |\n|---|---|\n${rows}\n\n| 步骤 | Agent | 输入 | 响应判定 | 测试结果 |\n|---|---|---|---|---|\n${results}\n\n拒绝证据（规则识别，需结合原文复核）：\n\n${refusalText || '无'}\n\n${report.error || ''}\n\n每步证据位于同目录，持久测试 Profile：${report.profileHome || '未创建'}；每次运行均新建对话。\n`, { mode: 0o600 })
     log(`${report.status}：${path.join(runRoot, 'report.md')}`)
     if (report.error) log(report.error)
   }

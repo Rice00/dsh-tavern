@@ -1,6 +1,6 @@
 # 后台真实 Agent 测试
 
-`test:play` 启动独立 DSH Profile 和无头 Chromium，通过正式页面导入人物卡、开局、发送、进入卡片工作台和生图。没有替代模型适配器、拼装提示词或模拟结算。运行会产生真实模型及图片服务费用。
+`test:play` 启动持久复用的独立 DSH Profile 和无头 Chromium，首次通过正式页面导入人物卡，后续选择已有卡、重新开局、发送、进入卡片工作台和生图。没有替代模型适配器、拼装提示词或模拟结算。运行会产生真实模型及图片服务费用。
 
 ## 运行
 
@@ -52,8 +52,8 @@ steps:
 
 | 操作 | 含义 |
 |---|---|
-| `play` | 导入 `card` 并新开游玩；也可只给 `cardName`，使用本次测试库中已有或已修改的卡 |
-| `card` | 新建卡片工作台；提供 `card` 时导入并打开修改任务，不提供时空白开始 |
+| `play` | 仅缺卡时导入 `card`，每次新开游玩；也可只给 `cardName`，使用持久测试库中已有或已修改的卡 |
+| `card` | 新建卡片工作台；提供 `card` 时仅缺卡才导入，然后打开该卡修改任务，不提供时空白开始 |
 | `say` | 向当前游玩或卡片工作台发送 `input`；可连续多轮 |
 | `image` | 为当前最新正文点击真实生图按钮，等待图片保存并从正式图片接口读取 |
 
@@ -72,7 +72,7 @@ steps:
 - `NN-reply.md`、`NN.png`：正文和真实界面截图。
 - 卡片任务的 `NN-resources.json`：修改前后文件哈希，以及报告里的新增、修改、删除路径。
 - 生图的 `NN-image.json` 和 `NN-image.png`（扩展名随实际格式）：场景规划、图片版本记录和正式接口返回的图片字节。
-- `home/profile-data/tavern`：完整原生存档，包括后台及生图子 Session，可继续诊断；`runtime.log` 为 DSH 启动日志。
+- 报告 `profileHome` 下的 `profile-data/tavern`：持久保存的完整原生存档，包括后台及生图子 Session，可继续诊断；`runtime.log` 为 DSH 启动日志。
 
 失败保存 `failure-*` 证据并终止场景。未执行的 Agent 明确标为 `not-covered`，结算完成但未调用后台模型时标为 `not-invoked`；报告不会因为前台完成就推断生图或卡片成功。报告检查链路和明确断言，剧情质量仍须人工判断；通过一张演示卡不等于覆盖所有第三方卡、移动端或正式安装环境。
 
@@ -105,3 +105,5 @@ steps:
 - `refusal-markers.yaml`：正常响应、故意不符合预期的拒绝、符合预期的拒绝，分别得到 `通过/passed`、`未通过/failed`、`未通过/passed`，且失败后继续执行。
 
 以上覆盖演示卡、CLI 和桌面 Chromium；没有把它当成第三方 MVU 卡、移动宿主或模型拒绝语义识别准确率的验证。
+
+每个场景文件对应 `testsets/profiles/` 中一个持久 Profile，并加锁防止并发修改。报告中的 `cardSelection.imported` 标记首次导入或复用，`card` 记录实际卡路径和哈希；模型请求证据记录实际 provider、model、reasoningEffort（仅在原始日志提供时）。场景声明的模型配置仍位于报告顶层 `model`。

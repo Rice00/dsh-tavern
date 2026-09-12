@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, copyFile, symlink, readdir, access, chmod } from 'node:fs/promises'
+import { mkdir, readFile, writeFile, copyFile, symlink, readdir, access, chmod, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
@@ -11,12 +11,11 @@ import { webUrlFromLogChunk } from '../../bin/service-lifecycle.mjs'
 export const sourceRoot = fileURLToPath(new URL('../../', import.meta.url))
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms))
 
-export async function prepareRuntime({ runRoot, runtimeHome, model, tavernSettings = {}, images = false }) {
-  const home = path.join(runRoot, 'home')
+export async function prepareRuntime({ home, runtimeHome, model, tavernSettings = {}, images = false }) {
   const runtime = path.join(runtimeHome, 'runtime')
   if (!healthyCliRuntime(runtime)) throw new Error('需要已安装且版本匹配的 Tavern CLI runtime：' + runtime)
   const dependencies = path.join(runtimeHome, 'profiles/tavern/node_modules')
-  await mkdir(home, { mode: 0o700 })
+  await mkdir(home, { recursive: true, mode: 0o700 })
   const profile = path.join(home, 'profiles/tavern')
   await mkdir(profile, { recursive: true })
   const manifest = JSON.parse(await readFile(path.join(sourceRoot, 'package.json'), 'utf8'))
@@ -24,11 +23,12 @@ export async function prepareRuntime({ runRoot, runtimeHome, model, tavernSettin
   await writeFile(path.join(profile, 'cordis.yml'), '[]\n')
   await copyFile(path.join(sourceRoot, 'cordis.patch.yml'), path.join(profile, 'cordis.patch.yml'))
   const modules = path.join(profile, 'node_modules')
-  await mkdir(modules)
+  await mkdir(modules, { recursive: true })
   for (const name of await readdir(dependencies)) {
     if (name.startsWith('.')) continue
     const specifier = manifest.dependencies?.[name]
     const target = specifier?.startsWith('link:') ? path.resolve(sourceRoot, specifier.slice(5)) : path.join(dependencies, name)
+    await rm(path.join(modules, name), { force: true })
     await symlink(target, path.join(modules, name), 'junction')
   }
   const settings = parse(await readFile(path.join(runtimeHome, 'settings.yaml'), 'utf8')) || {}
@@ -42,7 +42,13 @@ export async function prepareRuntime({ runRoot, runtimeHome, model, tavernSettin
   }
   const dataRoot = path.join(home, 'profile-data/tavern/data')
   await mkdir(dataRoot, { recursive: true })
-  await writeFile(path.join(dataRoot, 'tavern-settings.json'), JSON.stringify(tavernSettings, null, 2))
+  const settingsFile = path.join(dataRoot, 'tavern-settings.json')
+  let previous = {}
+  try { previous = JSON.parse(await readFile(settingsFile, 'utf8')) }
+  catch (error) { if (error.code !== 'ENOENT') throw error }
+  await writeFile(settingsFile, JSON.stringify({ ...previous, ...tavernSettings,
+    backgroundTasks: { ...previous.backgroundTasks, ...tavernSettings.backgroundTasks },
+  }, null, 2))
   if (images) {
     await mkdir(path.join(dataRoot, 'scene-images'), { recursive: true })
     for (const name of ['settings.json', 'providers.json']) {
@@ -80,7 +86,11 @@ export async function startRuntime({ home, runtime, runRoot, signal }) {
     if (child.exitCode !== null || child.signalCode !== null) return
     child.kill('SIGTERM')
     for (let i = 0; i < 50 && child.exitCode === null && child.signalCode === null; i++) await pause(100)
-    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+    if (child.exitCode === null && child.signalCode === null) {
+      const exited = new Promise(resolve => child.once('exit', resolve))
+      child.kill('SIGKILL')
+      await exited
+    }
   }
   try {
     for (let i = 0; i < 120; i++) {

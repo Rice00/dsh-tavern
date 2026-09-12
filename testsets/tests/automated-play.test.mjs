@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, writeFile, readFile, mkdir, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { settledTurn, loadScenario, assertions } from '../lib/scenario.mjs'
@@ -60,4 +60,23 @@ test('refusal marks keep service errors and fictional dialogue separate', async 
   const checks = requestChecks([{ id: 'a', scope: 'background', task: 'settlement', status: 'completed', response: { text: '抱歉，我不能提供此类信息。' } }, { id: 'b', scope: 'background', task: 'scene-image', status: 'completed', response: {} }], 'story', refusalPatterns())
   assert.equal(checks[0].agent, 'background'); assert.equal(checks[0].refused, true)
   assert.equal(checks[1].agent, 'image'); assert.equal(checks[1].refused, false)
+})
+
+test('persistent profiles preserve cards and exclude concurrent runs', async () => {
+  const { acquireProfile } = await import('../lib/profile.mjs')
+  const root = await mkdtemp(path.join(os.tmpdir(), 'tavern-profile-'))
+  try {
+    const first = await acquireProfile(root, '/cases/one.yaml')
+    await mkdir(first.home)
+    await writeFile(path.join(first.home, 'card.json'), 'edited card')
+    await assert.rejects(acquireProfile(root, '/cases/one.yaml'), /已锁定/)
+    const other = await acquireProfile(root, '/cases/two.yaml')
+    assert.notEqual(other.home, first.home)
+    await other.release()
+    await first.release()
+    const second = await acquireProfile(root, '/cases/one.yaml')
+    assert.equal(second.home, first.home)
+    assert.equal(await readFile(path.join(second.home, 'card.json'), 'utf8'), 'edited card')
+    await second.release()
+  } finally { await rm(root, { recursive: true, force: true }) }
 })

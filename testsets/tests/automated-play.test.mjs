@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { settledTurn, loadScenario, assertions } from '../bin/play-testing/scenario.mjs'
-import { nativeResult } from '../bin/play-testing/evidence.mjs'
+import { settledTurn, loadScenario, assertions } from '../lib/scenario.mjs'
+import { nativeResult } from '../lib/evidence.mjs'
 
 test('cannot advance on previous settlement, partial reply or pending MVU', () => {
   const chat = { settleStatus: 'done', messages: [{ role: 'assistant', greeting: true }, { role: 'user', text: '继续' }] }
@@ -48,7 +48,7 @@ test('state assertions fail on missing data rather than silently passing', () =>
 })
 
 test('refusal marks keep service errors and fictional dialogue separate', async () => {
-  const { classifyResponse, refusalPatterns, requestChecks } = await import('../bin/play-testing/refusal.mjs')
+  const { classifyResponse, refusalPatterns, requestChecks } = await import('../lib/refusal.mjs')
   assert.equal(classifyResponse({ text: '抱歉，我无法帮助你完成这个请求。' }).refused, true)
   assert.equal(classifyResponse({ text: "I cannot assist with that request." }).verdict, '未通过')
   assert.equal(classifyResponse({ text: '阿芙拉摇头说：“抱歉，我无法帮助你。”' }).refused, false)

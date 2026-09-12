@@ -4,7 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { loadScenario } from '../bin/play-testing/scenario.mjs'
+import { loadScenario } from './lib/scenario.mjs'
 
 const root = path.dirname(fileURLToPath(import.meta.url))
 const args = process.argv.slice(2)
@@ -26,7 +26,7 @@ try {
   if (checkOnly) console.log('配置与人物卡快照检查通过；未调用模型。')
   else {
     const hasOutput = forwarded.some(arg => arg === '--output' || arg.startsWith('--output='))
-    const child = spawn(process.execPath, [path.join(root, '../bin/test-play.mjs'), scenarioFile,
+    const child = spawn(process.execPath, [path.join(root, 'test-play.mjs'), scenarioFile,
       ...(hasOutput ? [] : ['--output', path.join(root, 'results', name)]), ...forwarded], { stdio: 'inherit', shell: false })
     for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => child.kill(signal))
     child.on('error', error => { console.error(error.message); process.exitCode = 1 })

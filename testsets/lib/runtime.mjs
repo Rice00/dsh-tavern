@@ -4,9 +4,9 @@ import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
 import net from 'node:net'
 import { parse, stringify } from 'yaml'
-import { healthyCliRuntime } from '../cli-runtime.mjs'
-import { resolveDshCliEntry } from '../plugin-dependencies.mjs'
-import { webUrlFromLogChunk } from '../service-lifecycle.mjs'
+import { healthyCliRuntime } from '../../bin/cli-runtime.mjs'
+import { resolveDshCliEntry } from '../../bin/plugin-dependencies.mjs'
+import { webUrlFromLogChunk } from '../../bin/service-lifecycle.mjs'
 
 export const sourceRoot = fileURLToPath(new URL('../../', import.meta.url))
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms))

@@ -1,7 +1,7 @@
 import { readFile, readdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { createHash } from 'node:crypto'
-import { decodeZstdFrames } from '../session-prefix-migration.mjs'
+import { decodeZstdFrames } from '../../bin/session-prefix-migration.mjs'
 import { createChatJournalStore } from '../../tavern-plugin/lib/domain/chat-journal-store.js'
 import { sceneTarget } from '../../tavern-plugin/lib/domain/scene-illustration.js'
 

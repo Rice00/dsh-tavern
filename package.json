@@ -19,7 +19,7 @@
     "restart:tavern": "node ./bin/dsh-tavern.mjs restart",
     "status:tavern": "node ./bin/dsh-tavern.mjs status",
     "test": "node bin/test-tavern.mjs",
-    "test:play": "node bin/test-play.mjs"
+    "test:play": "node testsets/test-play.mjs"
   },
   "dependencies": {
     "@jitl/quickjs-singlefile-mjs-release-sync": "0.32.0",

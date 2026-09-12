@@ -9,8 +9,8 @@
 ```sh
 pnpm install
 pnpm exec playwright install chromium
-pnpm test:play tests/play-scenarios/avra.yaml
-pnpm test:play tests/play-scenarios/all-agents.yaml
+pnpm test:play testsets/examples/avra.yaml
+pnpm test:play testsets/examples/all-agents.yaml
 ```
 
 `--runtime-home /path/to/.dsh-tavern` 指定已安装的 CLI；`--headed` 显示测试浏览器；`--output /path/to/results` 指定结果父目录。每次运行都创建新目录，成功退出码为 0，失败或中断为 1。

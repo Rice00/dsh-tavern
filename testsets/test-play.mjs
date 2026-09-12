@@ -4,22 +4,22 @@ import path from 'node:path'
 import os from 'node:os'
 import { parseArgs } from 'node:util'
 import { execFileSync } from 'node:child_process'
-import { classifyResponse, requestChecks, refusalPatterns } from './play-testing/refusal.mjs'
-import { loadScenario, assertions, settledTurn } from './play-testing/scenario.mjs'
-import { prepareRuntime, startRuntime, sourceRoot } from './play-testing/runtime.mjs'
-import { openBrowser, openPlay, openCard, send } from './play-testing/browser.mjs'
-import { createEvidence, nativeResult, saveJson } from './play-testing/evidence.mjs'
+import { classifyResponse, requestChecks, refusalPatterns } from './lib/refusal.mjs'
+import { loadScenario, assertions, settledTurn } from './lib/scenario.mjs'
+import { prepareRuntime, startRuntime, sourceRoot } from './lib/runtime.mjs'
+import { openBrowser, openPlay, openCard, send } from './lib/browser.mjs'
+import { createEvidence, nativeResult, saveJson } from './lib/evidence.mjs'
 
 const { values, positionals } = parseArgs({ options: { 'runtime-home': { type: 'string' }, output: { type: 'string' }, headed: { type: 'boolean' }, help: { type: 'boolean' } }, allowPositionals: true })
 if (values.help || positionals.length !== 1) {
-  console.log('Usage: pnpm test:play SCENARIO.yaml [--runtime-home ~/.dsh-tavern] [--output DIRECTORY] [--headed]\n真实模型请求会计费。结果和独立存档默认保存在 output/playwright/play-runs。')
+  console.log('Usage: pnpm test:play SCENARIO.yaml [--runtime-home ~/.dsh-tavern] [--output DIRECTORY] [--headed]\n真实模型请求会计费。结果和独立存档默认保存在 testsets/results。')
   process.exitCode = values.help ? 0 : 2
 } else await main().catch(error => { console.error(String(error.message || error).replace(/https?:\/\/[^\s"']+/g, '[URL]')); process.exitCode = 1 })
 
 async function main() {
   const scenario = await loadScenario(positionals[0])
   const patterns = refusalPatterns(scenario.refusalPatterns)
-  const parent = path.resolve(values.output || path.join(sourceRoot, 'output/playwright/play-runs'))
+  const parent = path.resolve(values.output || path.join(sourceRoot, 'testsets/results'))
   await mkdir(parent, { recursive: true, mode: 0o700 })
   const runRoot = await mkdtemp(path.join(parent, 'run-'))
   const report = { name: scenario.name || path.basename(scenario.file), status: 'running', startedAt: new Date().toISOString(), model: scenario.model,

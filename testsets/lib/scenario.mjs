@@ -15,7 +15,7 @@ export async function loadScenario(file) {
   let mode = null
   for (const step of scenario.steps) {
     if (!step || !['play', 'say', 'image', 'card'].includes(step.action)) throw new Error('不支持的操作：' + step?.action)
-    const allowed = { play: ['action', 'card', 'cardName', 'expect'], card: ['action', 'card', 'expect'], say: ['action', 'input', 'expect'], image: ['action', 'expect'] }[step.action]
+    const allowed = { play: ['action', 'card', 'cardName', 'expect'], card: ['action', 'card', 'expect'], say: ['action', 'input', 'candidates', 'expect'], image: ['action', 'expect'] }[step.action]
     for (const key of Object.keys(step)) if (!allowed.includes(key)) throw new Error('操作字段不支持：' + key)
     if (['play', 'card'].includes(step.action)) {
       mode = step.action
@@ -24,6 +24,7 @@ export async function loadScenario(file) {
     } else if (!mode) throw new Error('必须先用 play 或 card 打开对话')
     if (step.action === 'image' && mode !== 'play') throw new Error('image 只能用于游玩对话')
     if (step.action === 'say' && (typeof step.input !== 'string' || !step.input.trim())) throw new Error('say 操作需要非空 input')
+    if (step.candidates !== undefined && (typeof step.candidates !== 'boolean' || mode !== 'play')) throw new Error('candidates 仅适用于游玩输入，且必须为布尔值')
     if (step.expect) validateExpect(step.expect)
   }
   const timeoutMs = scenario.timeoutMs ?? 300000

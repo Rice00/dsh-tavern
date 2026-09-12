@@ -161,6 +161,26 @@ async function main() {
             await saveJson(prefix + '-background-native-' + id.replace(/[^a-zA-Z0-9_-]/g, '_') + '.json', await evidence.native(id))
           }
           active.replyTurn = completed.reply.turn
+          active.candidates = { status: step.candidates ? 'running' : 'not-covered' }
+          if (step.candidates) {
+            active.phase = 'candidate-generating'
+            const previousCandidateId = chat.candidates?.requestId
+            await checkpoint(true)
+            await page.getByRole('button', { name: '生成候选项', exact: true }).click()
+            await recordEvent(eventFile, { type: 'candidate-start', step: active.index, round: active.round })
+            const candidates = await poll('候选项生成与落盘', async () => {
+              const latest = await evidence.chat(chat.id)
+              const requests = (await evidence.requests(chat.id)).filter(r => !previousRequests.has(r.id) && r.task === 'candidate')
+              if (requests.some(r => ['failed', 'cancelled'].includes(r.status))) throw new Error('候选项生成请求失败')
+              const saved = latest.candidates
+              if (!saved?.requestId || saved.requestId === previousCandidateId || !saved.choices?.length || !requests.length || requests.some(r => r.status !== 'completed')) return null
+              return saved
+            })
+            chat = await evidence.chat(chat.id)
+            active.candidates = { status: 'completed', count: candidates.choices.length, requestId: candidates.requestId, messageId: candidates.messageId }
+            await saveJson(prefix + '-candidates.json', candidates)
+            await recordEvent(eventFile, { type: 'candidate-completed', step: active.index, round: active.round, ...active.candidates })
+          }
         } else {
           chat = await evidence.chat(chat.id); text = result.text
           const afterResources = await evidence.resources()
@@ -169,6 +189,7 @@ async function main() {
           await saveJson(prefix + '-resources.json', { before: beforeResources, after: afterResources })
         }
         const requests = (await evidence.requests(chat.id)).filter(r => !previousRequests.has(r.id))
+        if (role === 'foreground') active.background = backgroundChain(requests, active.backgroundRequired)
         await saveJson(prefix + '-requests.json', requests)
         active.responseChecks = requestChecks(requests, chat.mode, patterns)
         active.response = { agent: role, ...classifyResponse({ text }, patterns) }
@@ -239,6 +260,7 @@ async function main() {
     report.error = String(error.message || error).replace(/https?:\/\/[^\s"']+/g, '[URL]')
     await recordEvent(eventFile, { type: 'run-error', step: active?.index, phase: active?.phase, error: report.error }).catch(() => {})
     if (active) active.error = report.error
+    if (active?.candidates?.status === 'running') active.candidates = { ...active.candidates, status: 'failed', error: report.error }
     if (active) { active.status = 'failed'; active.durationMs = Date.now() - active.startedAt; if (active.agent) cover(active.agent, 'failed') }
     if (active?.beforeChatIds && !active.chatId && evidence) {
       const created = (await evidence.chats().catch(() => [])).filter(row => !active.beforeChatIds.includes(row.id))

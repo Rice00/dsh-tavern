@@ -70,6 +70,7 @@ async function renderStep(id, step, files, body) {
   if (step.input) { const input = el('div', 'input-block'); input.append(el('div', 'label', '前台输入 / 测试 PROMPT'), el('div', 'prose', step.input)); body.append(input) }
   if (step.error || step.reason) body.append(el('div', 'error', step.error || step.reason))
   if (step.background) body.append(el('p', 'hint', `后台链路：${labels[step.background.status] || step.background.status} · ${step.background.requestIds?.length || 0} 个请求${step.background.required ? ' · 必须完成后再进入下一轮' : ''}`))
+  if (step.candidates) body.append(el('p', 'hint', `候选项：${labels[step.candidates.status] || step.candidates.status}${step.candidates.count ? ' · ' + step.candidates.count + ' 项' : ''}`))
   if (step.cardSelection) body.append(el('p', 'hint', `人物卡：${step.cardSelection.name} · ${step.cardSelection.imported ? '首次导入' : '复用已有卡'}`))
   if (step.modelControl) body.append(el('p', 'hint', step.modelControl))
   const requests = await read(prefix + '-requests.json', [])
@@ -91,7 +92,7 @@ async function renderStep(id, step, files, body) {
   const grid = el('div', 'agents')
   for (const agent of agents) {
     const role = step.role === 'card' || step.action === 'card' ? 'card' : /image|scene|illustration/.test(agent.task || '') ? 'image' : agent.scope || 'foreground'
-    const card = el('div', 'agent'), head = el('div', 'agent-head'); head.append(el('strong', '', roles[role] || role), badge(agent.status)); card.append(head)
+    const card = el('div', 'agent'), head = el('div', 'agent-head'); head.append(el('strong', '', agent.task === 'candidate' ? '候选项生成' : roles[role] || role), badge(agent.status)); card.append(head)
     card.append(el('div', 'meta', [agent.model?.model, agent.model?.reasoningEffort, agent.task].filter(Boolean).join(' · ')))
     const check = (step.responseChecks || []).find(c => c.requestId === (agent.requestId || agent.id)) || (step.response?.agent === role ? step.response : null)
     if (check) { card.append(badge(check.refused ? 'failed' : check.refused === false ? 'passed' : 'incomplete', check.refused ? '拒绝' : check.refused === false ? '未发现拒绝' : '执行异常')); if (check.refused && check.evidence) card.append(el('div', 'error', check.evidence)) }
@@ -111,7 +112,7 @@ async function renderStep(id, step, files, body) {
   if (step.captureErrors?.length) body.append(el('div', 'error', '证据采集异常：' + JSON.stringify(step.captureErrors)))
   if (step.imageFile && names.has(step.imageFile)) { const b = button('查看生成图片', () => preview(id, step.imageFile)); body.append(b) }
   const links = el('div', 'step-links')
-  for (const name of [prefix + '-chat.json', prefix + '-requests.json', prefix + '-native.json', prefix + '.png', 'events.jsonl']) if (names.has(name)) links.append(button(name.endsWith('.png') ? '界面截图' : name.endsWith('chat.json') ? '存档快照' : name.endsWith('requests.json') ? '完整请求与输出' : name.endsWith('native.json') ? '原生事件' : '运行时间线', () => preview(id, name)))
+  for (const name of [prefix + '-candidates.json', prefix + '-chat.json', prefix + '-requests.json', prefix + '-native.json', prefix + '.png', 'events.jsonl']) if (names.has(name)) links.append(button(name.endsWith('-candidates.json') ? '候选项结果' : name.endsWith('.png') ? '界面截图' : name.endsWith('chat.json') ? '存档快照' : name.endsWith('requests.json') ? '完整请求与输出' : name.endsWith('native.json') ? '原生事件' : '运行时间线', () => preview(id, name)))
   body.append(links)
 }
 async function preview(id, name) {

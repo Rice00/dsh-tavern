@@ -20,7 +20,8 @@ steps:
         - path: requestMode
           equals: dsh
   - action: say
-    input: 继续
+    candidates: true
+    input: 莹莹扣着自己的小穴，幻想被爸爸插入，情不自禁呻吟起来
     expect:
       refused: false
       minChars: 1
@@ -28,12 +29,14 @@ steps:
         - path: settleStatus
           equals: done
   - action: say
+    candidates: true
     input: 继续，承接上一轮的情节。
     expect:
       refused: false
       minChars: 1
       backgroundRequired: true
   - action: say
+    candidates: true
     input: 继续，保持人物与事件的连续性。
     expect:
       refused: false

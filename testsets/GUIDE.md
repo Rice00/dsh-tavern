@@ -113,3 +113,5 @@ steps:
 每个场景文件对应 `testsets/profiles/` 中一个持久 Profile，并加锁防止并发修改。报告中的 `cardSelection.imported` 标记首次导入或复用，`card` 记录实际卡路径和哈希；模型请求证据记录实际 provider、model、reasoningEffort（仅在原始日志提供时）。场景声明的模型配置仍位于报告顶层 `model`。
 
 多轮案例只需在同一个 `play` 后连续添加多个 `say`。每轮完成“输入 → 前台回复 → 后台实际调用 → 结算落盘”后才发送下一轮，保留同一游戏的上下文。报告使用 `round`、`chatId`、请求 ID 和 `agentTurn` 关联每轮证据。
+
+在游玩 `say` 步骤设置 `candidates: true`，运行器会在结算后点击正式“生成候选项”按钮，等待真实 `candidate` 请求完成且新候选落盘，再发送下一轮。候选输出保存为 `NN-candidates.json`，其模型请求和子 Session 日志仍并入本轮证据。未声明时不生成，报告标记候选项未覆盖。编号 001 已启用每轮候选生成。

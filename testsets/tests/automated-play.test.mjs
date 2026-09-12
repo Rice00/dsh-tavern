@@ -118,3 +118,25 @@ test('compacted reasoning and tool chunks remain in per-turn native evidence', a
     { type: 'tool-call-chunks', data: { turn: 2, args: ['partial'] } }, { seq: 25, type: 'turn/end' }]
   assert.deepEqual(eventsAfterSeq(events, 10), events.slice(1))
 })
+
+test('candidate request must finish in addition to settlement', async () => {
+  const { backgroundChain } = await import('../lib/recording.mjs')
+  const settlement = { id: 'settlement', scope: 'background', task: 'settlement', status: 'completed' }
+  const candidate = { id: 'candidate', scope: 'background', task: 'candidate', status: 'running' }
+  assert.equal(backgroundChain([settlement, candidate]).passed, false)
+  assert.equal(backgroundChain([settlement, { ...candidate, status: 'completed' }]).passed, true)
+  assert.equal(backgroundChain([settlement, { ...candidate, status: 'failed' }]).passed, false)
+})
+
+test('candidate generation can be requested only for gameplay inputs', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'tavern-candidate-case-'))
+  const file = path.join(root, 'scenario.json')
+  const scenario = { model: { provider: 'test', model: 'test' }, steps: [{ action: 'play', cardName: 'demo' }, { action: 'say', input: '继续', candidates: true }] }
+  try {
+    await writeFile(file, JSON.stringify(scenario))
+    assert.equal((await loadScenario(file)).steps[1].candidates, true)
+    scenario.steps[0] = { action: 'card' }
+    await writeFile(file, JSON.stringify(scenario))
+    await assert.rejects(loadScenario(file), /candidates/)
+  } finally { await rm(root, { recursive: true, force: true }) }
+})

@@ -1,3 +1,4 @@
+import { validateSourceCard } from './card-sync.mjs'
 import { readFile, access } from 'node:fs/promises'
 import path from 'node:path'
 import { parse } from 'yaml'
@@ -15,13 +16,17 @@ export async function loadScenario(file) {
   let mode = null, hasCandidates = false
   for (const step of scenario.steps) {
     if (!step || !['play', 'say', 'image', 'card'].includes(step.action)) throw new Error('不支持的操作：' + step?.action)
-    const allowed = { play: ['action', 'card', 'cardName', 'expect'], card: ['action', 'card', 'expect'], say: ['action', 'input', 'inputFrom', 'candidates', 'expect'], image: ['action', 'expect'] }[step.action]
+    const allowed = { play: ['action', 'sourceCard', 'card', 'cardName', 'expect'], card: ['action', 'sourceCard', 'card', 'expect'], say: ['action', 'input', 'inputFrom', 'candidates', 'expect'], image: ['action', 'expect'] }[step.action]
     for (const key of Object.keys(step)) if (!allowed.includes(key)) throw new Error('操作字段不支持：' + key)
     if (['play', 'card'].includes(step.action)) {
       mode = step.action
       hasCandidates = false
+      if (step.sourceCard !== undefined) {
+        validateSourceCard(step.sourceCard)
+        if (step.card || step.cardName) throw new Error('sourceCard 不能与 card 或 cardName 同时配置')
+      }
       if (step.card) { step.card = path.resolve(path.dirname(absolute), step.card); await access(step.card) }
-      if (mode === 'play' && !step.card && !step.cardName) throw new Error('play 操作需要 card 文件或已在测试库中的 cardName')
+      if (mode === 'play' && !step.card && !step.cardName && !step.sourceCard) throw new Error('play 操作需要 card 文件或已在测试库中的 cardName')
     } else if (!mode) throw new Error('必须先用 play 或 card 打开对话')
     if (step.action === 'image' && mode !== 'play') throw new Error('image 只能用于游玩对话')
     if (step.action === 'say') {

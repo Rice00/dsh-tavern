@@ -33,7 +33,7 @@ node testsets/run.mjs 001-duan-yingying-continue
 
 支持向现有运行器传递 `--headed`、`--runtime-home PATH`、`--output PATH`。结果默认写入 `testsets/results/案例编号/run-*/`，包含实际 Agent 输出、拒绝标记、原生日志、每步存档快照及截图。
 
-人物卡快照仅用于首次导入；后续直接使用该案例测试 Profile 中已有的卡，通过正式界面新开游戏。运行前校验的是导入种子快照，报告另记录实际使用卡片的哈希；修改过的测试卡不会被种子覆盖。新 checkout 需要补齐本地卡片及来源文件。运行环境与断言说明见 [自动化测试说明](./GUIDE.md)。
+使用 `sourceCard` 的案例在每次启动前同步正式卡库的最新 JSON，不需要本地导出快照。使用 `card` 的案例仍以快照仅用于首次导入；后续直接使用该案例测试 Profile 中已有的卡，通过正式界面新开游戏。运行前校验的是导入种子快照，报告另记录实际使用卡片的哈希；修改过的测试卡不会被种子覆盖。只有使用本地 `card` 的编号案例需要补齐卡片快照及来源文件。运行环境与断言说明见 [自动化测试说明](./GUIDE.md)。
 
 通用示例：`pnpm test:play testsets/examples/all-agents.yaml`。
 
@@ -52,3 +52,13 @@ node testsets/report-ui.mjs
 打开 <http://127.0.0.1:4318>，可搜索、筛选案例，逐轮查看前台回复、后台工具调用、拒绝标记与失败原因，并预览原始日志及截图。点击“刷新报告”读取最新结果。只监听本机，不调用模型。
 
 可用 `--port 4319` 更换端口，`--results /绝对路径` 指定其他结果目录。UI 和服务代码分别位于 `testsets/ui/`、`testsets/report-ui.mjs`。
+
+## 引用正式人物卡
+
+```yaml
+steps:
+  - action: play
+    sourceCard: 段莹莹_自由.json
+```
+
+文件名相对 `--runtime-home`（默认 `~/.dsh-tavern`）的 `profile-data/tavern/data/resources/cards/`。正式酒馆保存修改后，下次测试自动同步并新开游戏。无需 `card`、`cardName` 或手工更新哈希。测试副本会被覆盖，正式卡只读；同一次测试固定使用启动时的版本。来源与快照记录在报告中。

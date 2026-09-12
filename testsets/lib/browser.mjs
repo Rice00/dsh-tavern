@@ -47,7 +47,7 @@ export async function openCard(page, step) {
   await revealSidebar(page)
   // Optional import follows the same picker used by play, then enters the workbench.
   let selection
-  if (step.card) {
+  if (step.card || step.sourceCard) {
     const name = await resolveCardName(step)
     const matches = (step.existingCardNames || []).filter(value => value === name)
     if (matches.length > 1) throw new Error('人物卡名称重复：' + name)
@@ -65,7 +65,7 @@ export async function openCard(page, step) {
   if (!(await cardTab.getAttribute('class') || '').split(' ').includes('active')) await cardTab.click()
   const blank = page.getByRole('button', { name: /空白开始/ })
   if (!await blank.isVisible()) await clickSidebarButton(page, '＋ 新建卡片工作台对话')
-  if (step.card) {
+  if (step.card || step.sourceCard) {
     await page.getByRole('button', { name: /^修改人物卡/ }).click()
     await namedCard(page, page.locator('.dsh-tavern-card-picker'), selection.name).click()
   } else await blank.click()

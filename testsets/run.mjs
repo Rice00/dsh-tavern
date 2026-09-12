@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import os from 'node:os'
+import { readSourceCard } from './lib/card-sync.mjs'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -16,14 +18,26 @@ const folder = path.join(root, name)
 const scenarioFile = path.join(folder, 'scenario.yaml')
 try {
   const scenario = await loadScenario(scenarioFile)
-  const source = JSON.parse(await readFile(path.join(folder, 'card.source.json'), 'utf8'))
-  const card = await readFile(path.join(folder, 'card.json'))
-  const digest = createHash('sha256').update(card).digest('hex')
-  if (digest !== source.snapshotSha256) throw new Error('人物卡快照已变化，请核实并更新 card.source.json 中的快照哈希')
   console.log(`案例：${scenario.name}`)
   console.log(`模型：${scenario.model.provider} / ${scenario.model.model} / ${scenario.model.reasoningEffort}`)
-  console.log(`人物卡 SHA-256：${digest}`)
-  if (checkOnly) console.log('配置与人物卡快照检查通过；未调用模型。')
+  const liveCards = scenario.steps.map(s => s.sourceCard).filter(Boolean)
+  if (liveCards.length) {
+    const homeFlag = forwarded.findIndex(arg => arg === '--runtime-home')
+    const runtimeHome = forwarded.find(arg => arg.startsWith('--runtime-home='))?.slice('--runtime-home='.length) || (homeFlag >= 0 ? forwarded[homeFlag + 1] : path.join(os.homedir(), '.dsh-tavern'))
+    for (const filename of new Set(liveCards)) {
+      if (checkOnly) {
+        const card = await readSourceCard(path.resolve(runtimeHome), filename)
+        console.log(`正式人物卡：${filename} / SHA-256：${card.sha256}`)
+      } else console.log(`正式人物卡：${filename}（启动前同步最新内容）`)
+    }
+  } else {
+    const source = JSON.parse(await readFile(path.join(folder, 'card.source.json'), 'utf8'))
+    const card = await readFile(path.join(folder, 'card.json'))
+    const digest = createHash('sha256').update(card).digest('hex')
+    if (digest !== source.snapshotSha256) throw new Error('人物卡快照已变化，请核实并更新 card.source.json 中的快照哈希')
+    console.log(`人物卡 SHA-256：${digest}`)
+  }
+  if (checkOnly) console.log('配置与来源检查通过；未同步卡片，未调用模型。')
   else {
     const hasOutput = forwarded.some(arg => arg === '--output' || arg.startsWith('--output='))
     const child = spawn(process.execPath, [path.join(root, 'test-play.mjs'), scenarioFile,

@@ -11,8 +11,7 @@ tavernSettings:
     characterDesign: false
 steps:
   - action: play
-    card: ./card.json
-    cardName: 段莹莹
+    sourceCard: 段莹莹_自由.json
     expect:
       state:
         - path: mode

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { syncSourceCards } from './lib/card-sync.mjs'
 import { captureStep, backgroundChain, recordEvent, cleanError } from './lib/recording.mjs'
 import { createHash } from 'node:crypto'
 import { acquireProfile, existingCardNames } from './lib/profile.mjs'
@@ -81,6 +82,8 @@ async function main() {
     report.profileHome = profile.home
     env = await prepareRuntime({ home: profile.home, runtimeHome: path.resolve(values['runtime-home'] || path.join(os.homedir(), '.dsh-tavern')), model: scenario.model,
       tavernSettings: scenario.tavernSettings || {}, images: scenario.steps.some(step => step.action === 'image') })
+    report.cardSync = await syncSourceCards({ ...env, runRoot, runtimeHome: path.resolve(values['runtime-home'] || path.join(os.homedir(), '.dsh-tavern')), filenames: scenario.steps.map(s => s.sourceCard).filter(Boolean) })
+    await checkpoint(true)
     evidence = createEvidence(env)
     runtime = await startRuntime({ ...env, runRoot, signal: controller.signal })
     const previousChats = await evidence.chats()
@@ -104,7 +107,7 @@ async function main() {
       if (step.action === 'play' || step.action === 'card') {
         const before = new Set((await evidence.chats()).map(row => row.id))
         active.beforeChatIds = [...before]
-        const selectedStep = { ...step, existingCardNames: await existingCardNames(env.dataRoot) }
+        const selectedStep = { ...step, ...(step.sourceCard ? { cardName: report.cardSync.find(card => card.filename === step.sourceCard).name } : {}), existingCardNames: await existingCardNames(env.dataRoot) }
         active.cardSelection = await (step.action === 'play' ? openPlay(page, selectedStep) : openCard(page, selectedStep))
         chat = await poll('创建对话', async () => {
           const found = (await evidence.chats()).filter(row => !before.has(row.id))

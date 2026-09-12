@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { parseArgs } from 'node:util'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
-const allowed = name => /^(?:report\.(?:json|md)|events\.jsonl|(?:\d{2,}|failure)(?:[-.][a-zA-Z0-9_.-]+)?\.(?:json|md|png|jpg|jpeg|webp|gif))$/.test(name)
+const allowed = name => /^(?:report\.(?:json|md)|card-sync\.json|events\.jsonl|(?:\d{2,}|failure)(?:[-.][a-zA-Z0-9_.-]+)?\.(?:json|md|png|jpg|jpeg|webp|gif))$/.test(name)
 const mime = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8', '.jsonl': 'text/plain; charset=utf-8', '.md': 'text/plain; charset=utf-8', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif' }
 
 export async function createReportServer(resultsRoot) {

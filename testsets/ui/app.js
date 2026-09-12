@@ -41,6 +41,7 @@ async function selectRun(id) {
   const heading = el('div', 'report-title'); heading.append(el('h2', '', report.name || runs.find(r => r.id === id)?.directory || '测试报告'), badge(report.status)); detail.append(heading)
   detail.append(el('div', 'meta', [report.model?.provider, report.model?.model, report.model?.reasoningEffort && '推理强度 ' + report.model.reasoningEffort].filter(Boolean).join(' · ') || '模型配置未记录'))
   detail.append(el('div', 'meta', `${date(report.startedAt)}  ·  ${report.steps?.filter(s => s.action === 'say').length || 0} 轮输入  ·  ${report.commit ? report.commit.slice(0, 8) + (report.dirty ? '（含未提交改动）' : '') : '提交未记录'}`))
+  for (const card of report.cardSync || []) detail.append(el('p', 'hint', `同步正式卡：${card.filename} · ${card.changed ? '已更新测试副本' : '内容未变化'} · SHA-256 ${card.sha256.slice(0, 12)}`))
   const stats = el('div', 'stats')
   for (const [role, title] of Object.entries(roles)) { const card = el('div', 'stat'); card.append(el('span', 'stat-label', title), badge(report.agents?.[role] || 'not-covered')); stats.append(card) }
   detail.append(stats)

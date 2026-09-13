@@ -4244,11 +4244,22 @@ window.__ModuleLoader__.load({
 					const openingArtifacts = props.openingPreview && props.trustedCardMode
 						? createTavernHostArtifactScope({ document: hostWindow.document }) : null;
 					hostWindow.addEventListener("message", receive);
-                    const releaseComposer = props.openingPreview && props.trustedCardMode && hostWindow.document
-                        ? installOpeningHostComposer(hostWindow.document, function (text) {
-                            if (!listener || visible.key !== desired.key || typeof props.onSubmitOpening !== "function") throw new Error("开场预览已失效，请重新打开");
-                            return props.onSubmitOpening(text);
-                        }, function (error) { tavernErrorHub.report("开始游戏", error); }) : function () {};
+                    let openingSubmitted = false;
+                    const releaseComposer = props.trustedCardMode && hostWindow.document
+                        ? installFrameHostComposer(hostWindow.document, function (node) {
+                            const channel = channels.get(visible.token);
+                            return Boolean(listener && visible.key === desired.key && node && channel && channel.element() === node);
+                        }, function (text) {
+                            if (!listener || visible.key !== desired.key) throw new Error("卡片已失效，请重新打开");
+                            if (props.openingPreview) {
+                                if (openingSubmitted) return;
+                                if (typeof props.onSubmitOpening !== "function") throw new Error("开场预览已失效，请重新打开");
+                                return Promise.resolve(props.onSubmitOpening(text)).then(function (result) { openingSubmitted = true; return result; });
+                            }
+                            const executeSlash = configuredSlashExecutor || props.executeSlash;
+                            if (!props.sessionId || typeof executeSlash !== "function") throw new Error("当前界面无法触发生成，请刷新页面后重试");
+                            return executeSlash("/send " + text + "|/trigger", props.sessionId);
+                        }, function (error) { tavernErrorHub.report("开始旅程", error); }) : function () {};
 
                     const colorsChanged = function () { sendTextColors(); };
                     hostWindow.addEventListener("dsh-tavern-text-colors-changed", colorsChanged);
@@ -9254,6 +9265,7 @@ window.__ModuleLoader__.load({
 		exports.createPlayWorkspaceResolver = createPlayWorkspaceResolver;
 		exports.createSessionListRecoveryModule = createSessionListRecoveryModule;
 		exports.installOpeningHostComposer = installOpeningHostComposer;
+        exports.installFrameHostComposer = installFrameHostComposer;
 		exports.createConversationLifecycleModule = createConversationLifecycleModule;
 		exports.createConversationHostAdapter = createConversationHostAdapter;
 		exports.createConversationPrewarmModule = createConversationPrewarmModule;

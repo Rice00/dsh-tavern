@@ -68,3 +68,38 @@ function installOpeningHostComposer(hostDocument, submit, report) {
   });
   return function () { active = false; controls.remove(); };
 }
+
+// Parent DOM IDs are shared, but the focused iframe identifies the sender even
+// after document.write replaces its document. Never fall back to the active chat.
+const tavernHostComposers = new WeakMap();
+function installFrameHostComposer(doc, ownsFrame, submit, report) {
+  let state = tavernHostComposers.get(doc);
+  if (!state) {
+    if (doc.getElementById('send_textarea') || doc.getElementById('send_but')) return function () {};
+    const controls = doc.createElement('div');
+    controls.hidden = true;
+    const area = doc.createElement('textarea'), button = doc.createElement('button');
+    area.id = 'send_textarea'; button.id = 'send_but'; button.type = 'button';
+    controls.append(area, button); doc.body.append(controls);
+    state = { controls, owners: new Set() };
+    tavernHostComposers.set(doc, state);
+    button.addEventListener('click', function () {
+      const owners = Array.from(state.owners).filter(function (owner) { return owner.ownsFrame(doc.activeElement); });
+      if (owners.length !== 1) throw new Error('无法确定开局消息所属的卡片，请重新点击卡片内的开始按钮');
+      const owner = owners[0], text = String(area.value || '').trim();
+      if (owner.pending || !text) return;
+      owner.pending = true;
+      Promise.resolve().then(function () {
+        if (!state.owners.has(owner)) throw new Error('卡片已关闭，请重新打开');
+        return owner.submit(text);
+      }).then(function () { if (area.value === text) area.value = ''; }, owner.report)
+        .finally(function () { owner.pending = false; });
+    });
+  }
+  const owner = { ownsFrame, submit, report, pending: false };
+  state.owners.add(owner);
+  return function () {
+    state.owners.delete(owner);
+    if (!state.owners.size) { state.controls.remove(); tavernHostComposers.delete(doc); }
+  };
+}

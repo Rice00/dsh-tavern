@@ -2009,6 +2009,41 @@ window.__ModuleLoader__.load({
 		  });
 		  return function () { active = false; controls.remove(); };
 		}
+
+		// Parent DOM IDs are shared, but the focused iframe identifies the sender even
+		// after document.write replaces its document. Never fall back to the active chat.
+		const tavernHostComposers = new WeakMap();
+		function installFrameHostComposer(doc, ownsFrame, submit, report) {
+		  let state = tavernHostComposers.get(doc);
+		  if (!state) {
+		    if (doc.getElementById('send_textarea') || doc.getElementById('send_but')) return function () {};
+		    const controls = doc.createElement('div');
+		    controls.hidden = true;
+		    const area = doc.createElement('textarea'), button = doc.createElement('button');
+		    area.id = 'send_textarea'; button.id = 'send_but'; button.type = 'button';
+		    controls.append(area, button); doc.body.append(controls);
+		    state = { controls, owners: new Set() };
+		    tavernHostComposers.set(doc, state);
+		    button.addEventListener('click', function () {
+		      const owners = Array.from(state.owners).filter(function (owner) { return owner.ownsFrame(doc.activeElement); });
+		      if (owners.length !== 1) throw new Error('无法确定开局消息所属的卡片，请重新点击卡片内的开始按钮');
+		      const owner = owners[0], text = String(area.value || '').trim();
+		      if (owner.pending || !text) return;
+		      owner.pending = true;
+		      Promise.resolve().then(function () {
+		        if (!state.owners.has(owner)) throw new Error('卡片已关闭，请重新打开');
+		        return owner.submit(text);
+		      }).then(function () { if (area.value === text) area.value = ''; }, owner.report)
+		        .finally(function () { owner.pending = false; });
+		    });
+		  }
+		  const owner = { ownsFrame, submit, report, pending: false };
+		  state.owners.add(owner);
+		  return function () {
+		    state.owners.delete(owner);
+		    if (!state.owners.size) { state.controls.remove(); tavernHostComposers.delete(doc); }
+		  };
+		}
 		// The native conversation root survives hero -> active transitions. Derive the
 		// landing marker at those boundaries, not with a descendant :has() on every
 		// message element whenever the composer changes.
@@ -5180,11 +5215,22 @@ window.__ModuleLoader__.load({
 					const openingArtifacts = props.openingPreview && props.trustedCardMode
 						? createTavernHostArtifactScope({ document: hostWindow.document }) : null;
 					hostWindow.addEventListener("message", receive);
-                    const releaseComposer = props.openingPreview && props.trustedCardMode && hostWindow.document
-                        ? installOpeningHostComposer(hostWindow.document, function (text) {
-                            if (!listener || visible.key !== desired.key || typeof props.onSubmitOpening !== "function") throw new Error("开场预览已失效，请重新打开");
-                            return props.onSubmitOpening(text);
-                        }, function (error) { tavernErrorHub.report("开始游戏", error); }) : function () {};
+                    let openingSubmitted = false;
+                    const releaseComposer = props.trustedCardMode && hostWindow.document
+                        ? installFrameHostComposer(hostWindow.document, function (node) {
+                            const channel = channels.get(visible.token);
+                            return Boolean(listener && visible.key === desired.key && node && channel && channel.element() === node);
+                        }, function (text) {
+                            if (!listener || visible.key !== desired.key) throw new Error("卡片已失效，请重新打开");
+                            if (props.openingPreview) {
+                                if (openingSubmitted) return;
+                                if (typeof props.onSubmitOpening !== "function") throw new Error("开场预览已失效，请重新打开");
+                                return Promise.resolve(props.onSubmitOpening(text)).then(function (result) { openingSubmitted = true; return result; });
+                            }
+                            const executeSlash = configuredSlashExecutor || props.executeSlash;
+                            if (!props.sessionId || typeof executeSlash !== "function") throw new Error("当前界面无法触发生成，请刷新页面后重试");
+                            return executeSlash("/send " + text + "|/trigger", props.sessionId);
+                        }, function (error) { tavernErrorHub.report("开始旅程", error); }) : function () {};
 
                     const colorsChanged = function () { sendTextColors(); };
                     hostWindow.addEventListener("dsh-tavern-text-colors-changed", colorsChanged);
@@ -10359,6 +10405,7 @@ window.__ModuleLoader__.load({
 		exports.createPlayWorkspaceResolver = createPlayWorkspaceResolver;
 		exports.createSessionListRecoveryModule = createSessionListRecoveryModule;
 		exports.installOpeningHostComposer = installOpeningHostComposer;
+        exports.installFrameHostComposer = installFrameHostComposer;
 		exports.createConversationLifecycleModule = createConversationLifecycleModule;
 		exports.createConversationHostAdapter = createConversationHostAdapter;
 		exports.createConversationPrewarmModule = createConversationPrewarmModule;

@@ -16,13 +16,19 @@ try {
     window.createUpdate = (0, eval)('(' + create + ')')
     window.applyUpdate = (0, eval)('(' + apply + ')')
   }, { create: client.createTavernHelperContextUpdate.toString(), apply: client.applyTavernHelperContextUpdate.toString(), projection: projectionSource })
-  for (const rounds of [20, 80, 200]) for (const stateKiB of [0, 64, 256]) {
+  for (const rounds of [20, 80, 200]) for (const stateKiB of [0, 4, 16, 64, 256]) {
     console.error(`measure rounds=${rounds} stateKiB=${stateKiB}`)
     const result = await page.evaluate(({ rounds, stateKiB }) => {
       const state = { stat_data: { fixture: '测'.repeat(Math.floor(stateKiB * 1024 / 3)) } }
       const chat = { id: 'synthetic', _storageRevision: 1, messages: Array.from({ length: rounds * 2 }, (_, i) => ({ role: i % 2 ? 'assistant' : 'user', text: '虚构正文。'.repeat(200), variables: stateKiB && i % 2 ? [state] : [] })) }
       const context = window.projectContext(chat)
-      const next = structuredClone(context); next.stateRevision++
+      const wireStart = performance.now();
+      const wire = JSON.stringify(context);
+      const encodeMs = performance.now() - wireStart;
+      const decodeStart = performance.now();
+      const next = JSON.parse(wire);
+      const decodeMs = performance.now() - decodeStart;
+      next.stateRevision++
       next.messages.at(-1).variables.probe = 1
       const samples = []
       for (let i = 0; i < 4; i++) {
@@ -34,10 +40,10 @@ try {
         if (applied.context.messages.at(-1).variables.probe !== 1) throw Error('incorrect update')
         samples.push({ diffMs: middle - start, applyMs: end - middle })
       }
-      return { samples: samples.slice(1), contextMiB: new TextEncoder().encode(JSON.stringify(context)).length / 1048576 }
+      return { encodeMs, decodeMs, samples: samples.slice(1), contextMiB: new TextEncoder().encode(JSON.stringify(context)).length / 1048576 }
     }, { rounds, stateKiB })
     const median = key => +result.samples.map(x => x[key]).sort((a,b) => a-b)[1].toFixed(1)
-    rows.push({ rounds, stateKiB, contextMiB: +result.contextMiB.toFixed(2), diffMs: median('diffMs'), applyMs: median('applyMs') })
+    rows.push({ rounds, stateKiB, contextMiB: +result.contextMiB.toFixed(2), diffMs: median('diffMs'), applyMs: median('applyMs'), encodeMs: +result.encodeMs.toFixed(1), decodeMs: +result.decodeMs.toFixed(1) })
   }
 } finally { await browser.close() }
 await mkdir(new URL('../../output/mvu-performance/', import.meta.url), { recursive: true })

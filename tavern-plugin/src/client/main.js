@@ -402,6 +402,8 @@ window.__ModuleLoader__.load({
 			return { phase: String(activity.phase || "idle"), busy: busy, role: role, label: label, blockReason: blockReason };
 		}
 
+		// @include modules/history-window.js
+
 		function useLiveTavernView(sessionId, revision) {
 			const [state, setState] = React.useState(function () { return liveTavernView.getSnapshot(sessionId); });
 			React.useEffect(function () { return liveTavernView.subscribe(sessionId, setState); }, [sessionId]);
@@ -9121,6 +9123,7 @@ window.__ModuleLoader__.load({
 			}
 			playControlsFeature.register({ ctx: ctx, slots: slots });
 			assistantRendererFeature.register({ ctx: ctx, slots: slots });
+			registerTavernHistoryWindow(ctx);
 			ctx.effect(function () {
 				return slots.inject("conversation.input.right", function () { return slots.register({
 					name: "conversation.input.right",

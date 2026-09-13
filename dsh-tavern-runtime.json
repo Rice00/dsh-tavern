@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "6279996bf233b507801ff8f71e29a6efb981d09c",
-  "releaseSequence": 193,
+  "revision": "aa956b02016be2c9dd2df075b45115133c939e5a",
+  "releaseSequence": 194,
   "version": "1.7.0",
   "files": [
     {
@@ -3371,8 +3371,8 @@
     },
     {
       "path": "tavern-plugin/prompts/system-append.md",
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "size": 0
+      "sha256": "1df134caeb077c0b454c6e8efa0f551e2ccd9cd40e5ab8c6302a4944686a7328",
+      "size": 14807
     },
     {
       "path": "tavern-plugin/src/client/landing-styles.js",

@@ -8,7 +8,10 @@ export function observeHttpRequests(server, report, { now = Date.now, interval =
   const classify = raw => {
     let path
     try { path = new URL(raw || '/', 'http://localhost').pathname } catch { return 'other' }
-    if (/^\/api\/dsh-tavern\/(claimTavernScriptWork|heartbeatTavernScriptRuntime|completeTavernHelperEvent)$/.test(path)) return path.split('/').pop()
+    if (path === '/plugins/events') return 'plugin-events'
+    if (path === '/api/session/list') return 'session-list'
+    if (path === '/api/subagents/list') return 'subagent-list'
+    if (/^\/api\/dsh-tavern\/(claimTavernScriptWork|heartbeatTavernScriptRuntime|completeTavernHelperEvent|getSession|syncSession|captureDisplayRuntime|sceneImageStatus|getSceneImageSettings|getUpdateStatus)$/.test(path)) return path.split('/').pop()
     if (/^\/api\/dsh-tavern\/(static-assets|remote-assets)(\/|$)/.test(path)) return 'card-assets'
     if (path.startsWith('/api/dsh-tavern/')) return 'tavern-api'
     if (path.startsWith('/api/')) return 'host-api'
@@ -33,7 +36,9 @@ export function observeHttpRequests(server, report, { now = Date.now, interval =
     let oldestMs = 0
     for (const row of active.values()) {
       const ageMs = Math.max(0, at - row.at)
-      oldestMs = Math.max(oldestMs, ageMs)
+      // HMR intentionally holds an SSE response open for the page lifetime.
+      // Include it as occupancy context, but never let it evict real stalls.
+      if (row.route !== 'plugin-events') oldestMs = Math.max(oldestMs, ageMs)
       const group = routes.get(row.route) || { route: row.route, count: 0, oldestMs: 0 }
       group.count++; group.oldestMs = Math.max(group.oldestMs, ageMs)
       routes.set(row.route, group)

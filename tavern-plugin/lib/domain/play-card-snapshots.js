@@ -1,5 +1,8 @@
+import { createHash } from 'node:crypto'
 import { constantWorldBookContext } from './worldbook-recall.js'
 import { sanitizeAgentProjectionText } from './runtime-content-projection.js'
+
+export function cardContentDigest(card) { return createHash('sha256').update(JSON.stringify(card ?? null)).digest('hex') }
 
 const VERSION = 7
 function str(value) { return value === undefined || value === null ? '' : String(value) }
@@ -15,18 +18,22 @@ export function createPlayCardSnapshots({ worldBooks, planner, readCard, writeCh
     return ''
   }
 
-  async function build(chat, card) {
+  async function build(chat, card, preservePreferences = false) {
     let worldBook = null
     try { worldBook = await worldBooks.bound(chat.cardPath, card, chat) }
     catch (error) { logger.warn('dsh-tavern: 常驻世界书读取失败，已跳过:', str(error && error.message || error)) }
     const worldBookContext = constantWorldBookContext({ worldBook }).context
     const planned = sanitizeAgentProjectionText((await planner.plan({ purpose: 'play-card-snapshot', card, chat, worldBookContext, worldBookLabel: '常驻世界书' })).text)
-    const preference = chat.userProfileEnabled === true && userPreferenceProfile
-      ? await userPreferenceProfile.stableContext()
-      : null
+    let preference = null
+    if (preservePreferences) {
+      if (chat.userProfileContextSnapshot) preference = { text: chat.userProfileContextSnapshot, revision: chat.userProfileRevision }
+    } else if (chat.userProfileEnabled === true && userPreferenceProfile) {
+      preference = await userPreferenceProfile.stableContext()
+    }
     const text = preference === null ? planned : sanitizeAgentProjectionText([preference.text, planned].filter(Boolean).join('\n\n'))
     const patch = {
       cardContextSnapshot: text,
+      cardContentDigest: cardContentDigest(card),
       cardContextSnapshotVersion: VERSION,
       userProfileRevision: preference === null ? 0 : preference.revision,
       userProfileContextSnapshot: preference === null ? '' : preference.text
@@ -81,5 +88,10 @@ export function createPlayCardSnapshots({ worldBooks, planner, readCard, writeCh
     finally { if (pending.get(key) === operation) pending.delete(key) }
   }
 
-  return Object.freeze({ prepare, ensure, constantContext })
+  async function replacement(chat, card) {
+    const patch = await build(chat, card, true)
+    return { ...patch, cardContextRevision: (Number(chat.cardContextRevision) || 0) + 1 }
+  }
+
+  return Object.freeze({ prepare, ensure, constantContext, replacement })
 }

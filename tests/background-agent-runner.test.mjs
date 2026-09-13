@@ -1399,3 +1399,28 @@ test('生图已有空前缀会话补入开局 system，连续任务保持背景�
     assert.equal(session.events.filter(event => event.data?.id === 'tavern-session-prefix:' + session.id).length, 1)
   } finally { await runner.dispose() }
 })
+
+for (const task of ['settlement', 'image']) test(task + ' 已有会话在明确更新人物卡后切换背景', async () => {
+  let assemble, pending, revision = 0, background = '开局人物设定'
+  const seen = []
+  const session = { id: 'updated-' + task, header: {}, events: [], append(type, data) { const event = { type, data, seq: this.events.length + 1 }; this.events.push(event); return event } }
+  const runner = createBackgroundAgentRunner({
+    resolveStablePrefixRevision: async () => revision, resolveStablePrefix: async () => background,
+    agents: { get: () => ({ session: { header: {} } }), async create(options) {
+      await options.setup({ systemPrompt: { section() {}, suppressRuntimeContext() {} }, tools: { restrict() {}, register() {} }, on(event, callback) { if (event === 'system-prompt/assemble') assemble = callback } })
+      return { agent: { session, followup() { pending = (async () => {
+        const result = await assemble({}, { agent: { session } }, async () => ({ sections: [], tools: [] }))
+        seen.push(result.sections.map(s => s.text).join('\n'))
+        session.append('assistant/message', { message: { content: [{ type: 'text', text: '完成' }] } })
+      })() }, async whenIdle() { await pending } }, async dispose() {} }
+    } }
+  })
+  try {
+    for (const version of [0, 1, 1]) {
+      revision = version; background = version ? '已确认的新版设定' : '开局人物设定'
+      await runner.run({ sessionId: 'parent', persistent: true, task, selection: { provider: 'test', model: 'fake' }, messages: [], tools: [] })
+    }
+    assert.deepEqual(seen, ['开局人物设定', '已确认的新版设定', '已确认的新版设定'])
+    assert.equal(session.events.filter(e => e.data?.source?.cardContextRevision === 1).length, 1)
+  } finally { await runner.dispose() }
+})

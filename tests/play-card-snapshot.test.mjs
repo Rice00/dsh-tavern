@@ -211,3 +211,24 @@ test('migration adopts merged persistence state; another reader retains its base
   assert.equal(stored.cardContextSnapshot, '新版背景')
   assert.equal(stored.messages.length, 2)
 })
+
+test('应用新版只生成背景补丁，保留历史、变量、预设和开局用户画像', async () => {
+  const api = createPlayCardSnapshots({
+    worldBooks: { bound: async () => null }, planner: createContextPlanner({ prompt: () => '' }),
+    readCard: async () => { throw new Error('使用用户确认的卡') },
+    writeChat: async () => { throw new Error('准备补丁不能写存档') },
+    userPreferenceProfile: { stableContext: async () => { throw new Error('不得更新用户画像') } }
+  })
+  const chat = { id: 'old', mode: 'story', cardPath: 'cards/test.json', messages: Array.from({ length: 200 }, (_, turn) => ({ turn, text: '历史' })),
+    mvu: { stat_data: { health: 12 }, schema: { health: 'number' } }, runtimePresetSnapshot: { name: '原预设' },
+    userProfileEnabled: true, userProfileRevision: 3, userProfileContextSnapshot: '【用户已确认的长期偏好】\n原有偏好' }
+  const original = structuredClone(chat)
+  const patch = await api.replacement(chat, { name: '人物', description: '新版描述' })
+  assert.deepEqual(chat, original)
+  assert.match(patch.cardContextSnapshot, /新版描述/)
+  assert.match(patch.cardContextSnapshot, /原有偏好/)
+  assert.equal(patch.userProfileRevision, 3)
+  assert.equal(patch.cardContextRevision, 1)
+  assert.equal(patch.cardContentDigest.length, 64)
+  for (const key of ['messages', 'mvu', 'runtimePresetSnapshot', 'sceneOpeningWorldbook']) assert.equal(Object.hasOwn(patch, key), false)
+})

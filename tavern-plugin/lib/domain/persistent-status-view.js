@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { applyTavernRegexText } from './tavern-regex-display.js'
-import { projectDisplayParts } from './reply-presentation.js'
+import { projectDisplayParts, resolveDisplayIdentityMacros } from './reply-presentation.js'
 
 function contentOf(part) {
   return String(part && (part.content ?? part.html) || '')
@@ -28,7 +28,7 @@ export function projectPersistentStatusView(messages, projections, options = {})
       { placement: 2, isMarkdown: true, isEdit: false, depth: 0 })
     if (!rendered.changed) continue
     for (const part of projectDisplayParts(rendered.text).parts) {
-      const content = contentOf(part)
+      const content = resolveDisplayIdentityMacros(contentOf(part), options)
       if (part.kind !== 'html' || !/<(?:script|iframe|object|embed)\b/i.test(content)) continue
       const revision = createHash('sha256').update(content).digest('hex').slice(0, 16)
       if (templates.has(revision)) continue

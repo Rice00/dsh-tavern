@@ -61,3 +61,16 @@ test('声明模板在开场已出现时立即提升，禁用声明不加载远�
       { regexScripts: [{ ...rule, ...disabled }] }).statusView, null)
   }
 })
+
+test('persistent templates resolve identity macros like inline replies and remove the duplicate', () => {
+  const raw = '<script>const title = "{{user}}档案 / {{char}}"; const untouched = "{{random::a::b}}";</script>'
+  const content = raw.replace('{{user}}', '旅人').replace('{{char}}', '鸣潮')
+  const options = { macroState: { userName: '旅人' }, charName: '鸣潮', regexScripts: [{ placement: [2], markdownOnly: true, findRegex: '<StatusPlaceHolderImpl/>', replaceString: raw }] }
+  const result = projectPersistentStatusView([{ role: 'assistant', turn: 1 }], [projection(1, [{ kind: 'html', content }])], options)
+  assert.equal(result.statusView?.content, content)
+  assert.deepEqual(result.projections[0].parts, [])
+  assert.equal(result.statusView.sourceTurn, 1)
+  const next = projectPersistentStatusView([{ role: 'assistant', turn: 2 }], [], options)
+  assert.equal(next.statusView.viewId, result.statusView.viewId)
+  assert.match(next.statusView.content, /\{\{random::a::b\}\}/)
+})

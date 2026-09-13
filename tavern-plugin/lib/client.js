@@ -1952,6 +1952,17 @@ window.__ModuleLoader__.load({
 		  button.type = 'button';
 		  controls.append(area, button);
 		  document.body.append(controls);
+		  area.addEventListener('input', function () {
+		    Promise.resolve().then(function () {
+		      if (typeof window.triggerSlash !== 'function') throw new Error('当前对话输入框尚未就绪');
+		      return window.triggerSlash('/setinput ' + String(area.value || ''));
+		    }).catch(function (error) {
+		      const notice = document.createElement('div');
+		      notice.setAttribute('role', 'alert');
+		      notice.textContent = '开场文字填入失败：' + String(error && error.message || error);
+		      document.body.append(notice);
+		    });
+		  });
 		  let pending = false;
 		  button.addEventListener('click', function () {
 		    const text = String(area.value || '').trim();
@@ -3780,17 +3791,17 @@ window.__ModuleLoader__.load({
 			}
 			const ownsSortControl = sortControl && typeof sortControl.tavernCompatibilityOwners === 'number';
 			if (ownsSortControl) sortControl.tavernCompatibilityOwners++;
-			const bindings = ["SillyTavern", "TavernHelper", "Mvu", "_"].map(function (name) {
+			const bindings = ["SillyTavern", "TavernHelper", "Mvu", "_", "toastr"].map(function (name) {
 				const previous = Object.getOwnPropertyDescriptor(host, name);
 				if (previous && !previous.configurable) throw new Error("宿主接口不可替换：" + name);
-				const binding = { name: name, previous: previous, active: true, priority: Number(priority) || 0, frameWindow: frameWindow, get: function () {
+				const binding = { name: name, previous: previous, active: true, priority: Number(priority) || 0, frameWindow: frameWindow, toastr: name === "toastr" ? frameWindow.toastr : undefined, get: function () {
                     let selected = binding, descriptor = binding.previous;
                     while (descriptor && descriptor.get && descriptor.get.tavernHostBinding) {
                         const older = descriptor.get.tavernHostBinding;
                         if (older.active && older.priority > selected.priority) selected = older;
                         descriptor = older.previous;
                     }
-                    return selected.frameWindow[name];
+                    return name === "toastr" ? selected.toastr : selected.frameWindow[name];
                 } };
 				binding.get.tavernHostBinding = binding;
 				return binding;
@@ -5479,13 +5490,15 @@ window.__ModuleLoader__.load({
 		function createTavernFrameSlashExecutor(ctx, hostWindow) {
 			hostWindow = hostWindow || window;
 			return function (line, sessionId) {
+				const draftMatch = /^\/setinput(?: ([\s\S]*))?$/.exec(String(line || ""));
 				const match = /^\/send\s+([\s\S]+)\|\s*\/trigger\s*$/.exec(String(line || ""));
 				const triggerOnly = /^\/trigger\s*$/.test(String(line || ""));
-				if (!triggerOnly && (!match || !match[1].trim())) return Promise.reject(new Error("消息界面只允许调用 /trigger 或 /send …|/trigger"));
+				if (!draftMatch && !triggerOnly && (!match || !match[1].trim())) return Promise.reject(new Error("消息界面只允许调用 /setinput、/trigger 或 /send …|/trigger"));
 				const actx = ctx.sessions.scope(sessionId);
 				const conversation = ctx.get("conversation");
 				if (!actx || !conversation) return Promise.reject(new Error("当前对话输入框不可用"));
 				const input = conversation.input.for(actx);
+				if (draftMatch) { input.setDraft(draftMatch[1] || ""); return Promise.resolve({ drafted: true }); }
 				const binding = triggerOnly && ctx.sessions.binding(sessionId);
 				const sessions = ctx.sessions.list;
 				return new Promise(function (resolve, reject) {

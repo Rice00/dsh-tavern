@@ -11,6 +11,17 @@ function installLegacyTavernComposer() {
   button.type = 'button';
   controls.append(area, button);
   document.body.append(controls);
+  area.addEventListener('input', function () {
+    Promise.resolve().then(function () {
+      if (typeof window.triggerSlash !== 'function') throw new Error('当前对话输入框尚未就绪');
+      return window.triggerSlash('/setinput ' + String(area.value || ''));
+    }).catch(function (error) {
+      const notice = document.createElement('div');
+      notice.setAttribute('role', 'alert');
+      notice.textContent = '开场文字填入失败：' + String(error && error.message || error);
+      document.body.append(notice);
+    });
+  });
   let pending = false;
   button.addEventListener('click', function () {
     const text = String(area.value || '').trim();

@@ -51,3 +51,11 @@ test('preparation composer owns parent controls, submits once and ignores detach
   release(); area.value = '过期开场'; button.click(); await tick()
   assert.equal(calls.length, 1)
 })
+
+test('legacy input event fills the real composer without triggering generation', async () => {
+  const calls = []
+  const { area } = mount(line => { calls.push(line); return Promise.resolve() })
+  area.value = '开场引导\n原样保留 | /trigger'
+  area.input(); await tick()
+  assert.deepEqual(calls, ['/setinput ' + area.value])
+})

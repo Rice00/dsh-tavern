@@ -2178,3 +2178,20 @@ test('initializeGlobal publishes the value before waking existing global waiters
   assert.equal(await waiting, value)
   assert.equal(await window.waitGlobalInitialized('Controller'), value)
 })
+
+test('frame setinput updates the owning session draft without submitting', async () => {
+  const writes = []
+  const ctx = { sessions: { scope: id => ({ id }) }, get: () => ({ input: { for: scope => ({ setDraft: text => writes.push([scope.id, text]), submit: assert.fail }) } }) }
+  const execute = client.createTavernFrameSlashExecutor(ctx, {})
+  await execute('/setinput 开场\n| /trigger', 'opening')
+  assert.deepEqual(writes, [['opening', '开场\n| /trigger']])
+})
+test('trusted parent toastr survives a card forwarding its local toastr to parent', () => {
+  const host = {}, notices = [], toast = { success: text => notices.push(text) }, frame = { toastr: toast }
+  const release = client.installTavernTrustedHostFacade(host, frame)
+  Object.defineProperty(frame, 'toastr', { get: () => host.toastr })
+  frame.toastr.success('已写入')
+  assert.deepEqual(notices, ['已写入'])
+  release()
+  assert.equal(Object.hasOwn(host, 'toastr'), false)
+})

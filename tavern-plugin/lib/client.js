@@ -54,6 +54,73 @@ window.__ModuleLoader__.load({
 			return btoa(binary);
 		}
 
+		// Small, content-free ring buffer. Deliberately never persisted or uploaded.
+		function createInteractionDiagnostics(win) {
+		  const doc = win.document;
+		  const records = [];
+		  const limit = 120, lifetime = 10 * 60 * 1000;
+		  let lastClick = -Infinity, lastError = -Infinity, lastStall = -Infinity;
+		  function kind(element) {
+		    if (!element) return "none";
+		    if (element.closest?.('[data-composer-input="true"]')) return "composer";
+		    const tag = String(element.tagName || "").toLowerCase();
+		    return ["input", "textarea", "button", "iframe", "dialog", "body", "html"].includes(tag) ? tag : "other";
+		  }
+		  function trim() {
+		    const cutoff = Date.now() - lifetime;
+		    while (records.length && (records.length > limit || records[0].at < cutoff)) records.shift();
+		  }
+		  function record(type, detail) {
+		    records.push(Object.assign({ at: Date.now(), type, visible: doc.visibilityState === "visible", focused: doc.hasFocus(), active: kind(doc.activeElement) }, detail));
+		    trim();
+		  }
+		  function snapshot() { trim(); return { version: 1, retainedMinutes: 10, maxRecords: limit, events: records.map(item => ({ ...item })) }; }
+		  function start() {
+		    const removers = [], timers = new Set();
+		    function on(target, name, handler) { target.addEventListener(name, handler, true); removers.push(() => target.removeEventListener(name, handler, true)); }
+		    on(win, "focus", event => { if (event.target === win) record("window-focus"); });
+		    on(win, "blur", event => { if (event.target === win) record("window-blur"); });
+		    on(doc, "visibilitychange", () => record("visibility"));
+		    on(doc, "pointerdown", event => {
+		      const editor = doc.querySelector('[data-composer-input="true"]');
+		      if (!editor) return;
+		      const rect = editor.getBoundingClientRect();
+		      if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) return;
+		      if (Date.now() - lastClick < 300) return;
+		      lastClick = Date.now();
+		      const hit = doc.elementFromPoint(event.clientX, event.clientY);
+		      record("composer-click", { target: kind(hit), blocked: Boolean(hit && hit !== editor && !editor.contains(hit)), editable: editor.isContentEditable, inert: Boolean(editor.closest('[inert]')), modal: Boolean(doc.querySelector('dialog[open]')), pointerEvents: win.getComputedStyle(editor).pointerEvents === "none" ? "none" : "auto" });
+		      const timer = win.setTimeout(() => { timers.delete(timer); record("after-click", { composerFocused: doc.activeElement === editor || editor.contains(doc.activeElement) }); }, 150);
+		      timers.add(timer);
+		    });
+		    function error(type) { if (Date.now() - lastError < 1000) return; lastError = Date.now(); record(type); }
+		    on(win, "error", () => error("page-error"));
+		    on(win, "unhandledrejection", () => error("unhandled-rejection"));
+		    let observer;
+		    try {
+		      if (win.PerformanceObserver?.supportedEntryTypes?.includes("longtask")) {
+		        observer = new win.PerformanceObserver(list => {
+		          const duration = Math.max(0, ...list.getEntries().map(entry => entry.duration));
+		          if (duration < 250 || Date.now() - lastStall < 5000) return;
+		          lastStall = Date.now(); record("main-thread-stall", { durationMs: Math.round(duration) });
+		        });
+		        observer.observe({ type: "longtask" });
+		      }
+		    } catch (_) { /* Unsupported webviews still record focus and clicks. */ }
+		    record("started");
+		    return () => { removers.forEach(remove => remove()); timers.forEach(timer => win.clearTimeout(timer)); observer?.disconnect(); };
+		  }
+		  function download() {
+		    const url = win.URL.createObjectURL(new win.Blob([JSON.stringify(snapshot(), null, 2)], { type: "application/json" }));
+		    const link = doc.createElement("a");
+		    link.href = url; link.download = "tavern-interaction-diagnostics.json";
+		    doc.body.appendChild(link); link.click(); link.remove();
+		    win.setTimeout(() => win.URL.revokeObjectURL(url), 1000);
+		  }
+		  return { start, snapshot, download };
+		}
+		const tavernInteractionDiagnostics = createInteractionDiagnostics(window);
+
 		// BOM takes precedence; UTF-8 is strict so legacy bytes never become replacement characters.
 		function decodeTextResource(buffer) {
 		  const bytes = new Uint8Array(buffer);
@@ -9158,6 +9225,7 @@ window.__ModuleLoader__.load({
 					React.createElement("style", null, 'button[class*="_sessionLogButton"]{display:none!important}.dsh-tavern-log-export{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--dsw-alias-border-l2);border-radius:18px;background:transparent;color:var(--dsw-alias-label-primary);padding:6px 12px;height:32px;font:inherit;font-size:13px;cursor:pointer}.dsh-tavern-log-export:disabled{cursor:wait;opacity:.6}'),
 					React.createElement("button", { className: "dsh-tavern-log-export", "data-tavern-log-export": "", disabled: busy, "aria-label": "日志", "aria-busy": busy, title: "下载 Session、MVU、生图与更新日志；含私人剧情，分享前请检查隐私", onClick: exportLogs }, "日志",
 						React.createElement("svg", { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true }, React.createElement("path", { d: "M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4" }))),
+					React.createElement("button", { className: "dsh-tavern-export-action", title: "最近 10 分钟，最多 120 条；不含输入或聊天内容。刷新页面后清空", onClick: () => tavernInteractionDiagnostics.download() }, "交互诊断 ↓"),
 					React.createElement("button", { className: "dsh-tavern-export-action", disabled: busy, title: "导出只包含玩家与角色正文的 TXT", onClick: exportText }, "纯对话 TXT ↓"));
 			}
 
@@ -10223,6 +10291,7 @@ window.__ModuleLoader__.load({
 		const inject = ["slots", "sessions", "workspaces", "layout", "connection", "conversation", "betterSidebar", "remote", "remote.commands", "tavernSessionSignals"];
 
 		function apply(ctx) {
+			ctx.effect(() => tavernInteractionDiagnostics.start(), "dsh-tavern: interaction diagnostics");
 			ctx.effect(() => syncTavernSubagentCatalogs(ctx.sessions), "dsh-tavern: subagent catalog synchronization");
 			const slots = ctx.slots;
 			if (slots === undefined) return;

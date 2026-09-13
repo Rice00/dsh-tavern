@@ -2504,6 +2504,7 @@ export async function apply(ctx) {
       case 'selectPreset': return await presetLibrary.select(args && args.path)
       case 'getPreset': return { preset: await presetLibrary.detail(args && args.path) }
       case 'exportPreset': return await presetLibrary.export(args && args.path)
+      case 'movePresetEntry': return { preset: await presetLibrary.moveEntry(args?.path, args?.entryKey, args?.phase, args?.beforeEntryKey, args?.revision) }
       case 'updatePresetEntry': return { preset: await presetLibrary.updateEntry(args && args.path, args && args.entryKey, args && args.patch) }
       case 'updatePresetRegex': return { preset: await presetLibrary.updateRegex(args && args.path, args && args.regexKey, args && args.patch !== undefined ? args.patch : args && args.enabled) }
       case 'previewPresetConversion': {

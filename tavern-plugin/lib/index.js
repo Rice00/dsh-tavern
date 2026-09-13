@@ -83,7 +83,7 @@ import { resolveRuntimePresetMacros } from './domain/runtime-presets.js'
 import { compileSillyTavernRequest, createCleanCompatibilityPreset } from './domain/sillytavern-compatibility.js'
 import { applySillyTavernStrictTools } from './domain/sillytavern-strict-tools.js'
 import { createForegroundOrchestrationStrategies } from './domain/foreground-orchestration-strategies.js'
-import { abortedRegenerationTurns, clearFailedTurnSurface, hasRollbackMessages, supersededRegenerationErrorTurns } from './domain/rollback-surface.js'
+import { foregroundSuppressedTurns, clearFailedTurnSurface, hasRollbackMessages, supersededRegenerationErrorTurns } from './domain/rollback-surface.js'
 import { assistantResultForTurn } from './domain/session-turn-result.js'
 import { createTavernRetryLimiter } from './domain/tavern-retry-limiter.js'
 import { lastTavernHelperVariables, projectTavernHelperContext } from './domain/tavern-helper-context.js'
@@ -1242,9 +1242,7 @@ export async function apply(ctx) {
       }
     }
     const projectionEvents = sessionDebugEvidence(chat.sessionId).events
-    const suppressedDshTurns = Array.from(new Set((Array.isArray(chat.suppressedDshTurns) ? chat.suppressedDshTurns : [])
-      .concat(abortedRegenerationTurns({ events: projectionEvents }))
-      .map(Number).filter(function (turn) { return Number.isSafeInteger(turn) && turn > 0 }))).sort(function (left, right) { return left - right })
+    const suppressedDshTurns = foregroundSuppressedTurns(chat, projectionEvents)
     return {
       chatId: chat.id,
       contextCompaction: chat.contextCompaction || null,

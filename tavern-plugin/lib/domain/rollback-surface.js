@@ -68,6 +68,35 @@ export function abortedRegenerationTurns(input) {
   return modelTurns(events, seqs)
 }
 
+// The native rollback may consume a failed-turn cleanup tombstone rather than
+// its original streamed assistant node. Follow that provenance to hide the
+// interrupted turn too; stopping alone must retain its visible error/partial reply.
+export function rolledBackSurfaceTurns(events) {
+  const bySeq = new Map(events.filter(event => Number.isSafeInteger(event?.seq)).map(event => [event.seq, event]))
+  const turns = new Set()
+  const visited = new Set()
+  function visit(seq) {
+    if (visited.has(seq)) return
+    visited.add(seq)
+    const event = bySeq.get(seq)
+    if (!event) return
+    const turn = Number(event.data?.turn)
+    if (event.type === 'assistant/message' && modelSourceOf(event) !== null && Number.isSafeInteger(turn) && turn > 0) turns.add(turn)
+    if (event.surfaceOp?.op === 'replace') for (const source of event.sourceEventSeqs || []) visit(source)
+  }
+  for (const event of events) {
+    if (!isRollbackAssistantTombstone(event, events)) continue
+    for (const seq of event.sourceEventSeqs || []) visit(seq)
+  }
+  return [...turns].sort((left, right) => left - right)
+}
+
+export function foregroundSuppressedTurns(chat, events) {
+  return Array.from(new Set((Array.isArray(chat?.suppressedDshTurns) ? chat.suppressedDshTurns : [])
+    .concat(abortedRegenerationTurns({ events }), rolledBackSurfaceTurns(events))
+    .map(Number).filter(turn => Number.isSafeInteger(turn) && turn > 0))).sort((left, right) => left - right)
+}
+
 // Legacy regeneration left a durable empty replacement at the saved story turn.
 // Surface replacement hides messages, not DSH's turn/end error nodes. Derive
 // their display suppression without changing the immutable event history.

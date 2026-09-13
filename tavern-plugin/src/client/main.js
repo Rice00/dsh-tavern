@@ -6560,11 +6560,11 @@ window.__ModuleLoader__.load({
 
 		function SystemPromptSidebarTab() {
 			const h = React.createElement;
-			const [state, setState] = React.useState({ loading: true, busy: false, prompts: [], drafts: {}, error: "", notice: "" });
+			const [state, setState] = React.useState({ loading: true, busy: false, prompts: [], systemAppendEnabled: false, drafts: {}, error: "", notice: "" });
 			const importInput = React.useRef(null);
 			function accept(result, notice) {
 				const value = result && result.systemPrompts || {};
-				setState({ loading: false, busy: false, prompts: Array.isArray(value.prompts) ? value.prompts : [], drafts: {}, error: "", notice: notice || "" });
+				setState({ loading: false, busy: false, prompts: Array.isArray(value.prompts) ? value.prompts : [], systemAppendEnabled: value.systemAppendEnabled === true, drafts: {}, error: "", notice: notice || "" });
 			}
 			async function load() {
 				try { accept(await rpc("getSystemPrompts"), ""); }
@@ -6573,9 +6573,17 @@ window.__ModuleLoader__.load({
 			React.useEffect(function () { void load(); }, []);
 			function draft(item) { return Object.prototype.hasOwnProperty.call(state.drafts, item.name) ? state.drafts[item.name] : String(item.text || ""); }
 			function edit(name, value) { setState(function (current) { return Object.assign({}, current, { drafts: Object.assign({}, current.drafts, { [name]: value }), error: "", notice: "" }); }); }
+			async function toggleSystemAppend(enabled) {
+				setState(function (current) { return Object.assign({}, current, { busy: true, error: "", notice: "" }); });
+				try {
+					const result = await rpc("updateTavernSettings", { patch: { systemAppendEnabled: enabled } });
+					setState(function (current) { return Object.assign({}, current, { busy: false, systemAppendEnabled: result.settings.systemAppendEnabled === true, notice: enabled ? "已开启，将从下一次请求开始生效。" : "已关闭，已保存的内容仍然保留。" }); });
+				} catch (error) { setState(function (current) { return Object.assign({}, current, { busy: false, error: String(error && error.message || error) }); }); }
+			}
+
 			async function save(item) {
 				setState(function (current) { return Object.assign({}, current, { busy: true, error: "", notice: "" }); });
-				try { accept(await rpc("updateSystemPrompt", { name: item.name, text: draft(item) }), "已保存，将从下一次相关调用开始生效。"); }
+				try { accept(await rpc("updateSystemPrompt", { name: item.name, text: draft(item) }), item.name === "system-append" && !state.systemAppendEnabled ? "内容已保存，开启开关后生效。" : "已保存，将从下一次相关调用开始生效。"); }
 				catch (error) { setState(function (current) { return Object.assign({}, current, { busy: false, error: String(error && error.message || error) }); }); }
 			}
 			async function restore(item) {
@@ -6594,7 +6602,7 @@ window.__ModuleLoader__.load({
 			async function importFile(file) {
 				if (!file || !window.confirm("导入将覆盖当前整套系统提示词，是否继续？")) return;
 				setState(function (current) { return Object.assign({}, current, { busy: true, error: "", notice: "" }); });
-				try { accept(await rpc("importSystemPrompts", { payload: await parseTextResourceFile(file) }), "整套系统提示词已导入并生效。"); }
+				try { accept(await rpc("importSystemPrompts", { payload: await parseTextResourceFile(file) }), "整套系统提示词已导入，附加指令按开关状态生效。"); }
 				catch (error) { setState(function (current) { return Object.assign({}, current, { busy: false, error: String(error && error.message || error) }); }); }
 			}
 			async function exportFile() {
@@ -6609,8 +6617,9 @@ window.__ModuleLoader__.load({
 			function row(item) {
 				const value = draft(item); const dirty = value !== String(item.text || "");
 				return h("details", { key: item.name, className: "dsh-tavern-prompt-row dsh-tavern-system-prompt-row role-system" },
-					h("summary", { className: "dsh-tavern-prompt-head" }, h("span", { className: "dsh-tavern-prompt-title" }, h("b", null, item.label), h("span", null, item.description)), h("span", { className: "dsh-tavern-prompt-state " + (item.customized ? "on" : "off") }, item.customized ? "已修改" : "默认")),
+					h("summary", { className: "dsh-tavern-prompt-head" }, h("span", { className: "dsh-tavern-prompt-title" }, h("b", null, item.label), h("span", null, item.description)), h("span", { className: "dsh-tavern-prompt-state " + ((item.name === "system-append" ? state.systemAppendEnabled : item.customized) ? "on" : "off") }, item.name === "system-append" ? (state.systemAppendEnabled ? "已开启" : "已关闭") : (item.customized ? "已修改" : "默认"))),
 					h("div", { className: "dsh-tavern-prompt-editor" },
+						item.name === "system-append" ? h("label", { className: "dsh-tavern-prompt-editor-field full" }, h("input", { type: "checkbox", role: "switch", checked: state.systemAppendEnabled, disabled: state.busy, "aria-label": "启用 system 附加指令", onChange: function (event) { void toggleSystemAppend(event.target.checked); } }), "启用 system 附加指令") : null,
 						h("label", { className: "dsh-tavern-prompt-editor-field full" }, "内容", h("textarea", { value: value, disabled: state.busy, onChange: function (event) { edit(item.name, event.target.value); }, "aria-label": item.label })),
 						h("div", { className: "dsh-tavern-prompt-editor-actions" }, h("button", { className: "dsh-tavern-btn", disabled: state.busy || (!item.customized && !dirty), onClick: function () { void restore(item); } }, "恢复默认"), h("button", { className: "dsh-tavern-btn", disabled: state.busy || !dirty || (value.trim() === "" && item.name !== "system-append"), onClick: function () { void save(item); } }, "保存此项"))));
 			}

@@ -15,7 +15,18 @@ for (const file of ['src/client/main.js', 'lib/client.js']) {
       const render = new Function('React', component + '; return SystemPromptSidebarTab;')(React)
       const tree = render()
       assert.match(JSON.stringify(tree), /系统提示词/)
-      if (!loading) assert.match(JSON.stringify(tree), /system附加指令/)
+      if (!loading) {
+        assert.match(JSON.stringify(tree), /system附加指令/)
+        const switches = []
+        function visit(node) {
+          if (!node || typeof node !== 'object') return
+          if (node.props?.role === 'switch') switches.push(node)
+          for (const child of node.children || []) { if (Array.isArray(child)) child.forEach(visit); else visit(child) }
+        }
+        visit(tree)
+        assert.equal(switches.length, 1)
+        assert.equal(switches[0].props.checked, false)
+      }
       assert.doesNotMatch(JSON.stringify(tree), /应用到当前游戏/)
     }
   })

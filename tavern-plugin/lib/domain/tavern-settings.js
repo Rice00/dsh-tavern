@@ -23,6 +23,7 @@ export function applyTavernSettingsPatch(current, patch) {
     next.backgroundTasks = normalizeBackgroundTasks({ ...normalizeBackgroundTasks(next.backgroundTasks), ...object(input.backgroundTasks) })
   }
   if (Object.prototype.hasOwnProperty.call(input, 'compatibilityMode')) next.compatibilityMode = input.compatibilityMode === true
+  if (Object.hasOwn(input, 'systemAppendEnabled')) next.systemAppendEnabled = input.systemAppendEnabled === true
   if (Object.prototype.hasOwnProperty.call(input, 'webSearchEnabled')) next.webSearchEnabled = input.webSearchEnabled === true
   if (Object.prototype.hasOwnProperty.call(input, 'backgroundModel')) {
     if (input.backgroundModel === null) delete next.backgroundModel
@@ -78,6 +79,7 @@ export function presentTavernSettings(document, defaults) {
     contextCompaction: compactionPolicy(object(document).contextCompaction),
     compatibilityMode: true,
     webSearchEnabled: object(document).webSearchEnabled === true,
+    systemAppendEnabled: object(document).systemAppendEnabled === true,
     backgroundModel: normalizeBackgroundModel(object(document).backgroundModel),
     backgroundTasks: normalizeBackgroundTasks(object(document).backgroundTasks),
     // Card rendering uses a fixed trusted policy; legacy preferences are no longer applied.

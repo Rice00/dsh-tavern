@@ -224,6 +224,7 @@ export async function apply(ctx) {
     return presentTavernSettings(tavernSettingsDocument, promptDefaults())
   }
   function runtimePrompt(name) {
+    if (name === 'system-append' && tavernSettingsDocument?.systemAppendEnabled !== true) return ''
     return resolveSystemPrompt(tavernSettingsDocument, name, prompt)
   }
   function presentSystemPrompts(settings) {
@@ -231,6 +232,7 @@ export async function apply(ctx) {
     return {
       spec: 'dsh-tavern.system-prompts',
       version: 1,
+      systemAppendEnabled: settings.systemAppendEnabled === true,
       prompts: SYSTEM_PROMPT_DEFINITIONS.map(function (definition) {
         return Object.assign({}, definition, byName[definition.name] || { text: prompt(definition.name), customized: false })
       })

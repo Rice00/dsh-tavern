@@ -4,8 +4,7 @@ import { prompt } from '../tavern-plugin/lib/prompt-catalog.js'
 import { applyTavernSettingsPatch, resolveSystemPrompt } from '../tavern-plugin/lib/domain/tavern-settings.js'
 import { createBackgroundAgentRunner } from '../tavern-plugin/lib/background-agent-runner.js'
 
-test('附加指令默认空白，保存、清空和导入均可立即读取', () => {
-  assert.equal(prompt('system-append'), '')
+test('附加指令保存、清空和导入均可立即读取', () => {
   let settings = applyTavernSettingsPatch({}, { systemPrompt: { name: 'system-append', text: '附加内容' } })
   assert.equal(resolveSystemPrompt(settings, 'system-append', prompt), '附加内容')
   settings = applyTavernSettingsPatch(settings, { systemPrompt: { name: 'system-append', text: '' } })
@@ -59,4 +58,24 @@ test('真实 DSH complete system 在后台各任务中保留最新附加指令',
       }
     }
   }
+})
+
+
+test('附加指令默认关闭，开关只影响运行内容且保留用户覆盖', async () => {
+  const { readFileSync } = await import('node:fs')
+  const { presentTavernSettings } = await import('../tavern-plugin/lib/domain/tavern-settings.js')
+  const source = readFileSync(new URL('../tavern-plugin/lib/index.js', import.meta.url), 'utf8')
+  const implementation = source.slice(source.indexOf('  function runtimePrompt(name)'), source.indexOf('  function presentSystemPrompts'))
+  const resolve = document => new Function('tavernSettingsDocument', 'resolveSystemPrompt', 'prompt', implementation + '; return runtimePrompt;')(document, resolveSystemPrompt, name => name === 'system-append' ? '默认内容' : '其他提示词')
+  let document = applyTavernSettingsPatch({}, { systemPrompt: { name: 'system-append', text: '用户内容' } })
+  assert.equal(presentTavernSettings(document, {}).systemAppendEnabled, false)
+  assert.equal(resolve(document)('system-append'), '')
+  document = applyTavernSettingsPatch(document, { systemAppendEnabled: true })
+  assert.equal(resolve(document)('system-append'), '用户内容')
+  document = applyTavernSettingsPatch(document, { systemAppendEnabled: false })
+  assert.equal(resolve(document)('system-append'), '')
+  assert.equal(document.promptOverrides['system-append'], '用户内容')
+  assert.equal(resolve(document)('story'), '其他提示词')
+  document = applyTavernSettingsPatch(document, { systemAppendEnabled: true, systemPrompt: { name: 'system-append', text: null } })
+  assert.equal(resolve(document)('system-append'), '默认内容')
 })

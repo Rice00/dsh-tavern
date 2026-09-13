@@ -418,3 +418,23 @@ test('prepared MVU initialization preserves every opening and never marks partia
     assert.equal(chat.messages[0].variables[1].stat_data.hp, 20)
   }
 })
+
+
+test('new games and profile workbenches bind the selected profile without changing existing games', async () => {
+  const profile = await profileFixture()
+  const h = initializationFixture({ userPreferenceProfile: profile })
+  await profile.setDefaultEnabled(true)
+  const first = await h.make().start({ ...h.input, sessionId: 'first-profile' })
+  const created = await profile.manage({ action: 'create', name: '冒险' })
+  const draft = await profile.saveDraft({ summary: '冒险', injectionText: '快节奏冒险' })
+  await profile.confirm({ draftRevision: draft.draft.revision, confirmation: '确认保存用户画像' })
+  await profile.setDefaultEnabled(true)
+  const second = await h.make().start({ ...h.input, sessionId: 'second-profile' })
+  const workbench = await h.make().start({ ...h.input, sessionId: 'profile-workbench', mode: 'card', cardPath: '' })
+  assert.equal(first.userProfileId, 'default')
+  assert.match(first.userProfileContextSnapshot, /慢热/)
+  assert.equal(second.userProfileId, created.profileId)
+  assert.match(second.userProfileContextSnapshot, /快节奏冒险/)
+  assert.equal(workbench.userProfileId, created.profileId)
+  assert.equal(workbench.userProfileEnabled, false)
+})

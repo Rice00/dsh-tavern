@@ -273,3 +273,18 @@ test('未确认画像或快照不一致时拒绝切换，不误删人物卡背�
   await assert.rejects(snapshots.preferenceReplacement({ mode: 'card' }, true), /游玩会话/)
   await assert.rejects(snapshots.preferenceReplacement({ mode: 'story', userProfileEnabled: true, cardContextSnapshot: '背景', userProfileContextSnapshot: '不匹配的偏好' }, false), /不一致/)
 })
+
+test('switching an enabled game to another named profile replaces only its pinned preference', async () => {
+  const snapshots = createPlayCardSnapshots({ userPreferenceProfile: { stableContext: async id => ({ profileId: id, revision: 9, text: '新偏好' }) } })
+  const chat = { mode: 'story', userProfileEnabled: true, userProfileId: 'a', userProfileRevision: 4,
+    userProfileContextSnapshot: '旧偏好', cardContextSnapshot: '旧偏好\n\n原卡背景', cardContextRevision: 1,
+    messages: Array.from({ length: 200 }, (_, turn) => ({ turn })), variables: { hp: 12 } }
+  const before = structuredClone(chat)
+  const patch = await snapshots.preferenceReplacement(chat, true, 'b')
+  assert.equal(patch.userProfileId, 'b')
+  assert.equal(patch.cardContextSnapshot, '新偏好\n\n原卡背景')
+  assert.equal(patch.cardContextRevision, 2)
+  assert.deepEqual(chat, before)
+  assert.equal(patch.messages, undefined)
+  assert.equal(patch.variables, undefined)
+})

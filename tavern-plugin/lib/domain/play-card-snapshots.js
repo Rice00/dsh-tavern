@@ -26,15 +26,16 @@ export function createPlayCardSnapshots({ worldBooks, planner, readCard, writeCh
     const planned = sanitizeAgentProjectionText((await planner.plan({ purpose: 'play-card-snapshot', card, chat, worldBookContext, worldBookLabel: '常驻世界书' })).text)
     let preference = null
     if (preservePreferences) {
-      if (chat.userProfileContextSnapshot) preference = { text: chat.userProfileContextSnapshot, revision: chat.userProfileRevision }
+      if (chat.userProfileContextSnapshot) preference = { text: chat.userProfileContextSnapshot, revision: chat.userProfileRevision, profileId: chat.userProfileId }
     } else if (chat.userProfileEnabled === true && userPreferenceProfile) {
-      preference = await userPreferenceProfile.stableContext()
+      preference = await userPreferenceProfile.stableContext(chat.userProfileId || 'default')
     }
     const text = preference === null ? planned : sanitizeAgentProjectionText([preference.text, planned].filter(Boolean).join('\n\n'))
     const patch = {
       cardContextSnapshot: text,
       cardContentDigest: cardContentDigest(card),
       cardContextSnapshotVersion: VERSION,
+      userProfileId: preference?.profileId || chat.userProfileId || 'default',
       userProfileRevision: preference === null ? 0 : preference.revision,
       userProfileContextSnapshot: preference === null ? '' : preference.text
     }
@@ -93,11 +94,11 @@ export function createPlayCardSnapshots({ worldBooks, planner, readCard, writeCh
     return { ...patch, cardContextRevision: (Number(chat.cardContextRevision) || 0) + 1 }
   }
 
-  async function preferenceReplacement(chat, enabled) {
+  async function preferenceReplacement(chat, enabled, profileId) {
     if (!usesFixedContext(chat) || chat.mode === 'card') throw new Error('仅支持游玩会话')
     if (typeof enabled !== 'boolean') throw new Error('画像开关必须为布尔值')
-    if ((chat.userProfileEnabled === true) === enabled) return {}
-    const preference = enabled ? await userPreferenceProfile?.stableContext() : null
+    if ((chat.userProfileEnabled === true) === enabled && !profileId) return {}
+    const preference = enabled ? await userPreferenceProfile?.stableContext(profileId || chat.userProfileId) : null
     if (enabled && !preference) throw new Error('请先建立并确认用户画像')
     let base = str(chat.cardContextSnapshot)
     if (!base) throw new Error('当前游戏缺少人物卡快照，请先恢复会话后重试')
@@ -109,6 +110,7 @@ export function createPlayCardSnapshots({ worldBooks, planner, readCard, writeCh
     }
     return {
       userProfileEnabled: enabled,
+      userProfileId: preference?.profileId || chat.userProfileId || 'default',
       userProfileRevision: preference?.revision || 0,
       userProfileContextSnapshot: preference?.text || '',
       cardContextSnapshot: sanitizeAgentProjectionText([preference?.text, base].filter(Boolean).join('\n\n')),

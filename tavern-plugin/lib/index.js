@@ -828,6 +828,7 @@ export async function apply(ctx) {
   function presentUserPreferenceProfile(value) {
     const confirmed = value && value.hasConfirmed && value.confirmed ? value.confirmed : null
     return {
+      profileId: value?.profileId, name: value?.name, profiles: value?.profiles || [],
       hasDraft: Boolean(value && value.hasDraft),
       draftRevision: value && value.hasDraft ? Number(value.draft && value.draft.revision) || 0 : 0,
       hasConfirmed: confirmed !== null,
@@ -2503,10 +2504,12 @@ export async function apply(ctx) {
           userProfile: presentUserPreferenceProfile(await userPreferenceProfile.read()),
           currentConversation: chat && groupOfMode(chat.mode) === 'play' ? {
             enabled: chat.userProfileEnabled === true,
+            profileId: chat.userProfileId || 'default',
             revision: Math.max(0, Number(chat.userProfileRevision) || 0)
           } : null
         }
       }
+      case 'manageUserPreferenceProfile': return { userProfile: presentUserPreferenceProfile(await userPreferenceProfile.manage(args)) }
       case 'updateUserPreferenceProfile': return { userProfile: presentUserPreferenceProfile(await userPreferenceProfile.updateConfirmed(args)) }
       case 'setConversationUserProfileEnabled': {
         const sessionId = str(args?.sessionId)
@@ -2514,16 +2517,16 @@ export async function apply(ctx) {
         if (!chat || groupOfMode(chat.mode) !== 'play') throw new Error('请先打开游玩会话')
         if (typeof args.enabled !== 'boolean') throw new Error('画像开关必须为布尔值')
         if ((await sessionActivity(sessionId))?.busy || agentRegistry.get(sessionId)?.phase?.kind === 'running') throw new Error('请等待当前生成和后台任务完成后再切换画像')
-        const patch = await playCardSnapshots.preferenceReplacement(chat, args.enabled)
+        const patch = await playCardSnapshots.preferenceReplacement(chat, args.enabled, args.profileId)
         const saved = Object.keys(patch).length ? await updateChat(chat.id, current => {
           if (current._storageRevision !== chat._storageRevision || Number(current.cardContextRevision || 0) !== Number(chat.cardContextRevision || 0) || current.cardContextSnapshot !== chat.cardContextSnapshot || current.userProfileEnabled !== chat.userProfileEnabled) throw new Error('当前游戏配置已变化，请刷新后重试')
           return Object.assign(current, patch)
         }, { source: 'user-profile.toggle-conversation' }) : chat
         return { userProfile: presentUserPreferenceProfile(await userPreferenceProfile.read()), currentConversation: {
-          enabled: saved.userProfileEnabled === true, revision: Math.max(0, Number(saved.userProfileRevision) || 0)
+          enabled: saved.userProfileEnabled === true, profileId: saved.userProfileId || 'default', revision: Math.max(0, Number(saved.userProfileRevision) || 0)
         } }
       }
-      case 'setUserPreferenceProfileDefaultEnabled': return { userProfile: presentUserPreferenceProfile(await userPreferenceProfile.setDefaultEnabled(args && args.enabled === true)) }
+      case 'setUserPreferenceProfileDefaultEnabled': return { userProfile: presentUserPreferenceProfile(await userPreferenceProfile.setDefaultEnabled(args && args.enabled === true, args?.profileId)) }
       case 'getCard': {
         const cardPath = normalizeResourcePath(args && args.path, 'card')
         const workspace = await readCardWorkspace(cardPath)
@@ -3647,6 +3650,7 @@ export async function apply(ctx) {
       parameters: {},
       output: {
         schema: { type: 'object', additionalProperties: false, properties: {
+          profileName: { type: 'string', required: true },
           hasDraft: { type: 'boolean', required: true },
           hasConfirmed: { type: 'boolean', required: true },
           draftRevision: { type: 'integer', required: true },
@@ -3655,7 +3659,7 @@ export async function apply(ctx) {
           confirmedJson: { type: 'string', required: true }
         } },
         render: function (_args, value) {
-          if (!value.hasDraft && !value.hasConfirmed) return [{ type: 'text', text: '尚未建立用户画像。' }]
+          if (!value.hasDraft && !value.hasConfirmed) return [{ type: 'text', text: '画像“' + value.profileName + '”尚未建立。' }]
           return [{ type: 'text', text: JSON.stringify(value, null, 2) }]
         }
       },
@@ -3664,8 +3668,9 @@ export async function apply(ctx) {
         const sessionId = exec && exec.agent && exec.agent.session ? exec.agent.session.id : ''
         const chat = await chatForSession(sessionId)
         if (chat === undefined || (chat.mode || 'story') !== 'card') throw new Error('用户画像只能在卡片工作台中管理')
-        const value = await userPreferenceProfile.read()
+        const value = await userPreferenceProfile.read(chat.userProfileId || 'default')
         return {
+          profileName: value.name,
           hasDraft: value.hasDraft,
           hasConfirmed: value.hasConfirmed,
           draftRevision: value.hasDraft ? Number(value.draft.revision) || 0 : 0,
@@ -3714,7 +3719,7 @@ export async function apply(ctx) {
         const sessionId = exec && exec.agent && exec.agent.session ? exec.agent.session.id : ''
         const chat = await chatForSession(sessionId)
         if (chat === undefined || (chat.mode || 'story') !== 'card') throw new Error('用户画像只能在卡片工作台中管理')
-        const value = await userPreferenceProfile.saveDraft(args)
+        const value = await userPreferenceProfile.saveDraft({ ...args, profileId: chat.userProfileId || 'default' })
         return { draftRevision: Number(value.draft.revision) || 0, hasConfirmed: value.hasConfirmed }
       }
     }))
@@ -3738,7 +3743,7 @@ export async function apply(ctx) {
         const sessionId = exec && exec.agent && exec.agent.session ? exec.agent.session.id : ''
         const chat = await chatForSession(sessionId)
         if (chat === undefined || (chat.mode || 'story') !== 'card') throw new Error('用户画像只能在卡片工作台中管理')
-        const value = await userPreferenceProfile.confirm(args)
+        const value = await userPreferenceProfile.confirm({ ...args, profileId: chat.userProfileId || 'default' })
         return { confirmedRevision: Number(value.confirmed.profileRevision) || 0 }
       }
     }))

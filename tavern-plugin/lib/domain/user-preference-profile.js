@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto'
+
 const PROFILE_PATH = 'user-preference-profile.json'
 const SPEC = 'dsh-tavern.user-preference-profile'
 const VERSION = 2
@@ -87,7 +89,7 @@ function present(value) {
 }
 
 /** Owns durable draft/confirmation boundaries for one Profile-wide preference model. */
-export function createUserPreferenceProfile({ store, now = Date.now }) {
+function createSingleProfile({ store, now = Date.now }) {
   async function read() {
     return present(await store.readJson(PROFILE_PATH))
   }
@@ -196,3 +198,81 @@ export function createUserPreferenceProfile({ store, now = Date.now }) {
 }
 
 export const USER_PREFERENCE_PROFILE_PATH = PROFILE_PATH
+
+
+// Keep the existing draft/confirmation rules inside each independently named profile.
+export function createUserPreferenceProfile({ store, now = Date.now }) {
+  function collection(value) {
+    if (value?.version === 3 && Array.isArray(value.profiles) && value.profiles.length) return structuredClone(value)
+    return { spec: SPEC, version: 3, selectedId: 'default', profiles: [{ id: 'default', name: '默认画像', data: document(value) }] }
+  }
+  function entry(value, id) {
+    const item = value.profiles.find(item => item.id === (id || value.selectedId))
+    if (!item) throw new Error('用户画像不存在，请刷新后重试')
+    return item
+  }
+  function model(id) {
+    return createSingleProfile({ now, store: {
+      readJson: async () => entry(collection(await store.readJson(PROFILE_PATH)), id).data,
+      updateJson: async (_path, updater) => {
+        let result
+        await store.updateJson(PROFILE_PATH, async raw => {
+          const value = collection(raw)
+          const item = entry(value, id)
+          // Globally increasing revisions prevent a stale confirmation targeting another profile.
+          const revision = Math.max(...value.profiles.map(item => integer(item.data.revision)))
+          result = await updater({ ...item.data, revision })
+          item.data = result
+          return value
+        })
+        return result
+      }
+    } })
+  }
+  async function read(id) {
+    const value = collection(await store.readJson(PROFILE_PATH))
+    const item = entry(value, id)
+    return { ...present(item.data), profileId: item.id, name: item.name, selectedId: value.selectedId,
+      profiles: value.profiles.map(item => ({ id: item.id, name: item.name, hasConfirmed: !!item.data.confirmed })) }
+  }
+  async function mutateProfile(action, input = {}) {
+    const id = input.profileId || (await read()).profileId
+    await model(id)[action](input)
+    return await read(id)
+  }
+  async function manage(input) {
+    await store.updateJson(PROFILE_PATH, raw => {
+      const value = collection(raw)
+      if (input.action === 'create') {
+        const name = str(input.name, 100)
+        if (!name) throw new Error('请输入画像名称')
+        const id = randomUUID()
+        value.profiles.push({ id, name, data: document(null) })
+        value.selectedId = id
+      } else if (input.action === 'select') {
+        value.selectedId = entry(value, input.profileId).id
+      } else if (input.action === 'rename') {
+        const name = str(input.name, 100)
+        if (!name) throw new Error('请输入画像名称')
+        entry(value, input.profileId).name = name
+      } else throw new Error('未知画像操作')
+      return value
+    })
+    return await read()
+  }
+  async function stableContext(id) {
+    const selected = await read(id)
+    const context = await model(selected.profileId).stableContext()
+    return context ? { ...context, profileId: selected.profileId } : null
+  }
+  return Object.freeze({ read, manage, stableContext,
+    saveDraft: input => mutateProfile('saveDraft', input),
+    confirm: input => mutateProfile('confirm', input),
+    updateConfirmed: input => mutateProfile('updateConfirmed', input),
+    setDefaultEnabled: async (enabled, id) => {
+      const selected = id || (await read()).profileId
+      await model(selected).setDefaultEnabled(enabled)
+      return await read(selected)
+    }
+  })
+}

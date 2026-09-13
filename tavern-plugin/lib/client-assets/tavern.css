@@ -695,3 +695,11 @@ body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
 .dsh-tavern-worldbook-bindings button:disabled { opacity: .45; cursor: default; }
 .dsh-tavern-worldbook-bindings :is(button, summary, select):focus-visible { outline: 2px solid var(--dsw-alias-label-secondary); outline-offset: 3px; }
 .dsh-tavern-worldbook-binding-empty, .dsh-tavern-worldbook-binding-hint { margin: 6px 0 0; color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 1.6; }
+
+.dsh-tavern-preset-drag { cursor: grab; flex: none; padding: 4px 8px; border: 0; background: transparent; color: inherit; font-size: 20px; }
+.dsh-tavern-preset-drag:active { cursor: grabbing; }
+.dsh-tavern-preset-drop { height: 20px; line-height: 18px; box-sizing: border-box; border: 1px solid transparent; border-radius: 6px; text-align: center; font-size: 12px; color: var(--dsw-alias-label-secondary); }
+.dsh-tavern-preset-drop.active { border: 1px dashed #a66b35; }
+.dsh-tavern-preset-drop.over { background: rgba(166,107,53,.18); }
+
+.dsh-tavern-preset-entry-head.has-drag { grid-template-columns: auto minmax(0, 1fr) auto; }

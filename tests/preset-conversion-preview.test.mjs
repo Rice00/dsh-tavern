@@ -43,6 +43,7 @@ test('按 prompt_order 把全部条目转换为前中后三段，保留开关并
   assert.equal(result.summary.nativeMaterialRows, 1)
   assert.deepEqual(result.dshPreset.middle[0].source, {
     identifier: 'depth',
+    sourcePromptIndex: 2,
     marker: false,
     injectionPosition: 1,
     injectionDepth: 2,

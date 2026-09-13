@@ -251,3 +251,12 @@ test('世界书搜索匹配正文和触发词，过滤后保留原编辑索引',
   assert.equal(browser.groupWorldBookEditorEntries(entries, '不存在').constant.length, 0)
   assert.equal(entries.length, 3)
 })
+
+test('预设界面按保存的段内顺序展示，并用源位置区分重复标识', () => {
+  const groups = browser.groupPresetEntriesByPhase({ entries: [
+    { entryKey: 'same#1', sourcePromptIndex: 0 }, { entryKey: 'same#2', sourcePromptIndex: 1 }
+  ], dshPreset: { front: [
+    { id: 'same#2', source: { sourcePromptIndex: 1 } }, { id: 'same#1', source: { sourcePromptIndex: 0 } }
+  ] } })
+  assert.deepEqual(Array.from(groups.front, entry => entry.entryKey), ['same#2', 'same#1'])
+})

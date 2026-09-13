@@ -7,7 +7,13 @@ function el(tag, className, text) { const n = document.createElement(tag); if (c
 function badge(status, text) { return el('span', 'badge ' + (['passed', 'completed'].includes(status) ? 'good' : ['failed', 'interrupted', 'unreadable', 'incomplete'].includes(status) ? 'bad' : status === 'running' ? 'busy' : 'muted'), text || labels[status] || status || '未知') }
 function notify(message) { $('#notice').textContent = message; setTimeout(() => { if ($('#notice').textContent === message) $('#notice').textContent = '' }, 5000) }
 function button(text, action) { const b = el('button', '', text); b.onclick = () => Promise.resolve().then(action).catch(error => notify(error.message)); return b }
-async function get(url, json = true) { const response = await fetch(url); if (!response.ok) throw new Error('无法读取报告文件，请刷新重试'); return json ? response.json() : response.text() }
+async function get(url, json = true) {
+  let response
+  try { response = await fetch(url) }
+  catch { throw new Error('无法连接测试报告服务，详情未能加载；这不代表测试执行失败。请确认网页服务已启动后重试。') }
+  if (!response.ok) throw new Error('无法读取报告文件，请刷新重试')
+  return json ? response.json() : response.text()
+}
 const fileUrl = (id, name) => '/api/file?' + new URLSearchParams({ id, name })
 const date = value => value && !Number.isNaN(new Date(value).getTime()) ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '时间未记录'
 function renderRuns() {
@@ -42,6 +48,19 @@ async function selectRun(id) {
   const { report, files } = data, detail = $('#detail'); detail.replaceChildren()
   detail.append(el('div', 'eyebrow', 'EXECUTION REPORT / 执行记录'))
   const heading = el('div', 'report-title'); heading.append(el('h2', '', report.name || runs.find(r => r.id === id)?.directory || '测试报告'), badge(report.status)); detail.append(heading)
+    if (['running', 'stopping'].includes(job?.status) && job.directory && runs.find(r => r.id === id)?.directory.startsWith(job.directory + '/')) {
+      const directory = job.directory
+      const stop = button(job.status === 'stopping' ? '正在中止…' : '中止测试', async () => {
+        stop.disabled = true
+        try {
+          const response = await fetch('/api/stop?' + new URLSearchParams({ directory }), { method: 'POST' })
+          const data = await response.json(); if (!response.ok) throw new Error(data.error || '中止失败')
+          job = data; renderCases(); if (selected === id) await selectRun(id); notify('已请求中止，正在保存报告和清理测试会话')
+        } finally { stop.disabled = job?.status === 'stopping' }
+      })
+      stop.disabled = job.status === 'stopping' || !directory
+      heading.append(stop)
+    }
   detail.append(el('div', 'meta', [report.model?.provider, report.model?.model, report.model?.reasoningEffort && '推理强度 ' + report.model.reasoningEffort].filter(Boolean).join(' · ') || '模型配置未记录'))
   detail.append(el('div', 'meta', `${date(report.startedAt)}  ·  ${report.steps?.filter(s => s.action === 'say').length || 0} 轮输入  ·  ${report.commit ? report.commit.slice(0, 8) + (report.dirty ? '（含未提交改动）' : '') : '提交未记录'}`))
   for (const card of report.cardSync || []) detail.append(el('p', 'hint', `同步正式卡：${card.filename} · ${card.changed ? '已更新测试副本' : '内容未变化'} · SHA-256 ${card.sha256.slice(0, 12)}`))
@@ -50,6 +69,43 @@ async function selectRun(id) {
   detail.append(stats)
   if (report.error) detail.append(el('div', 'error', report.error))
   if (report.captureError || report.cleanupErrors?.length) detail.append(el('div', 'error', '日志采集 / 清理异常：' + JSON.stringify(report.captureError || report.cleanupErrors)))
+  const systemSection = el('details', 'step session-system'), systemBody = el('div', 'step-body')
+  systemSection.append(el('summary', '', '会话 System 提示词'), systemBody)
+  detail.append(systemSection)
+  let systemLoaded = false
+  systemSection.addEventListener('toggle', async () => {
+    if (!systemSection.open || systemLoaded) return
+    systemLoaded = true
+    systemBody.replaceChildren(el('p', 'hint', '正在读取会话 System…'))
+    try {
+      const sessions = new Map()
+      const requestFiles = files.filter(file => /^\d+-requests\.json$/.test(file.name)).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
+      for (const file of requestFiles) {
+        const step = report.steps?.find(step => step.index === Number(file.name.split('-')[0]))
+        for (const record of await get(fileUrl(id, file.name))) {
+          const role = step?.role === 'card' || step?.action === 'card' ? 'card' : /image|scene|illustration/.test(record.task || '') ? 'image' : record.scope || 'foreground'
+          const key = record.sessionId || role
+          if (sessions.has(key) || !record.request) continue
+          const request = record.request, parts = []
+          if (request.system != null) parts.push(typeof request.system === 'string' ? request.system : JSON.stringify(request.system, null, 2))
+          for (const message of request.messages || []) {
+            if (message.role === 'system') parts.push(typeof message.content === 'string' ? message.content : (message.content || []).map(block => block.type === 'text' ? block.text : JSON.stringify(block, null, 2)).join('\n'))
+          }
+          sessions.set(key, { role, text: parts.join('\n\n'), sessionId: record.sessionId })
+        }
+      }
+      systemBody.replaceChildren(el('p', 'hint', '按会话展示最早采集到的 System；后续请求原文仍保存在文件与日志中。'))
+      for (const { role, text, sessionId } of sessions.values()) {
+        const block = el('details', 'tools')
+        block.append(el('summary', '', `${roles[role] || role} · ${text.length} 字符`))
+        if (sessionId) block.append(el('div', 'meta', sessionId))
+        if (text) block.append(button('复制 System', async () => { await navigator.clipboard.writeText(text); notify('已复制 System 提示词') }), el('pre', '', text))
+        else block.append(el('p', 'hint', '此会话最早采集的请求未包含 System 内容。'))
+        systemBody.append(block)
+      }
+      if (!sessions.size) systemBody.append(el('p', 'hint', '此报告未采集到会话 System。'))
+    } catch (error) { systemLoaded = false; systemBody.replaceChildren(el('div', 'error', error.message)) }
+  })
   const tabs = el('div', 'tabs'), content = el('div'); const stepsButton = button('轮次详情', () => showSteps()), filesButton = button(`文件与日志 · ${files.length}`, () => showFiles())
   tabs.append(stepsButton, filesButton); detail.append(tabs, content)
   function showFiles() { stepsButton.className = ''; filesButton.className = 'active'; content.replaceChildren(); for (const file of files) { const row = el('div', 'file-row'); row.append(button(file.name, () => preview(id, file.name)), el('span', '', `${(file.bytes / 1024).toFixed(1)} KB`)); content.append(row) } }
@@ -61,7 +117,16 @@ async function selectRun(id) {
       summary.append(el('span', 'step-title', `${String(step.index).padStart(2, '0')}  ${title}`), el('span', 'duration', step.durationMs ? `${(step.durationMs / 1000).toFixed(1)} s` : ''), badge(step.status))
       const body = el('div', 'step-body'); block.append(summary, body)
       let loaded = false
-      block.addEventListener('toggle', () => { if (block.open && !loaded) { loaded = true; renderStep(id, step, files, body).catch(error => { loaded = false; body.replaceChildren(el('div', 'error', error.message)) }) } })
+      async function loadDetail() {
+        if (loaded) return
+        loaded = true; body.replaceChildren()
+        try { await renderStep(id, step, files, body) }
+        catch (error) {
+          loaded = false
+          body.replaceChildren(el('div', 'error', error.message), button('重新加载详情', loadDetail))
+        }
+      }
+      block.addEventListener('toggle', () => { if (block.open) void loadDetail() })
       content.append(block); if (step === first) block.open = true
     }
     if (!report.steps?.length) content.append(el('div', 'empty', '本次测试未进入执行步骤。请查看错误信息或原始报告。'))
@@ -144,19 +209,6 @@ function renderCases() {
   $('#job').replaceChildren()
   if (job) {
     $('#job').append(el('p', 'hint', `${job.caseId} · ${labels[job.status] || job.status}`))
-    if (['running', 'stopping'].includes(job.status)) {
-      const directory = job.directory
-      const stop = button(job.status === 'stopping' ? '正在中止…' : '中止测试', async () => {
-        stop.disabled = true
-        try {
-          const response = await fetch('/api/stop?' + new URLSearchParams({ directory }), { method: 'POST' })
-          const data = await response.json(); if (!response.ok) throw new Error(data.error || '中止失败')
-          job = data; renderCases(); notify('已请求中止，正在保存报告和清理测试会话')
-        } finally { stop.disabled = false }
-      })
-      stop.disabled = job.status === 'stopping' || !directory
-      $('#job').append(stop)
-    }
     if (job.error) $('#job').append(el('p', 'error', job.error))
     const report = runs.find(r => r.directory.startsWith(job.directory + '/'))
     if (report) $('#job').append(button('查看本次报告', () => selectRun(report.id)))

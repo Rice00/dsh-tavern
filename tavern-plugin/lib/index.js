@@ -2511,7 +2511,7 @@ export async function apply(ctx) {
       case 'importWorldBook': return { worldBook: await worldBooks.import(args && args.payload) }
       case 'updateWorldBook': return await worldBooks.update(args && args.source, args && args.update)
       case 'exportWorldBook': return { worldBook: await worldBooks.export(args && args.source) }
-      case 'deleteWorldBook': return await worldBooks.remove(args && args.path)
+      case 'deleteWorldBook': return await worldBooks.remove(args && (args.source || args.path))
       case 'listPresets': return await presetLibrary.catalog()
       case 'selectPreset': return await presetLibrary.select(args && args.path)
       case 'getPreset': return { preset: await presetLibrary.detail(args && args.path) }

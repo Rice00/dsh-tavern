@@ -87,11 +87,11 @@
 body.dsh-tavern-shell-active button[aria-label="新建会话"], body.dsh-tavern-shell-active button[aria-label="New session"] { display: none !important; }
 body.dsh-tavern-shell-active [data-turn-tail] > [data-slot="conversation.chat.turnTail"] + div > button { display: none !important; }
 body.dsh-tavern-shell-active [data-turn-tail] [data-slot="conversation.chat.assistant-actions"] > :not(.dsh-tavern-message-fork) { display: none !important; }
-body.dsh-tavern-shell-active [data-phase="hero"] div:has(> [data-slot="conversation.hero.agentPreset"]) { display: none !important; }
+body.dsh-tavern-shell-active .dsh-tavern-hero-preset-row { display: none !important; }
 /* A blank session is also a hero. Only the session-less landing page loses its composer. */
-body.dsh-tavern-shell-active [data-phase="hero"]:has([data-composer-seat]):not(:has(> [data-slot="conversation.session.header"])) { display: grid !important; place-items: center; }
-body.dsh-tavern-shell-active [data-phase="hero"]:has([data-composer-seat]):not(:has(> [data-slot="conversation.session.header"])) > * { display: none !important; }
-body.dsh-tavern-shell-active [data-phase="hero"]:has([data-composer-seat]):not(:has(> [data-slot="conversation.session.header"]))::before { content: "🍺 DSH Tavern"; color: #9a622f; font-size: clamp(24px, 4vw, 40px); font-weight: 800; padding: 24px; text-align: center; }
+body.dsh-tavern-shell-active .dsh-tavern-landing { display: grid !important; place-items: center; }
+body.dsh-tavern-shell-active .dsh-tavern-landing > * { display: none !important; }
+body.dsh-tavern-shell-active .dsh-tavern-landing::before { content: "🍺 DSH Tavern"; color: #9a622f; font-size: clamp(24px, 4vw, 40px); font-weight: 800; padding: 24px; text-align: center; }
 body.dsh-tavern-shell-active [data-ref-chip="file"] { max-width: calc(100% - 4px); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .dsh-tavern-side-head { height: 48px; display: flex; align-items: center; gap: 8px; flex: none; }
 .dsh-tavern-side-brand { flex: 1; min-width: 0; font-size: 16px; font-weight: 800; color: #9a622f; white-space: nowrap; overflow: hidden; }
@@ -660,7 +660,8 @@ body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
 
 /* Size every opening by content; scroll the dialog instead of squeezing long forms. */
 .dsh-tavern-card-picker:has(.dsh-tavern-greeting-preview) { display: flex; flex-direction: column; max-height: calc(100dvh - 48px); }
-.dsh-tavern-card-picker:has(.dsh-tavern-greeting-preview) > * { flex-shrink: 0; }
+/* In block pickers this is inert; avoid a descendant :has() before universal children. */
+.dsh-tavern-card-picker > * { flex-shrink: 0; }
 .dsh-tavern-card-picker > .dsh-tavern-greeting-preview { height: auto; min-height: 0; max-height: min(1200px, 85dvh); flex: 0 0 auto; }
 .dsh-tavern-card-picker > .dsh-tavern-greeting-preview:has(iframe) { height: min(1200px, 85dvh); }
 .dsh-tavern-card-picker > .dsh-tavern-greeting-preview .dsh-tavern-message-frame-slot,

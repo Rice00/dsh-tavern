@@ -9,7 +9,7 @@ window.__ModuleLoader__.load({
 			let DshUi = require("@deepseek-ai/dsh-client-ui-primitives");
 
 		const stylesheetId = "dsh-tavern-plugin/tavern.css";
-		const stylesheetUrl = "/api/dsh-tavern/client-assets/tavern.css?v=20260912-system-prompts";
+		const stylesheetUrl = "/api/dsh-tavern/client-assets/tavern.css?v=20260913-landing-performance";
 		if (typeof document !== "undefined") {
 			const existing = document.querySelector("link[data-plugin-css=" + JSON.stringify(stylesheetId) + "]");
 			if (existing && existing.getAttribute("href") !== stylesheetUrl) existing.setAttribute("href", stylesheetUrl);
@@ -1875,6 +1875,61 @@ window.__ModuleLoader__.load({
 		    }, report).finally(function () { pending = false; button.disabled = completed; });
 		  });
 		  return function () { active = false; controls.remove(); };
+		}
+		// The native conversation root survives hero -> active transitions. Derive the
+		// landing marker at those boundaries, not with a descendant :has() on every
+		// message element whenever the composer changes.
+		function installTavernLandingStyles(doc) {
+		  const Observer = doc.defaultView && doc.defaultView.MutationObserver;
+		  if (!Observer || !doc.body) return function () {};
+		  const roots = new Map();
+		  const slotSelector = '[data-slot="conversation"]';
+		  function watch(root) {
+		    let presetRow = null;
+		    function sync() {
+		      const hero = root.getAttribute('data-phase') === 'hero';
+		      const nextRow = hero ? root.querySelector('[data-slot="conversation.hero.agentPreset"]')?.parentElement : null;
+		      if (presetRow !== nextRow) {
+		        if (presetRow) presetRow.classList.remove('dsh-tavern-hero-preset-row');
+		        presetRow = nextRow;
+		        if (presetRow) presetRow.classList.add('dsh-tavern-hero-preset-row');
+		      }
+		      const hasHeader = Array.from(root.children).some(child => child.getAttribute('data-slot') === 'conversation.session.header');
+		      const landing = hero && !hasHeader && Boolean(root.querySelector('[data-composer-seat]'));
+		      root.classList.toggle('dsh-tavern-landing', landing);
+		    }
+		    const observer = new Observer(records => {
+		      // Active-message streaming and input edits never rescan the history.
+		      if (root.getAttribute('data-phase') === 'hero' || records.some(record => record.target === root)) sync();
+		    });
+		    observer.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-phase'] });
+		    sync();
+		    return function () {
+		      observer.disconnect();
+		      root.classList.remove('dsh-tavern-landing');
+		      if (presetRow) presetRow.classList.remove('dsh-tavern-hero-preset-row');
+		    };
+		  }
+		  function discover() {
+		    for (const [root, release] of roots) if (!root.isConnected) { release(); roots.delete(root); }
+		    for (const slot of doc.querySelectorAll(slotSelector)) {
+		      for (const root of slot.children) {
+		        if (root.hasAttribute('data-phase') && !roots.has(root)) roots.set(root, watch(root));
+		      }
+		    }
+		  }
+		  const observer = new Observer(records => {
+		    if (Array.from(roots.keys()).some(root => !root.isConnected) || records.some(record =>
+		      !Array.from(roots.keys()).some(root => root.contains(record.target)) && Array.from(record.addedNodes).some(node =>
+		        node.nodeType === 1 && (node.matches(slotSelector) || node.querySelector(slotSelector) || node.parentElement?.matches(slotSelector))))) discover();
+		  });
+		  observer.observe(doc.body, { childList: true, subtree: true });
+		  discover();
+		  return function () {
+		    observer.disconnect();
+		    for (const release of roots.values()) release();
+		    roots.clear();
+		  };
 		}
 		// The header counts session summaries; its popup reads the lazy catalog.
 		// Refresh an opened catalog when membership/activity changes in the summary feed.
@@ -6632,7 +6687,8 @@ window.__ModuleLoader__.load({
 			const uiConversation = ctx.get("uiConversation") || ctx.get("conversation");
 			ctx.effect(function () {
 				document.body.classList.add("dsh-tavern-shell-active");
-				return function () { document.body.classList.remove("dsh-tavern-shell-active"); };
+				const releaseLandingStyles = installTavernLandingStyles(document);
+				return function () { releaseLandingStyles(); document.body.classList.remove("dsh-tavern-shell-active"); };
 			}, "dsh-tavern: shell marker");
 			ctx.effect(() => slots.inject("sidebar.workspaces", () => slots.register(
 				{ name: "sidebar.workspaces", priority: -1 },
@@ -8769,7 +8825,8 @@ window.__ModuleLoader__.load({
 					finally { setBusy(false); }
 				}
 				return React.createElement(React.Fragment, null,
-					React.createElement("style", null, 'body:has([data-tavern-log-export]) button[class*="_sessionLogButton"]{display:none!important}.dsh-tavern-log-export{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--dsw-alias-border-l2);border-radius:18px;background:transparent;color:var(--dsw-alias-label-primary);padding:6px 12px;height:32px;font:inherit;font-size:13px;cursor:pointer}.dsh-tavern-log-export:disabled{cursor:wait;opacity:.6}'),
+					// This stylesheet is mounted only while the Tavern export action exists.
+					React.createElement("style", null, 'button[class*="_sessionLogButton"]{display:none!important}.dsh-tavern-log-export{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--dsw-alias-border-l2);border-radius:18px;background:transparent;color:var(--dsw-alias-label-primary);padding:6px 12px;height:32px;font:inherit;font-size:13px;cursor:pointer}.dsh-tavern-log-export:disabled{cursor:wait;opacity:.6}'),
 					React.createElement("button", { className: "dsh-tavern-log-export", "data-tavern-log-export": "", disabled: busy, "aria-label": "日志", "aria-busy": busy, title: "下载 Session、MVU、生图与更新日志；含私人剧情，分享前请检查隐私", onClick: exportLogs }, "日志",
 						React.createElement("svg", { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true }, React.createElement("path", { d: "M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4" }))),
 					React.createElement("button", { className: "dsh-tavern-export-action", disabled: busy, title: "导出只包含玩家与角色正文的 TXT", onClick: exportText }, "纯对话 TXT ↓"));

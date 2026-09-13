@@ -28,7 +28,7 @@ test('Web 宿主只装载样式模块，不再内嵌整份 CSS', async () => {
   assert.deepEqual(appended[0], {
     name: 'link', rel: 'stylesheet',
     dataset: { plugin: 'dsh-tavern-plugin', pluginCss: 'dsh-tavern-plugin/tavern.css' },
-    href: '/api/dsh-tavern/client-assets/tavern.css?v=20260912-system-prompts'
+    href: '/api/dsh-tavern/client-assets/tavern.css?v=20260913-landing-performance'
   })
   const existing = { href: '/api/dsh-tavern/client-assets/tavern.css', getAttribute() { return this.href }, setAttribute(name, value) { this[name] = value } }
   document.querySelector = () => existing

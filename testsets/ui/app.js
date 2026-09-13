@@ -1,5 +1,5 @@
 const $ = selector => document.querySelector(selector)
-const labels = { passed: '成功', completed: '已完成', failed: '失败', interrupted: '已中断', running: '运行中', incomplete: '未完成', 'not-run': '未执行', 'not-covered': '未覆盖', 'not-invoked': '未调用', unreadable: '读取失败', cancelled: '已取消' }
+const labels = { passed: '成功', completed: '已完成', failed: '失败', interrupted: '已中断', running: '运行中', stopping: '正在中止', incomplete: '未完成', 'not-run': '未执行', 'not-covered': '未覆盖', 'not-invoked': '未调用', unreadable: '读取失败', cancelled: '已取消' }
 const roles = { foreground: '前台正文', background: '后台结算', image: '文生图', card: '卡片 Agent' }
 let cases = [], job = null, caseSelected = '', starting = false
 let runs = [], filter = 'all', selected = '', selectionVersion = 0
@@ -144,6 +144,19 @@ function renderCases() {
   $('#job').replaceChildren()
   if (job) {
     $('#job').append(el('p', 'hint', `${job.caseId} · ${labels[job.status] || job.status}`))
+    if (['running', 'stopping'].includes(job.status)) {
+      const directory = job.directory
+      const stop = button(job.status === 'stopping' ? '正在中止…' : '中止测试', async () => {
+        stop.disabled = true
+        try {
+          const response = await fetch('/api/stop?' + new URLSearchParams({ directory }), { method: 'POST' })
+          const data = await response.json(); if (!response.ok) throw new Error(data.error || '中止失败')
+          job = data; renderCases(); notify('已请求中止，正在保存报告和清理测试会话')
+        } finally { stop.disabled = false }
+      })
+      stop.disabled = job.status === 'stopping' || !directory
+      $('#job').append(stop)
+    }
     if (job.error) $('#job').append(el('p', 'error', job.error))
     const report = runs.find(r => r.directory.startsWith(job.directory + '/'))
     if (report) $('#job').append(button('查看本次报告', () => selectRun(report.id)))
@@ -157,7 +170,7 @@ function showCase(id) {
   detail.append(el('p', 'meta', `${item.model.provider} · ${item.model.model} · ${item.model.reasoningEffort || '默认推理强度'}`))
   detail.append(el('p', 'hint', '使用正式酒馆当前配置，新建独立测试存档。启动会调用真实模型并产生费用。'))
   if (item.steps.some(step => step.action === 'card')) detail.append(el('p', 'hint', '此案例包含卡片 Agent，资源编辑会作用于正式卡库。'))
-  const start = button(starting || job?.status === 'running' ? '测试运行中…' : '启动测试', async () => {
+  const start = button(starting || ['running', 'stopping'].includes(job?.status) ? '测试运行中…' : '启动测试', async () => {
     starting = true; showCase(id)
     try {
       const response = await fetch('/api/start?' + new URLSearchParams({ id }), { method: 'POST' })
@@ -165,7 +178,7 @@ function showCase(id) {
       job = data; notify('测试已启动'); await refresh()
     } finally { starting = false; if (caseSelected === id) showCase(id) }
   })
-  start.disabled = starting || job?.status === 'running'; detail.append(start)
+  start.disabled = starting || ['running', 'stopping'].includes(job?.status); detail.append(start)
   for (const [index, step] of item.steps.entries()) {
     const block = el('div', 'case-step')
     block.append(el('strong', '', `${index + 1}. ${{ play: '新开游戏', card: '打开卡片工作台', say: '发送输入', image: '生成图片' }[step.action]}`))
@@ -184,7 +197,7 @@ setInterval(async () => {
   try {
     const previous = job
     job = await get('/api/job')
-    if (job?.status === 'running' || previous?.status === 'running' || (job && job.startedAt !== previous?.startedAt)) {
+    if (['running', 'stopping'].includes(job?.status) || ['running', 'stopping'].includes(previous?.status) || (job && job.startedAt !== previous?.startedAt)) {
       runs = await get('/api/runs'); renderRuns(); renderCases()
       const currentReport = runs.find(r => r.directory.startsWith(job.directory + '/'))
       if (caseSelected === job.caseId && currentReport) await selectRun(currentReport.id)

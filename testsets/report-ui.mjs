@@ -54,12 +54,12 @@ export async function createReportServer(resultsRoot, options = {}) {
     if (req.headers.host !== host || (req.headers.origin && req.headers.origin !== `http://${host}`) || req.headers['sec-fetch-site'] === 'cross-site') { res.writeHead(403); res.end('Forbidden'); return }
     const url = new URL(req.url, `http://${host}`)
     const json = data => { res.setHeader('Content-Type', mime['.json']); res.end(JSON.stringify(data)) }
-    if (req.method !== 'GET' && !(req.method === 'POST' && url.pathname === '/api/start')) { res.writeHead(405); res.end(); return }
+    if (req.method !== 'GET' && !(req.method === 'POST' && ['/api/start', '/api/stop'].includes(url.pathname))) { res.writeHead(405); res.end(); return }
     try {
-      if (url.pathname === '/api/start') {
+      if (['/api/start', '/api/stop'].includes(url.pathname)) {
         if (req.method !== 'POST') { res.writeHead(405); res.end(); return }
         if (req.headers.origin !== `http://${host}`) { res.writeHead(403); res.end(); return }
-        try { const job = await runner.start(url.searchParams.get('id')); res.statusCode = 202; json(job) }
+        try { const job = url.pathname === '/api/stop' ? runner.stop(url.searchParams.get('directory')) : await runner.start(url.searchParams.get('id')); res.statusCode = 202; json(job) }
         catch (error) { res.statusCode = error.status || 500; json({ error: error.status ? error.message : '无法启动测试，请检查本地案例和结果目录' }) }
         return
       }

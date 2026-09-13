@@ -42,7 +42,7 @@ test('case catalog starts the existing runner once and reports process failures'
   await writeFile(path.join(root, 'demo/scenario.yaml'), 'name: Demo\nmodel: { provider: test, model: test }\nsteps:\n  - { action: play, sourceCard: demo.json }\n  - { action: say, input: hello }\n')
   const children = [], calls = []
   const server = await createReportServer(path.join(root, 'results'), { casesRoot: root, runtimeHome: '/tmp/test-runtime', launch: (...args) => {
-    calls.push(args); const child = new EventEmitter(); children.push(child); return child
+    calls.push(args); const child = new EventEmitter(); child.signals = []; child.kill = signal => { child.signals.push(signal); return true }; children.push(child); return child
   } })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   const base = 'http://127.0.0.1:' + server.address().port
@@ -59,13 +59,25 @@ test('case catalog starts the existing runner once and reports process failures'
     assert.equal(calls[0][1][1], path.join(root, 'demo/scenario.yaml'))
     assert.deepEqual(calls[0][1].slice(-2), ['--runtime-home', '/tmp/test-runtime'])
     assert.equal(calls[0][2].shell, false)
+    const job = await (await fetch(base + '/api/job')).json()
+    const stop = directory => fetch(base + '/api/stop?' + new URLSearchParams({ directory }), { method: 'POST', headers: { Origin: base } })
+    assert.equal((await fetch(base + '/api/stop', { method: 'POST' })).status, 403)
+    assert.equal((await stop('stale-job')).status, 409)
+    assert.equal((await stop(job.directory)).status, 202)
+    assert.equal((await (await fetch(base + '/api/job')).json()).status, 'stopping')
+    assert.equal((await start('demo')).status, 409)
+    assert.equal((await stop(job.directory)).status, 202)
+    assert.deepEqual(children[0].signals, ['SIGTERM'])
     children[0].emit('exit', 1, null)
+    assert.equal((await (await fetch(base + '/api/job')).json()).status, 'interrupted')
+    assert.equal((await start('demo')).status, 202)
+    children[1].emit('exit', 1, null)
     assert.equal((await (await fetch(base + '/api/job')).json()).status, 'failed')
     assert.equal((await start('demo')).status, 202)
-    children[1].emit('error', new Error('private detail'))
+    children[2].emit('error', new Error('private detail'))
     assert.equal((await (await fetch(base + '/api/job')).json()).error, '测试进程启动失败')
     assert.equal((await start('demo')).status, 202)
-    children[2].emit('exit', 0, null)
+    children[3].emit('exit', 0, null)
     assert.equal((await (await fetch(base + '/api/job')).json()).status, 'completed')
   } finally { await new Promise(resolve => server.close(resolve)); await rm(root, { recursive: true, force: true }) }
 })

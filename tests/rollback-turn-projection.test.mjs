@@ -1,3 +1,6 @@
+import { foregroundSuppressedTurns, clearFailedTurnSurface, locateRollbackSurface } from '../tavern-plugin/lib/domain/rollback-surface.js'
+import { Session } from './fixtures/dsh-session-host.mjs'
+import { sessionEvents } from '../tavern-plugin/lib/domain/session-events.js'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
@@ -76,3 +79,35 @@ for (const alpha of [false, true]) {
     assert.ok(regenerated.slice(1).every(item => item.style.display === ''), '新的 append 正文不能在生成结束后消失')
   })
 }
+
+for (const alpha of [false, true]) test(`${alpha ? 'alpha' : 'main'} 中断残留正文随回退消失，重载后不复现`, () => {
+  let session = Session.create('interrupted-rollback')
+  const model = { kind: 'model', provider: 'fixture', model: 'fixture' }
+  for (const turn of [1, 2, 3]) {
+    session.append('turn/start', { turn })
+    session.append('user/message', { id: 'u' + turn, role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'input' + turn }] }, { surfaceOp: 'append' })
+    session.append('assistant/message', { turn, step: 1, message: { id: 'a' + turn, role: 'assistant', source: model, content: [{ type: 'text', text: turn === 3 ? '中断时已流出的半截正文' : 'reply' + turn }] } }, { surfaceOp: 'append' })
+    session.append('turn/end', { turn, reason: { kind: turn === 3 ? 'aborted' : 'completed' } })
+  }
+  // Same event sequence as the report: aborted reply -> failed-turn cleanup -> rollback.
+  clearFailedTurnSurface({ session, turn: 3 })
+  assert.deepEqual(foregroundSuppressedTurns({}, sessionEvents(session)), [], "停止本身保留半截正文，只有回退才隐藏")
+  const rollback = locateRollbackSurface({ events: sessionEvents(session), nodes: session.surface.nodes })
+  assert.equal(rollback.turn, 2)
+  session.append('assistant/message', { turn: 2, step: 1, message: { id: 'rollback', role: 'assistant', source: model, content: [] } }, {
+    surfaceOp: { op: 'replace', start: rollback.userSeq, end: rollback.endSeq }, sourceEventSeqs: rollback.shadowedSeqs
+  })
+  for (const reload of [false, true]) {
+    if (reload) session = Session.create(session.id, sessionEvents(session), session.header)
+    const kept = ['user', 'assistant-step', 'turn-tail'].map(kind => row(kind, 1, alpha))
+    const rolled = ['user', 'assistant-step', 'turn-tail'].map(kind => row(kind, 2, alpha))
+    const interrupted = ['user', 'assistant-step', 'turn-tail'].map(kind => row(kind, 3, alpha))
+    const projection = harness([...kept, ...rolled, ...interrupted])
+    const viewTurns = foregroundSuppressedTurns({ suppressedDshTurns: [2] }, sessionEvents(session))
+    projection.applySuppressedDshTurns(viewTurns)
+    assert.ok(!JSON.stringify(session.deriveMessages()).includes('中断时已流出的半截正文'), '模型上下文已清理')
+    assert.ok(rolled.every(item => item.style.display === 'none'), '已提交回合已回退')
+    assert.ok(interrupted.every(item => item.style.display === 'none'), '中断的半截正文不应留在界面')
+    assert.ok(kept.every(item => item.style.display === ''), '保留回合不受影响')
+  }
+})

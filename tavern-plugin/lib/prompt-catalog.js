@@ -11,6 +11,7 @@ export const SYSTEM_PROMPT_DEFINITIONS = Object.freeze([
   ['card-system', '卡片 Agent 系统指令', '默认空白；从 card-system.md 读取，非空时仅注入卡片 Agent。'],
   ['card-workspace', '卡片 Agent 工作区说明', '仅注入卡片 Agent 的 system。可编辑完整说明；{{resourceRoot}} 自动替换为当前资源根目录，{{projectionPaths}} 自动替换为当前会话的投影文件路径。保存后下一次请求生效。'],
   ['card-mode-greeting', '卡片工作台欢迎语', '控制新建卡片工作台对话的开场内容。'],
+  ['card-task-gentle', '人物卡温和改写任务', '控制温和副本改写与实际回复校验的起始要求。'],
   ['card-task-edit', '人物卡编辑任务', '控制“修改人物卡”任务的起始要求。'],
   ['card-task-extract', '人物卡抽取任务', '控制“从剧本抽取人物卡”任务的起始要求。'],
   ['card-task-script', '剧本编辑任务', '控制“修改剧本”任务的起始要求。'],

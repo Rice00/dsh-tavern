@@ -1,3 +1,5 @@
+import { conversationStateAtTurn, conversationForkBoundary } from './domain/conversation-fork-point.js'
+import { createCardResponseTest } from './domain/card-response-test.js'
 import { appendSystemInstruction } from './domain/system-append.js'
 import { createGameplayApi } from './gameplay-api.js'
 import { cardOpeningChoices } from './domain/card-openings.js'
@@ -81,7 +83,7 @@ import { resolveRuntimePresetMacros } from './domain/runtime-presets.js'
 import { compileSillyTavernRequest, createCleanCompatibilityPreset } from './domain/sillytavern-compatibility.js'
 import { applySillyTavernStrictTools } from './domain/sillytavern-strict-tools.js'
 import { createForegroundOrchestrationStrategies } from './domain/foreground-orchestration-strategies.js'
-import { abortedRegenerationTurns, clearFailedTurnSurface, hasRollbackMessages, supersededRegenerationErrorTurns } from './domain/rollback-surface.js'
+import { foregroundSuppressedTurns, clearFailedTurnSurface, hasRollbackMessages, supersededRegenerationErrorTurns } from './domain/rollback-surface.js'
 import { assistantResultForTurn } from './domain/session-turn-result.js'
 import { createTavernRetryLimiter } from './domain/tavern-retry-limiter.js'
 import { lastTavernHelperVariables, projectTavernHelperContext } from './domain/tavern-helper-context.js'
@@ -472,6 +474,7 @@ export async function apply(ctx) {
   const cardDeletion = createCardDeletion({ resources: fileResources })
   const cardTaskPrompts = Object.freeze({
     edit: 'card-task-edit',
+    gentle: 'card-task-gentle',
     extract: 'card-task-extract',
     script: 'card-task-script',
     material: 'card-task-script',
@@ -1207,6 +1210,16 @@ export async function apply(ctx) {
     const liveSession = sessionStore.get(str(chat.sessionId)) || agentRegistry.get(str(chat.sessionId))?.session
     const latestAssistant = latestStoryTurn > 0 ? assistantResultForTurn(liveSession, latestStoryTurn) : null
     const latestAssistantMessageId = str(latestAssistant?.event?.data?.message?.id)
+    const forkTurnsByMessageId = {}
+    const visibleTurns = new Set(debugTurns.map(item => item.turn))
+    const messagesByTurn = new Map()
+    for (const event of sessionEvents(liveSession)) {
+      const turn = Number(event.data?.turn)
+      if (!visibleTurns.has(turn)) continue
+      if (event.type === 'turn/start') messagesByTurn.delete(turn)
+      if (event.type === 'assistant/message' && event.data?.message?.source?.kind === 'model') messagesByTurn.set(turn, event.data.message.id)
+    }
+    for (const [turn, messageId] of messagesByTurn) if (messageId) forkTurnsByMessageId[messageId] = turn
     const inputSources = {}
     const runtimeInputs = chat.runtimeInputs && typeof chat.runtimeInputs === 'object' ? chat.runtimeInputs : {}
     for (const turn of Object.keys(runtimeInputs)) {
@@ -1229,9 +1242,7 @@ export async function apply(ctx) {
       }
     }
     const projectionEvents = sessionDebugEvidence(chat.sessionId).events
-    const suppressedDshTurns = Array.from(new Set((Array.isArray(chat.suppressedDshTurns) ? chat.suppressedDshTurns : [])
-      .concat(abortedRegenerationTurns({ events: projectionEvents }))
-      .map(Number).filter(function (turn) { return Number.isSafeInteger(turn) && turn > 0 }))).sort(function (left, right) { return left - right })
+    const suppressedDshTurns = foregroundSuppressedTurns(chat, projectionEvents)
     return {
       chatId: chat.id,
       contextCompaction: chat.contextCompaction || null,
@@ -1253,6 +1264,7 @@ export async function apply(ctx) {
       guides: Array.isArray(chat.guides) ? chat.guides : [],
       debugTurns: debugTurns.slice(-12).reverse(),
       latestAssistantMessageId,
+      forkTurnsByMessageId,
       latestAssistantTurn: latestStoryTurn,
       inputSources,
       canRollback: hasRollbackMessages(chat.messages),
@@ -1486,21 +1498,33 @@ export async function apply(ctx) {
       flush: session => sessionStore.flush(session)
     }
   })
-  async function forkChat(sourceChatId, sourceSessionId, targetSessionId, requestedTurn) {
+  async function prepareConversationFork(sourceChatId, sourceSessionId, requestedTurn) {
     const source = str(sourceChatId) === '' ? await chatForSession(str(sourceSessionId)) : await readChat(str(sourceChatId))
-    if (source === undefined) throw new Error('找不到要分叉的源对话')
-    const sourceAgent = agentRegistry.get(str(source.sessionId))
-    assertConversationForkable(source, { agentRunning: sourceAgent?.phase?.kind === 'running' })
+    if (!source) throw new Error('找不到要分叉的源对话')
+    assertConversationForkable(source, { agentRunning: agentRegistry.get(source.sessionId)?.phase?.kind === 'running' })
+    const { state, turn } = await conversationStateAtTurn(source, requestedTurn, readChatRevision)
+    let handle
+    let session = sessionStore.get(source.sessionId) || agentRegistry.get(source.sessionId)?.session
+    if (!session) { handle = await agentRegistry.resume({ resumeSessionId: source.sessionId }); session = handle.agent.session }
+    try {
+      return { source, state, turn, atSeq: conversationForkBoundary(session, state, turn) }
+    } finally { if (handle) await handle.dispose() }
+  }
+  async function forkChat(sourceChatId, sourceSessionId, targetSessionId, requestedTurn, expectedRevision, expectedAtSeq) {
+    const { source, state, turn, atSeq } = await prepareConversationFork(sourceChatId, sourceSessionId, requestedTurn)
+    if (expectedRevision !== source._storageRevision || expectedAtSeq !== atSeq) throw new Error('源对话已变化，请重新选择分叉回合')
     const targetId = str(targetSessionId)
     if (targetId === '' || await chatForSession(targetId) !== undefined) throw new Error('分叉目标必须是尚未绑定对话的新 Session')
-    const sourceTurn = [...(Array.isArray(source.messages) ? source.messages : [])].reverse().find(message => message && message.role === 'assistant')
-    const latestTurn = Math.max(0, Number(sourceTurn?.turn || (sourceTurn?.greeting ? 1 : 0)) || 0)
-    const turn = Math.max(0, Number(requestedTurn) || 0)
-    if (turn > 0 && turn !== latestTurn) throw new Error('暂只能从当前最新的已提交进度分叉')
-    const fork = forkConversationChat(source, { chatId: uid('chat'), sessionId: targetId, id: uid, now: Date.now })
+    const target = sessionStore.get(targetId) || agentRegistry.get(targetId)?.session
+    const targetEnd = sessionEvents(target).findLast(event => event.type === 'turn/end')
+    if (!targetEnd || targetEnd.seq !== atSeq) throw new Error('原生分叉没有停在指定回合，已拒绝绑定游戏状态')
+    const fork = forkConversationChat(state, { chatId: uid('chat'), sessionId: targetId, id: uid, now: Date.now })
+    fork.forkedFrom = { ...fork.forkedFrom, chatId: source.id, sessionId: source.sessionId, storageRevision: source._storageRevision,
+      stateChatId: state.id, stateRevision: state._storageRevision, turn, atSeq }
     await conversationRegistry.publish(fork)
-    return conversationForkReceipt(fork, { lastTurn: latestTurn, messageCount: fork.messages.length })
+    return conversationForkReceipt(fork, { lastTurn: turn, messageCount: fork.messages.length })
   }
+
   const runtimePresetSnapshots = new Map()
   const backgroundAgentRunner = createBackgroundAgentRunner({
     systemAppend: () => runtimePrompt('system-append'),
@@ -2442,6 +2466,9 @@ export async function apply(ctx) {
     requiresBrowser: async chat => hasTavernScriptRuntime(chat, (await readCardExtensions(chat.cardPath))?.helperScripts)
   })
 
+  const cardResponseTest = createCardResponseTest({ api: gameplayApi, store: profileData, chatForSession })
+  ctx.effect(() => () => cardResponseTest.dispose())
+
   async function dispatchMethod(method, args) {
     if (method.startsWith('gameplay.')) return await gameplayApi.call(method.slice(9), args || {})
     switch (method) {
@@ -2642,7 +2669,11 @@ export async function apply(ctx) {
       case 'prepareDeleteChats': return await deleteChats(args && args.chatIds, true)
       case 'deleteChats': return await deleteChats(args && args.chatIds)
       case 'deleteChat': return await deleteChat(args && args.chatId)
-      case 'forkChat': return { fork: await forkChat(args && args.chatId, args && args.sessionId, args && args.targetSessionId, args && args.turn) }
+      case 'prepareConversationFork': {
+        const plan = await prepareConversationFork(args?.chatId, args?.sessionId, args?.turn)
+        return { turn: plan.turn, atSeq: plan.atSeq, sourceRevision: plan.source._storageRevision }
+      }
+      case 'forkChat': return { fork: await forkChat(args?.chatId, args?.sessionId, args?.targetSessionId, args?.turn, args?.sourceRevision, args?.atSeq) }
       case 'exportConversation': return await exportConversation(args && args.chatId, args && args.sessionId, args && args.title)
       case 'exportTavernLogs': return await exportTavernLogs(args && args.sessionId)
       case 'recordTavernCompatibilityCalls': {
@@ -3296,7 +3327,7 @@ export async function apply(ctx) {
     })
   }
 
-  const controlledToolNames = new Set(['bash', 'pwsh', ...dshFileToolNames, 'skill', 'web_search', 'tavern_save_skill', ...cordisToolNames, 'tavern_user_profile_read', 'tavern_user_profile_save_draft', 'tavern_user_profile_confirm', 'tavern_read_card', 'tavern_read_card_raw', 'tavern_read_play_chat', 'tavern_read_script', 'tavern_recall_history', 'tavern_read_worldbook', 'tavern_update_worldbook', 'tavern_read_preset', 'tavern_update_preset', 'tavern_update_card', 'tavern_restore_card', 'tavern_validate_card'])
+  const controlledToolNames = new Set(['bash', 'pwsh', ...dshFileToolNames, 'skill', 'web_search', 'tavern_save_skill', ...cordisToolNames, 'tavern_user_profile_read', 'tavern_user_profile_save_draft', 'tavern_user_profile_confirm', 'tavern_read_card', 'tavern_read_card_raw', 'tavern_read_play_chat', 'tavern_read_script', 'tavern_recall_history', 'tavern_read_worldbook', 'tavern_update_worldbook', 'tavern_read_preset', 'tavern_update_preset', 'tavern_update_card', 'tavern_restore_card', 'tavern_validate_card', 'tavern_test_response'])
   const foregroundStrategies = createForegroundOrchestrationStrategies({
     compatibility: {
       beforeTurn: async function (input) {
@@ -3540,6 +3571,33 @@ export async function apply(ctx) {
   // ---------- 模型可选工具 ----------
   const tools = ctx.get('tools')
   if (tools !== undefined) {
+    tools.register(defineTool({
+      name: 'tavern_test_response',
+      description: '用正式游玩 API 为已保存人物卡创建独立测试存档，按保存的案例逐轮调用模型并检查拒绝信号。configure 保存案例，start 启动，status 查询（最多等待 10 秒），cancel 停止。最长 5 分钟；真实调用产生费用。不支持浏览器脚本卡。未发现拒绝不等于内容合规。',
+      parameters: {
+        action: { type: 'string', enum: ['configure', 'start', 'status', 'cancel'], required: true },
+        name: { type: 'string', description: 'configure 必填，案例名称。' },
+        caseId: { type: 'string', description: 'start 必填，configure 返回的案例 ID。' },
+        sourceCard: { type: 'string', description: 'configure 必填，库中人物卡文件名，不含 cards/。' },
+        provider: { type: 'string', description: 'configure 必填，用户指定的 provider。' },
+        model: { type: 'string', description: 'configure 必填，用户指定的模型。' },
+        reasoningEffort: { type: 'string' },
+        steps: { type: 'array', description: 'configure 必填，1 至 10 轮。首轮 input；后续可 input 或 inputFrom 二选一。candidates 表示本轮后生成候选项。', items: { type: 'object', additionalProperties: false, properties: {
+          input: { type: 'string' },
+          inputFrom: { type: 'object', additionalProperties: false, properties: { candidate: { type: 'integer', required: true }, type: { type: 'string', enum: ['action', 'scene'] } } },
+          candidates: { type: 'boolean' }
+        } } },
+        sessionId: { type: 'string', description: 'status/cancel 必填，start 返回的测试会话 ID。' }
+      },
+      output: {
+        schema: { type: 'object', additionalProperties: false, properties: { report: { type: 'string', required: true } } },
+        render: function (_args, value) { return [{ type: 'text', text: value.report }] }
+      },
+      isConcurrencySafe: function () { return false },
+      async execute(args, exec) {
+        return { report: JSON.stringify(await cardResponseTest.execute(exec?.agent?.session?.id || '', args), null, 2) }
+      }
+    }))
     tools.register(defineTool({
       name: HISTORY_RECALL_TOOL.name,
       description: HISTORY_RECALL_TOOL.description,

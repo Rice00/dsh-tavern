@@ -4916,6 +4916,7 @@ window.__ModuleLoader__.load({
 			const configuredSlashExecutor = options && options.executeSlash;
 			const invalidate = options && options.invalidate || function (sessionId) { liveTavernView.invalidate(sessionId); };
 			const channels = new Map();
+			const frameSizeObservers = new Map();
 			let props = initial;
 			let frozenHelperContext = initial.helperContext;
 			let helperContext = frozenHelperContext;
@@ -4951,8 +4952,24 @@ window.__ModuleLoader__.load({
 				const channel = createTavernFrameContextChannel(document);
 				// Stable callback identity preserves the per-document delta baseline.
 				document.ref = function (node) {
+                    const previous = frameSizeObservers.get(document.token);
+                    if (previous) { previous.disconnect(); frameSizeObservers.delete(document.token); }
 					channel.attach(node);
-
+                    // Trusted cards may replace their document and lose our reporter,
+                    // then resize frameElement directly. Observe outside that document.
+                    if (node && document.trustedCardMode && typeof hostWindow.MutationObserver === "function") {
+                        const observer = new hostWindow.MutationObserver(function () {
+                            if (channel.element() !== node || frameSizeObservers.get(document.token) !== observer) return;
+                            const raw = String(node.style && node.style.height || "");
+                            if (!/^\d+(?:\.\d+)?px$/.test(raw)) return;
+                            const value = clampTavernFrameHeight(parseFloat(raw));
+                            if (document.height === value && (document !== visible || height === value)) return;
+                            document.height = value;
+                            if (document === visible) { rememberHeight(document, value); publish(); }
+                        });
+                        frameSizeObservers.set(document.token, observer);
+                        observer.observe(node, { attributes: true, attributeFilter: ["style"] });
+                    }
 					if (node) channels.set(document.token, channel);
 					else channels.delete(document.token);
 				};
@@ -5187,6 +5204,8 @@ window.__ModuleLoader__.load({
 							openingArtifacts.dispose();
 						}
 						if (fontObserver) fontObserver.disconnect();
+                        frameSizeObservers.forEach(function (observer) { observer.disconnect(); });
+                        frameSizeObservers.clear();
                         hostWindow.removeEventListener("dsh-tavern-text-colors-changed", colorsChanged);
                         hostWindow.removeEventListener("storage", colorsChanged);
 						listener = null; lifetime++;

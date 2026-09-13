@@ -848,3 +848,25 @@ test('同一运行时的同一脚本故障只提醒一次，其他错误不重�
   assert.equal(h.errors.length,2)
   h.runtime.dispose()
 })
+
+test('trusted card direct iframe height survives document.write and updates outer slot', () => {
+  const h = frames({ trustedCardMode: true }), observers = []
+  h.window.MutationObserver = class {
+    constructor(callback) { this.callback = callback; observers.push(this) }
+    observe(node) { this.node = node }
+    disconnect() { this.disconnected = true }
+  }
+  const frame = h.attach()
+  frame.node.style = { height: '640px' }
+  const observer = observers.find(item => item.node === frame.node)
+  assert.ok(observer, 'observe the iframe element, outside the replaceable document')
+  observer.callback()
+  assert.equal(h.lifecycle.snapshot().height, 640)
+  frame.node.style.height = '9000px'; observer.callback()
+  assert.equal(h.lifecycle.snapshot().height, 1200)
+  frame.document.ref(null)
+  assert.equal(observer.disconnected, true)
+  frame.node.style.height = '400px'; observer.callback()
+  assert.equal(h.lifecycle.snapshot().height, 1200, 'detached frames cannot resize the active slot')
+  h.stop()
+})

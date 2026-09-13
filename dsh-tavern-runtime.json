@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "c2751ea00c72bfa2b80b93ad638c061ccbb59c5b",
-  "releaseSequence": 187,
+  "revision": "b2bf83d4886ee3767c0940c4953f3e3055c6c806",
+  "releaseSequence": 188,
   "version": "1.7.0",
   "files": [
     {
@@ -191,8 +191,8 @@
     },
     {
       "path": "presets/tavern/skills/tavern-gentle-rewrite/SKILL.md",
-      "sha256": "37689628603cd7694bf88f99a4428372f2c78e4f36f0881f929bd61d81890027",
-      "size": 4392
+      "sha256": "6f37d1d75743ecb3f04fe518c8408f7063ae57aac6338027a143e867140a75f6",
+      "size": 4325
     },
     {
       "path": "presets/tavern/skills/tavern-user-profile/SKILL.md",
@@ -246,8 +246,8 @@
     },
     {
       "path": "tavern-plugin/lib/client.js",
-      "sha256": "4306a0f3fb363dec4d802e912ff3d2a9bf97c331594a153b86b9bc13c024bfba",
-      "size": 815102
+      "sha256": "2a375406e559cae28524ac2c1bded85cd572bfb25398a661f4136c9cee8130e6",
+      "size": 815651
     },
     {
       "path": "tavern-plugin/lib/cordis-inspect.js",
@@ -1061,8 +1061,8 @@
     },
     {
       "path": "tavern-plugin/lib/index.js",
-      "sha256": "9412334fc730600c40d3e77232c09caba39efaca92e237680abf2f039af3b1da",
-      "size": 251780
+      "sha256": "fea5c1ca04286e02f3144dd5f938ede81b12cf78500c586490194d4c04b3e704",
+      "size": 251748
     },
     {
       "path": "tavern-plugin/lib/profile-data-store.js",
@@ -1071,8 +1071,8 @@
     },
     {
       "path": "tavern-plugin/lib/prompt-catalog.js",
-      "sha256": "68aaabf58d63b5118e494feb91580968e4a885dcb1886b52478a7435658456e5",
-      "size": 3051
+      "sha256": "833f9d3ea2dda3917492235b4a6c04466b1ffb888eeb59d99bc625dbcaf412a7",
+      "size": 2929
     },
     {
       "path": "tavern-plugin/lib/scene-image-prompts.js",
@@ -3306,8 +3306,8 @@
     },
     {
       "path": "tavern-plugin/prompts/card-task-gentle.md",
-      "sha256": "efaceec71f4346f9581a02620f9ff3c70125342fde35d15885692877e756b1a7",
-      "size": 400
+      "sha256": "9890eba7330964429d0ee3327bf1af44531a272e80ad2fc73bdfafeb4d6607a5",
+      "size": 154
     },
     {
       "path": "tavern-plugin/prompts/card-task-preset.md",
@@ -3386,8 +3386,8 @@
     },
     {
       "path": "tavern-plugin/src/client/main.js",
-      "sha256": "6e0be65e5e2a6783e073fbdf84d43e558895e93d47c742e9fa9ac4b9373b45a3",
-      "size": 658631
+      "sha256": "15fe859f57ec2b72265260da753a1e8e4b94532c369ff2f0701c28a839c4c0af",
+      "size": 659180
     },
     {
       "path": "tavern-plugin/src/client/modules/history-window.js",

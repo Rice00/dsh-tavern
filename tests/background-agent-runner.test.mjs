@@ -352,7 +352,7 @@ test('后台固定背景只保存一次，连续候选、结算和恢复均进�
     const sections = []
     let assemble, pending
     await options.setup({
-      systemPrompt: { variable(name, value) { variables.set(name, value) }, section(value) { sections.push(value) }, suppressRuntimeContext() {} },
+      systemPrompt: { variable(name, value) { variables.set(name, value) }, section(value) { sections.push({ ...value, text: typeof value.text === 'function' ? value.text() : value.text }) }, suppressRuntimeContext() {} },
       tools: { restrict() {}, register() {} }, on(name, fn) { if (name === 'system-prompt/assemble') assemble = fn }
     })
     return {
@@ -551,7 +551,7 @@ test('后台 Runner 执行候选任务，查询超限后提示开始推理而不
       createCalls.push(options)
       await options.setup({
         systemPrompt: {
-          section(value) { sections.push(value) },
+          section(value) { sections.push({ ...value, text: typeof value.text === 'function' ? value.text() : value.text }) },
           variable(name, provider) { variables.push({ name, provider }) },
           suppressRuntimeContext() {}
         },
@@ -744,7 +744,7 @@ test('生图常驻会话隔离后台任务与游戏，先保存编号且恢复�
     const session = resume ? sessions.get(id) : { id, header: options.meta, events: [], append(type, data) { this.events.push({ type, data }) } }
     assert.ok(session)
     sessions.set(id, session)
-    await options.setup({ systemPrompt: { section(value) { personas.set(id, value.text) }, variable() {}, suppressRuntimeContext() {} }, tools: { restrict() {}, register() {} }, on() {} })
+    await options.setup({ systemPrompt: { section(value) { personas.set(id, typeof value.text === 'function' ? value.text() : value.text) }, variable() {}, suppressRuntimeContext() {} }, tools: { restrict() {}, register() {} }, on() {} })
     return { agent: { session, followup(message) {
       session.append('user/message', { message })
       session.append('assistant/message', { message: { content: [{ type: 'text', text: '完成' }] } })
@@ -1378,7 +1378,7 @@ test('生图已有空前缀会话补入开局 system，连续任务保持背景�
     resolveStablePrefix: async () => { reads++; return '【用户已确认的长期偏好】\n偏好标记\n【故事设定 · 人物卡】\n人物标记\n【常驻世界书】\n常驻标记' },
     resolveCurrentWorldbook: async () => undefined,
     agents: { get: () => ({ session: { header: {} } }), async create(options) {
-      await options.setup({ systemPrompt: { section(value) { personas.push(value.text) }, suppressRuntimeContext() {} }, tools: { restrict() {}, register() {} }, on(name, callback) { if (name === 'system-prompt/assemble') assemble = callback } })
+      await options.setup({ systemPrompt: { section(value) { personas.push(typeof value.text === 'function' ? value.text() : value.text) }, suppressRuntimeContext() {} }, tools: { restrict() {}, register() {} }, on(name, callback) { if (name === 'system-prompt/assemble') assemble = callback } })
       return { agent: { session, followup(message) { pending = (async () => {
         const result = await assemble({}, { agent: { session } }, async () => ({ sections: personas.map(text => ({ name: 'persona', text })), tools: [] }))
         seen.push({ system: result.sections.map(s => s.text).join('\n'), message })

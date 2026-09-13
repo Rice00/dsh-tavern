@@ -14,22 +14,49 @@ test('附加指令默认空白，保存、清空和导入均可立即读取', ()
 })
 
 for (const task of ['settlement', 'image', 'phone']) test(task + ' 复用会话时置顶最新指令且清空后移除', async () => {
-  let assemble, pending, text = '第一版'
+  let assemble, completeSection, pending, text = '第一版'
   const seen = []
   const session = { id: task, header: {}, events: [], append(type, data) { this.events.push({ type, data }) } }
   const runner = createBackgroundAgentRunner({
     systemAppend: () => text,
     agents: { get: () => ({ session: { header: {} } }), async create(options) {
-      await options.setup({ systemPrompt: { section() {}, suppressRuntimeContext() {} }, tools: { restrict() {}, register() {} }, on(event, callback) { if (event === 'system-prompt/assemble') assemble = callback } })
+      await options.setup({ systemPrompt: { section(section) { if (section.complete) completeSection = section }, suppressRuntimeContext() {} }, tools: { restrict() {}, register() {} }, on(event, callback) { if (event === 'system-prompt/assemble') assemble = callback } })
       return { agent: { session, followup() { pending = (async () => {
         const result = await assemble({}, { agent: { session } }, async () => ({ sections: [{ name: 'original', text: '原有指令' }], tools: [] }))
-        seen.push(result.sections.map(s => s.text))
+        // Match the host: complete sections are snapshotted before the hook
+        // and replace its sections afterwards.
+        const completeText = completeSection.text()
+        seen.push({ hook: result.sections.map(s => s.text), system: completeText })
         session.append('assistant/message', { message: { content: [{ type: 'text', text: '完成' }] } })
       })() }, async whenIdle() { await pending } }, async dispose() {} }
     } }
   })
   try {
     for (text of ['第一版', '第二版', '']) await runner.run({ sessionId: 'parent', persistent: true, task, selection: { provider: 'test', model: 'fake' }, messages: [], tools: [] })
-    assert.deepEqual(seen, [['第一版', '原有指令'], ['第二版', '原有指令'], ['原有指令']])
+    assert.deepEqual(seen.map(result => result.hook), [['第一版', '原有指令'], ['第二版', '原有指令'], ['原有指令']])
+    assert.ok(seen[0].system.startsWith('第一版\n\n'))
+    assert.ok(seen[1].system.startsWith('第二版\n\n'))
+    assert.equal(seen[2].system.includes('第一版'), false)
+    assert.equal(seen[2].system.includes('第二版'), false)
   } finally { await runner.dispose() }
+})
+
+
+test('真实 DSH complete system 在后台各任务中保留最新附加指令', { skip: !process.env.DSH_BOOT_MODULE }, async t => {
+  const { createSceneImageNativeRuntime } = await import('./fixtures/scene-image-native-runtime.mjs')
+  let text = '附加指令第一版'
+  const runtime = await createSceneImageNativeRuntime(process.env.DSH_BOOT_MODULE, { systemAppend: () => text })
+  t.after(() => runtime.dispose())
+  for (const task of ['settlement', 'candidate', 'image', 'phone']) {
+    for (text of ['附加指令第一版', '附加指令第二版', '']) {
+      const start = runtime.requests.length
+      await runtime.runBackground({ sessionId: 'scene-parent', persistent: true, task, selection: { provider: 'scene-fixture', model: 'fixture-text' }, messages: [], tools: [] })
+      const requests = runtime.requests.slice(start)
+      assert.ok(requests.length > 0)
+      for (const request of requests) {
+        if (text) assert.ok(request.system.startsWith(text + '\n\n'), task + ': ' + request.system.slice(0, 60))
+        else assert.equal(request.system.includes('附加指令'), false)
+      }
+    }
+  }
 })

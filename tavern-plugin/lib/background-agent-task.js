@@ -149,7 +149,12 @@ export function createBackgroundAgentTask(options) {
         name: 'deployment:persona',
         order: 0,
         complete: true,
-        text: state.input.task === 'image' ? readSceneImageSystemInstruction() : backgroundPersona
+        // DSH restores complete sections after the assembly waterfall, so the
+        // additional instruction must be part of this authoritative text.
+        text: () => {
+          const assembly = { sections: [{ name: 'deployment:persona', text: state.input.task === 'image' ? readSceneImageSystemInstruction() : backgroundPersona }] }
+          return prependSystemInstruction(assembly, options.systemAppend?.()).sections.map(section => section.text).join('\n\n')
+        }
       })
       childCtx.systemPrompt.suppressRuntimeContext()
       if (state.input.task === 'image') {

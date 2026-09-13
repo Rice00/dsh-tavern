@@ -1,3 +1,4 @@
+import { appendSystemInstruction } from './domain/system-append.js'
 import { createGameplayApi } from './gameplay-api.js'
 import { cardOpeningChoices } from './domain/card-openings.js'
 import { marked } from 'marked'
@@ -242,7 +243,8 @@ export async function apply(ctx) {
     const source = document.prompts && typeof document.prompts === 'object' && !Array.isArray(document.prompts) ? document.prompts : {}
     const values = {}
     for (const name of SYSTEM_PROMPT_NAMES) {
-      if (typeof source[name] !== 'string' || source[name].trim() === '') throw new Error('系统提示词文件缺少有效内容: ' + name)
+      if (name === 'system-append' && source[name] === undefined) continue
+      if (typeof source[name] !== 'string' || (source[name].trim() === '' && name !== 'system-append' && name !== 'card-system')) throw new Error('系统提示词文件缺少有效内容: ' + name)
       values[name] = source[name]
     }
     return values
@@ -1498,6 +1500,7 @@ export async function apply(ctx) {
   }
   const runtimePresetSnapshots = new Map()
   const backgroundAgentRunner = createBackgroundAgentRunner({
+    systemAppend: () => runtimePrompt('system-append'),
     resolveWebSearch: async () => (await readTavernSettings()).webSearchEnabled === true,
     resolveBackgroundTasks: async () => normalizeBackgroundTasks((await readTavernSettings()).backgroundTasks),
     backgroundTools: [POSTURE_SUBMIT_TOOL, CHARACTER_DESIGN_READ_TOOL, CHARACTER_DESIGN_SAVE_TOOL, MVU_SUBMIT_UPDATE_TOOL, CANDIDATE_SUBMIT_TOOL, SCRIPT_READ_TOOL, SCRIPT_POINT_TOOL],
@@ -3503,7 +3506,7 @@ export async function apply(ctx) {
     let workspaceProjection = null
     try { workspaceProjection = await publishResourceWorkspace(agent.session.id, chat) }
     catch { console.error('dsh-tavern: 资源工作区投影刷新失败，继续使用现有资源文件') }
-    return await foregroundStrategies.assembleSystemPrompt(assembly, {
+    const assembled = await foregroundStrategies.assembleSystemPrompt(assembly, {
       sessionId: agent.session.id,
       chat,
       cwd: agent.session.header && agent.session.header.cwd,
@@ -3512,6 +3515,7 @@ export async function apply(ctx) {
         ? withCurrentWorldbook(sessionStablePrefixSections(agent.session), (await nativeWorldBookTemplateContext(chat, await readChatCard(chat))).context)
         : sessionStablePrefixSections(agent.session)
     })
+    return appendSystemInstruction(assembled, chat ? runtimePrompt('system-append') : '')
   })
 
   // ---------- 模型可选工具 ----------

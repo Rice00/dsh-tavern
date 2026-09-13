@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 
 export const SYSTEM_PROMPT_DEFINITIONS = Object.freeze([
+  ['system-append', 'system附加指令', '默认空白；追加到前台、后台、卡片 Agent 和文生图 Agent 的 system 提示词末尾。保存后下一次请求生效。'],
   ['story', '正文 Agent 核心提示词', '控制普通游玩正文的续写规则。'],
   ['script-story', '剧本模式正文补充', '控制绑定剧本时追加给正文 Agent 的规则。'],
   ['candidate-story', '普通剧情候选项', '控制普通剧情候选项的数量、类型和输出格式。'],
@@ -26,7 +27,7 @@ export function createPromptCatalog(directory = new URL('../prompts/', import.me
   return function promptFromFile(name) {
     if (!knownNames.has(name)) throw new Error('未知提示词: ' + String(name))
     const text = readFileSync(new URL(name + '.md', directory), 'utf8').trim()
-    if (text === '' && name !== 'card-system') throw new Error('提示词文件不能为空: ' + name + '.md')
+    if (text === '' && name !== 'card-system' && name !== 'system-append') throw new Error('提示词文件不能为空: ' + name + '.md')
     return text
   }
 }

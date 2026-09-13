@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "abc7301522e64b15c0a1c627d58b1cfa93792770",
-  "releaseSequence": 178,
+  "revision": "b8b792b174d566e424adc46d4d1526d7ee3063e1",
+  "releaseSequence": 179,
   "version": "1.7.0",
   "files": [
     {
@@ -236,13 +236,13 @@
     },
     {
       "path": "tavern-plugin/lib/client-assets/tavern.css",
-      "sha256": "021b5d2751e64b4f7c7f516c65a833269d9202f6136f0e3b12b6a9058dd4ce71",
-      "size": 84269
+      "sha256": "166a15ba03a50afa287a688c10bdc5d14d0db0559e25a14afbc5d39024540ac3",
+      "size": 86751
     },
     {
       "path": "tavern-plugin/lib/client.js",
-      "sha256": "f6b6b4ed4736f299c5256bea1fc169fe982e758e560e5f9c7792c7a249307022",
-      "size": 701552
+      "sha256": "df4561edd666ed2a58207955b8562db098308bf42f6cd3fc3b92dbaeb834038e",
+      "size": 703394
     },
     {
       "path": "tavern-plugin/lib/cordis-inspect.js",
@@ -661,8 +661,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/scene-illustration.js",
-      "sha256": "2cc1684950c0fd514bedf172de853eb2a005174aa910886ded97d91081ee1d83",
-      "size": 43570
+      "sha256": "8da2b21e9a40e70977589cb6d087b98fd224e70941fe69255124f15628c7824c",
+      "size": 43622
     },
     {
       "path": "tavern-plugin/lib/domain/scene-image-adjustment.js",
@@ -3331,8 +3331,8 @@
     },
     {
       "path": "tavern-plugin/src/client/main.js",
-      "sha256": "51919bbf59c742027893547ab2cf66edfc78037f64e28f4adff7976f11fa5095",
-      "size": 645070
+      "sha256": "e094ef7cf1325a3ec8bb177730bb473e4acc456703bc5a18ee29625dd27b5f01",
+      "size": 646912
     },
     {
       "path": "tavern-plugin/src/client/modules/library-refresh.js",

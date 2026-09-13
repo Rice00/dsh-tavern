@@ -41,7 +41,7 @@ import { READABLE_CARD_FIELDS, readCardField } from './domain/card-reading.js'
 import { createConversationInitialization } from './domain/conversation-initialization.js'
 import { assertConversationForkable, conversationForkReceipt, forkConversationChat } from './domain/conversation-fork.js'
 import { resolveChatBackgroundModel } from './domain/background-model-selection.js'
-import { createPlayCardSnapshots } from './domain/play-card-snapshots.js'
+import { createPlayCardSnapshots, cardContentDigest } from './domain/play-card-snapshots.js'
 import { createUserPreferenceProfile } from './domain/user-preference-profile.js'
 import { createContextPlanner } from './domain/context-planner.js'
 import { createConversationTextExport } from './domain/conversation-text-export.js'
@@ -1210,6 +1210,7 @@ export async function apply(ctx) {
       const input = runtimeInputs[turn]
       inputSources[turn] = str(input && input.source)
     }
+    const currentCardDigest = cardContentDigest(card)
     const helperEnabled = hasTavernScriptRuntime(chat, cardExtensions.helperScripts)
     const helperRuntime = helperEnabled
       ? projectTavernHelperScripts(cardExtensions.helperScripts, chat.tavernHelperScriptVariables)
@@ -1241,6 +1242,7 @@ export async function apply(ctx) {
       bypassPlan: null,
       runtimePreset: activePresetSnapshot === null ? null : { id: activePresetSnapshot.presetPath, name: activePresetSnapshot.presetName },
       card: cardViewOf(card, chat),
+      cardUpdate: { available: !chat.cardContentDigest || chat.cardContentDigest !== currentCardDigest, legacy: !chat.cardContentDigest, digest: currentCardDigest },
       posture: chat.posture || '',
       ledger: readLedger(chat.ledger),
       characterDesigns: projectCharacterDesignDocument(chat.characterDesignDocument),
@@ -1432,8 +1434,9 @@ export async function apply(ctx) {
   const ensurePlayCardSnapshot = playCardSnapshots.ensure
   async function ensureNativeSystemPrefix(session, chat) {
     const before = readSessionStablePrefix(session)
-    const text = before?.version === 3 ? '' : await ensurePlayCardSnapshot(chat)
-    const prefix = await ensureSessionStablePrefix(session, text, stablePrefixStorage)
+    const revision = Number(chat.cardContextRevision) || 0
+    const text = before?.version === 3 && revision <= Number(before.message.source.cardContextRevision || 0) ? '' : await ensurePlayCardSnapshot(chat)
+    const prefix = await ensureSessionStablePrefix(session, text, stablePrefixStorage, revision)
     if (prefix && prefix.event !== before?.event) await sessionStore.flush(session)
     return prefix
   }
@@ -1518,6 +1521,7 @@ export async function apply(ctx) {
       const chat = await chatForSession(input.sessionId)
       return chat ? (await nativeWorldBookTemplateContext(chat, await readChatCard(chat))).context : undefined
     },
+    resolveStablePrefixRevision: async input => Number((await chatForSession(input.sessionId))?.cardContextRevision) || 0,
     resolveStablePrefix: async function (input) {
       // Image tasks share the opening snapshot; current-worldbook replacement stays disabled above
       // because a requested illustration may target an earlier story turn.
@@ -2692,6 +2696,20 @@ export async function apply(ctx) {
         const handle = await agentRegistry.resume({ resumeSessionId: id })
         try { return { turns: backgroundSuppressedTurns(sessionEvents(handle.agent.session)) } }
         finally { await handle.dispose() }
+      }
+      case 'applyUpdatedCard': {
+        const sessionId = str(args && args.sessionId)
+        const chat = await chatForSession(sessionId)
+        if (!chat || !['story', 'script'].includes(chat.mode || 'story') || chat.requestMode === 'sillytavern') throw new Error('仅支持当前游玩会话')
+        if ((await sessionActivity(sessionId))?.busy || agentRegistry.get(sessionId)?.phase?.kind === 'running') throw new Error('请等待当前生成和后台任务完成后再应用人物卡')
+        const card = await readChatCard(chat)
+        if (args.digest !== cardContentDigest(card)) throw new Error('人物卡已再次修改，请刷新后确认')
+        const patch = await playCardSnapshots.replacement(chat, card)
+        const saved = await updateChat(chat.id, current => {
+          if (Number(current.cardContextRevision || 0) !== Number(chat.cardContextRevision || 0)) throw new Error('人物卡已应用，请刷新后重试')
+          return Object.assign(current, patch)
+        }, { source: 'card-context.apply-update' })
+        return { view: await view(saved, card) }
       }
       case 'getSession': return { view: await sessionView(args && args.sessionId) }
       case 'sendPhoneMessage': return { phoneChat: await phoneChat.send(args || {}) }

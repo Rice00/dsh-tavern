@@ -8165,6 +8165,7 @@ window.__ModuleLoader__.load({
 			const [guideError, setGuideError] = usePersistentError("Guide");
 			const [debugBusy, setDebugBusy] = React.useState(false);
 			const [settlementRetryBusy, setSettlementRetryBusy] = React.useState(false);
+			const [cardUpdateBusy, setCardUpdateBusy] = React.useState(false);
 			const running = props.useSession(function (snapshot) { return snapshot.running; });
 			const latestMessageId = props.useChat(latestTavernAssistantMessageId);
 			const stateKey = String(running) + ":" + String(latestMessageId || "");
@@ -8203,6 +8204,14 @@ window.__ModuleLoader__.load({
 				} catch (err) { setGuideError(String(err && err.message || err)); }
 				finally { setGuideBusy(false); }
 			}
+			async function applyUpdatedCard() {
+				if (cardUpdateBusy || !view?.cardUpdate) return;
+				if (!window.confirm("将保留全部对话历史和当前进度，后续请求使用新版人物卡设定。更新可能使提示词缓存失效，增加下一次请求的耗时和费用。\n\n当前变量不会重置。如果修改了 MVU 变量结构，需要另行迁移变量，本操作不会自动迁移。继续吗？")) return;
+				setCardUpdateBusy(true);
+				try { await rpc("applyUpdatedCard", { digest: view.cardUpdate.digest }, props.sessionId); liveTavernView.invalidate(props.sessionId); }
+				catch (error) { tavernErrorHub.report("应用新版人物卡", error); }
+				finally { setCardUpdateBusy(false); }
+			}
 			async function retrySettlement() {
 				if (!view || settlementRetryBusy) return;
 				setSettlementRetryBusy(true);
@@ -8235,6 +8244,11 @@ window.__ModuleLoader__.load({
 					h("div", { className: "dsh-tavern-status-settle" }, h("span", { className: "dsh-tavern-status-dot " + (view.settleStatus || "idle") }), statusText)
 				),
 					h("div", { className: "dsh-tavern-status-body" },
+					view.requestMode !== "sillytavern" && view.cardUpdate?.available ? h("section", { className: "dsh-tavern-status-section" },
+						h("div", { className: "dsh-tavern-status-label" }, view.cardUpdate.legacy ? "此存档尚未记录人物卡版本" : "人物卡已有修改"),
+						h("p", { className: "dsh-tavern-settings-desc" }, "保留已有剧情和变量，使用新版人物卡继续游玩。更新可能使提示词缓存失效。"),
+						h("button", { className: "dsh-tavern-btn", disabled: running || cardUpdateBusy || view.settleStatus === "running", onClick: applyUpdatedCard }, cardUpdateBusy ? "正在应用…" : "应用新版人物卡")
+					) : null,
 					h(TavernCardAppDock, { sessionId: props.sessionId }),
 					view.settleStatus === "error" ? h("div", { className: "dsh-card-error" },
 						h("div", null, view.settleError || "后台结算失败，请重试。"),
@@ -8318,7 +8332,7 @@ window.__ModuleLoader__.load({
 						h("div", { className: "dsh-tavern-style-title" }, "想调整文风？"),
 						h("button", { type: "button", onClick: function () { guideInputRef.current?.scrollIntoView({ block: "center", behavior: "smooth" }); guideInputRef.current?.focus({ preventScroll: true }); } }, h("span", null, "1. 当前故事"), h("small", null, "通过 Guide 调整后续写法")),
 						h("button", { type: "button", onClick: function () { props.openStyleTab("dsh-tavern:user-profile"); } }, h("span", null, "2. 长期偏好"), h("small", null, "在用户画像中设置新游戏偏好")),
-						h("button", { type: "button", disabled: running, onClick: function () { window.dispatchEvent(new CustomEvent("dsh-tavern-adjust-card-style", { detail: { card: view.card } })); } }, h("span", null, "3. 这张人物卡"), h("small", null, "交给卡片助手修改，新开游戏使用")),
+						h("button", { type: "button", disabled: running, onClick: function () { window.dispatchEvent(new CustomEvent("dsh-tavern-adjust-card-style", { detail: { card: view.card } })); } }, h("span", null, "3. 这张人物卡"), h("small", null, "交给卡片助手修改，再应用到当前游戏")),
 						h("button", { type: "button", onClick: function () { props.openStyleTab("dsh-tavern:presets"); } }, h("span", null, "4. 导入预设"), h("small", null, "已有喜欢的预设？前往预设库"))
 					)
 				)

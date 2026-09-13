@@ -96,3 +96,22 @@ test('原生分叉沿用继承事件中的固定背景，不因 Session ID 改�
   assert.equal(sessionEvents(fork).length, before)
   assert.equal(readSessionStablePrefix(fork).text, text)
 })
+
+test('手动更新固定背景保留 200 轮历史，恢复及再次请求使用最新版本', async () => {
+  let session = Session.create('updated-card-history')
+  await ensureSessionStablePrefix(session, text)
+  for (let turn = 1; turn <= 200; turn++) session.append('user/message', user('剧情第 ' + turn + ' 轮'), { surfaceOp: 'append' })
+  const history = structuredClone(sessionEvents(session))
+  const updated = '【故事设定 · 人物卡】\n修改后的设定'
+  await ensureSessionStablePrefix(session, updated, undefined, 1)
+  assert.deepEqual(sessionEvents(session).slice(0, history.length), history)
+  assert.equal(readSessionStablePrefix(session).text, updated)
+  assert.deepEqual(sessionEvents(session).at(-1).data.content, [])
+  const count = sessionEvents(session).length
+  await ensureSessionStablePrefix(session, '未经确认的其他修改', undefined, 1)
+  assert.equal(sessionEvents(session).length, count)
+  session = Session.create(session.id, sessionEvents(session), session.header)
+  assert.equal(readSessionStablePrefix(session).text, updated)
+  await ensureSessionStablePrefix(session, '第二次确认的设定', undefined, 2)
+  assert.equal(readSessionStablePrefix(session).text, '第二次确认的设定')
+})

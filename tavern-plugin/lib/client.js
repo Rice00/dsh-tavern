@@ -9,7 +9,7 @@ window.__ModuleLoader__.load({
 			let DshUi = require("@deepseek-ai/dsh-client-ui-primitives");
 
 		const stylesheetId = "dsh-tavern-plugin/tavern.css";
-		const stylesheetUrl = "/api/dsh-tavern/client-assets/tavern.css?v=20260913-landing-performance";
+		const stylesheetUrl = "/api/dsh-tavern/client-assets/tavern.css?v=20260913-worldbook-bindings";
 		if (typeof document !== "undefined") {
 			const existing = document.querySelector("link[data-plugin-css=" + JSON.stringify(stylesheetId) + "]");
 			if (existing && existing.getAttribute("href") !== stylesheetUrl) existing.setAttribute("href", stylesheetUrl);
@@ -7818,6 +7818,7 @@ window.__ModuleLoader__.load({
 			const [bindingBusy, setBindingBusy] = React.useState(false);
 			const [error, setError] = usePersistentError("世界书库");
 			const importInput = React.useRef(null);
+			const bindingDisclosure = React.useRef(null);
 			const refreshModule = React.useRef(null);
 			const requestedSource = props.tab && props.tab.meta && props.tab.meta.worldBookSource ? props.tab.meta.worldBookSource : null;
 			const sessionMode = useTavernSessionMode(props.scope.sessionId);
@@ -7889,6 +7890,7 @@ window.__ModuleLoader__.load({
 				try {
 					await rpc("bindWorldBook", { cardPath: selectedCardPath, source: record.source }, props.scope.sessionId);
 					await reloadAssociations(record.source); notifyTavernDataChanged(["worldbooks", "cards"], "worldbooks");
+					if (bindingDisclosure.current) bindingDisclosure.current.open = false;
 				} catch (err) { setError(String(err && err.message || err)); }
 				finally { setBindingBusy(false); }
 			}
@@ -7905,14 +7907,20 @@ window.__ModuleLoader__.load({
 				if (!associations) return h("div", { className: "dsh-tavern-worldbook-note" }, "正在读取人物卡绑定关系…");
 				const boundCards = associations.boundCards || [];
 				const cards = (associations.cards || []).filter(function (card) { return !card.bound; });
-				return h("section", { className: "dsh-tavern-worldbook-note" },
-					h("div", { className: "dsh-tavern-worldbook-title" }, "绑定人物卡"),
-					h("div", null, "多本世界书可能相互冲突，引发异常"),
-					boundCards.length ? boundCards.map(function (card) { return h("div", { key: card.path, className: "dsh-tavern-script-row" }, h("span", null, "当前绑定：" + (card.name || card.path)), h("button", { className: "dsh-tavern-btn", disabled: bindingBusy, onClick: function () { unbindCard(card.path); } }, bindingBusy ? "处理中…" : "解绑")); }) : h("div", { className: "dsh-tavern-question-sub" }, "尚未绑定人物卡。"),
-					cards.length ? h("div", { className: "dsh-tavern-script-row" },
-						h("select", { value: selectedCardPath, disabled: bindingBusy, onChange: function (event) { setSelectedCardPath(event.target.value); } }, cards.map(function (card) { return h("option", { key: card.path, value: card.path }, card.name || card.path); })),
-						h("button", { className: "dsh-card-primary", disabled: bindingBusy || !selectedCardPath, onClick: bindCard }, bindingBusy ? "绑定中…" : "绑定人物卡")
-					) : h("div", { className: "dsh-tavern-question-sub" }, "暂无可绑定的人物卡。")
+				return h("section", { className: "dsh-tavern-worldbook-bindings", "aria-label": "人物卡绑定" },
+					h("div", { className: "dsh-tavern-worldbook-bindings-head" }, h("span", null, "已绑定人物卡"), h("span", { className: "dsh-tavern-worldbook-bindings-count" }, String(boundCards.length))),
+					boundCards.length ? h("ul", { className: "dsh-tavern-worldbook-bound-list" }, boundCards.map(function (card) {
+						return h("li", { key: card.path, className: "dsh-tavern-worldbook-bound-card" },
+							h("span", { className: "dsh-tavern-worldbook-bound-name" }, card.name || card.path),
+							h("button", { type: "button", className: "dsh-tavern-worldbook-binding-link", "aria-label": "解绑「" + (card.name || card.path) + "」", disabled: bindingBusy, onClick: function () { unbindCard(card.path); } }, "解绑"));
+					})) : h("p", { className: "dsh-tavern-worldbook-binding-empty" }, "尚未绑定人物卡"),
+					cards.length ? h("details", { key: JSON.stringify(record.source), ref: bindingDisclosure, className: "dsh-tavern-worldbook-binding-add" },
+						h("summary", null, "绑定其他人物卡"),
+						h("div", { className: "dsh-tavern-worldbook-binding-form" },
+							h("select", { "aria-label": "选择要绑定的人物卡", value: selectedCardPath, disabled: bindingBusy, onChange: function (event) { setSelectedCardPath(event.target.value); } }, cards.map(function (card) { return h("option", { key: card.path, value: card.path }, card.name || card.path); })),
+							h("button", { type: "button", className: "dsh-tavern-worldbook-binding-confirm", disabled: bindingBusy || !selectedCardPath, onClick: bindCard }, bindingBusy ? "绑定中…" : "确认绑定")),
+						h("p", { className: "dsh-tavern-worldbook-binding-hint" }, "同时绑定多本世界书时，请留意内容冲突。"))
+						: h("p", { className: "dsh-tavern-worldbook-binding-empty" }, "所有人物卡均已绑定")
 				);
 			}
 			if (recordLoading) return h("div", { className: "dsh-tavern-library" }, h("div", { className: "dsh-tavern-empty" }, "正在读取世界书…"));

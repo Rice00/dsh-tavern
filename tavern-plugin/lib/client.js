@@ -758,6 +758,10 @@ window.__ModuleLoader__.load({
 				if (remove) return;
 				const original = ctx.slots.entriesOfSlot("conversation.view").find(entry => entry.options.id === "chat");
 				if (!original || typeof original.component !== "function") return;
+				// Child slot ownership is global and cannot be copied to a shadow entry.
+				// Omitting children also removes NativeChat's renderSlot authorization.
+				// Preserve the native view until the host exposes an ownership-safe adapter.
+				if (original.children && Object.keys(original.children).length > 0) return;
 				const NativeChat = original.component;
 				function WindowedChat(props) {
 					const live = useLiveTavernView(props.sessionId, "history-window");

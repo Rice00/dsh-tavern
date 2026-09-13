@@ -44,11 +44,11 @@ test('new turns slide the default window; short histories retain unowned initial
   snapshot.order.unshift('intro')
   assert.equal(project(snapshot, outline, 20).order[0], 'intro')
 })
-test('view adapter keeps native injections, child slots, and node store; only projected order is bounded', () => {
+test('childless view adapter keeps native injections and node store; only projected order is bounded', () => {
   const { snapshot, outline } = fixture(365)
   let registered
   function Native() {}
-  const entry = { options: { id: 'chat' }, component: Native, inject: () => ({}), children: { nodes: {} }, store: {}, locale: 'chat' }
+  const entry = { options: { id: 'chat' }, component: Native, inject: () => ({}), children: {}, store: {}, locale: 'chat' }
   const React = { createElement: (type, props, ...children) => ({ type, props, children }), useState: x => [x, () => {}], useRef: x => ({ current: x }), useMemo: fn => fn(), useCallback: fn => fn, useEffect() {}, useLayoutEffect() {} }
   const register = vm.runInNewContext(source + ';registerTavernHistoryWindow', { React, useLiveTavernView: () => ({ view: { mode: 'story' } }), isPlayMode: () => true })
   register({ effect: fn => fn(), slots: { subscribe: () => () => {}, inject: (_name, fn) => fn(), entriesOfSlot: () => [entry], register: (options, component) => { registered = { options, component } } } })
@@ -106,4 +106,25 @@ test('installation waits for the native chat registration and releases its subsc
   dispose()
   assert.equal(removed, 1)
   assert.equal(unsubscribed, 1)
+})
+
+// The host owns child declarations globally, even when a view id is shadowed.
+test('native chat with owned child slots remains untouched and plugin startup succeeds', () => {
+  const entry = { options: { id: 'chat' }, component() {}, children: {
+    'conversation.chat.node': { kind: 'keyed', scope: 'session' },
+    'conversation.message.images': { kind: 'single', scope: 'session' }
+  } }
+  let registrations = 0
+  const register = vm.runInNewContext(source + ';registerTavernHistoryWindow', { React: {} })
+  assert.doesNotThrow(() => register({ effect: fn => fn(), slots: {
+    inject: (_key, fn) => fn(), entriesOfSlot: () => [entry], subscribe: () => () => {},
+    register(options) {
+      registrations++
+      for (const key of Object.keys(options.children || {})) {
+        if (entry.children[key]) throw new Error(`slot "${key}" is already declared`)
+      }
+      return () => {}
+    }
+  } }))
+  assert.equal(registrations, 0, 'do not shadow an owner: omitting its children also loses render authorization')
 })

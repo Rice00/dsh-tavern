@@ -2563,6 +2563,20 @@ export async function apply(ctx) {
       case 'deleteWorldBook': return await worldBooks.remove(args && (args.source || args.path))
       case 'listPresets': return await presetLibrary.catalog()
       case 'selectPreset': return await presetLibrary.select(args && args.path)
+      case 'applyConversationPreset': {
+        const sessionId = str(args?.sessionId)
+        const chat = await chatForSession(sessionId)
+        if (!chat || groupOfMode(chat.mode) !== 'play') throw new Error('请先打开游玩会话')
+        if (typeof args.path !== 'string') throw new Error('请选择预设')
+        if ((await sessionActivity(sessionId))?.busy || agentRegistry.get(sessionId)?.phase?.kind === 'running') throw new Error('请等待当前生成和后台任务完成后再应用预设')
+        const snapshot = args.path === '' ? null : await runtimePresets.fullSnapshot(args.path)
+        const saved = await updateChat(chat.id, current => {
+          if (current._storageRevision !== chat._storageRevision) throw new Error('当前游戏已变化，请刷新后重试')
+          current.runtimePresetSnapshot = snapshot
+          return current
+        }, { source: 'preset.apply-conversation' })
+        return { runtimePreset: saved.runtimePresetSnapshot === null ? null : { id: saved.runtimePresetSnapshot.presetPath, name: saved.runtimePresetSnapshot.presetName } }
+      }
       case 'getPreset': return { preset: await presetLibrary.detail(args && args.path) }
       case 'exportPreset': return await presetLibrary.export(args && args.path)
       case 'movePresetEntry': return { preset: await presetLibrary.moveEntry(args?.path, args?.entryKey, args?.phase, args?.beforeEntryKey, args?.revision) }

@@ -2,7 +2,10 @@
 - id: persona
   name: '@deepseek-ai/dsh-persona'
   config:
+    # text is used by DSH 0.1.2; prefix/suffix by DSH 0.1.5.
     text: ''
+    prefix: ''
+    suffix: ''
     includeRuntimeContext: false
 
 # 卡片模式复用 dsh-base 提供的一次性 bash／pwsh 与文件编辑能力；

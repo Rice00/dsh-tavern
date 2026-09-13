@@ -1,4 +1,4 @@
-import { sessionEvents } from './session-events.js'
+import { sessionEvents, appendSessionEvent } from './session-events.js'
 
 const PLUGIN = 'dsh-tavern-context-window'
 const eventMessage = event => event.type === 'user/message' ? event.data : event.type === 'assistant/message' ? event.data.message : null
@@ -79,7 +79,7 @@ export function createImportContextPreparation({ readChat, updateChat, getSessio
       request.signal?.throwIfAborted()
       result = planImportContext({ session, request: { ...request, maxTokens: request.maxTokens ?? info.defaultMaxTokens }, operationId: chat.importHistory.operationId, contextWindow: info.context?.contextWindow, estimateMessage })
       const { removedIds, removedSeqs, ...receipt } = result
-      session.append('user/message', { id: markerId, role: 'user', content: [],
+      appendSessionEvent(session, 'user/message', { id: markerId, role: 'user', content: [],
         source: { kind: 'plugin', plugin: PLUGIN, preparation: receipt } }, result.status === 'trimmed' ? {
           surfaceOp: { op: 'replace', start: removedSeqs[0], end: removedSeqs.at(-1) }, sourceEventSeqs: removedSeqs
         } : { surfaceOp: 'append' })

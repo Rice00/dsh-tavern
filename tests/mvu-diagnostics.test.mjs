@@ -85,6 +85,25 @@ test('诊断记录持久化、限量，并移除凭据', async () => {
   assert.doesNotMatch(redactDiagnostic('request {"apiKey":"SECRET"} https://user:SECRET@host/?signature=SECRET'), /SECRET/)
 })
 
+test('V3 diagnostic export reads and closes native read handles, including failures', async () => {
+  const closed = [], opened = []
+  const result = await createMvuDiagnosticExport({ sessionId: 's1', backgroundSessionIds: ['broken'], store: createMvuDiagnosticStore(storage()),
+    persistence: { async open(id, mode) {
+      opened.push([id, mode])
+      return { header: { id, version: 3 }, inheritedEventCount: 0,
+        async read(offset) { assert.equal(offset, 0); if (id === 'broken') throw Error('read failed'); return { events: [{ type: 'user/message', seq: 0, data: { text: 'diagnostic-story', apiKey: 'PRIVATE' } }] } },
+        async close() { closed.push(id) }
+      }
+    } }
+  })
+  assert.deepEqual(opened, [['s1', 'read'], ['broken', 'read']])
+  assert.deepEqual(closed, ['s1', 'broken'])
+  const text = result.buffer.toString('utf8')
+  assert.match(text, /diagnostic-story/)
+  assert.match(text, /Session 日志读取失败：broken/)
+  assert.doesNotMatch(text, /PRIVATE/)
+})
+
 test('诊断包同时导出前台、后台日志和 MVU 记录，缺失日志明确标注', async () => {
   const store = createMvuDiagnosticStore(storage())
   await store.record('s1', { stage: 'submitted', diagnosticId: 'op:1' })

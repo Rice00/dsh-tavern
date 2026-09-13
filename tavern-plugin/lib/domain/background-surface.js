@@ -1,4 +1,4 @@
-import { sessionEvents } from './session-events.js'
+import { sessionEvents, appendSessionEvent, surfaceReplacementRange } from './session-events.js'
 import { randomUUID } from 'node:crypto'
 
 export function rewindBackgroundSurface(session, boundary) {
@@ -29,7 +29,7 @@ export function rewindBackgroundSurface(session, boundary) {
     }
   }
   if (source === null) throw new Error('后台 Agent checkpoint 之后存在消息，但找不到可用的模型来源')
-  session.append('assistant/message', {
+  appendSessionEvent(session, 'assistant/message', {
     turn,
     step,
     message: { id: randomUUID(), role: 'assistant', content: [], source }
@@ -48,7 +48,7 @@ export function backgroundSuppressedTurns(events) {
     const op = event.surfaceOp
     if (event.type !== 'assistant/message' || op?.op !== 'replace' || event.data?.message?.content?.length !== 0) continue
     for (const previous of events) {
-      if (!Number.isSafeInteger(previous.seq) || previous.seq < op.start || previous.seq > op.end) continue
+      if (!Number.isSafeInteger(previous.seq) || previous.seq < surfaceReplacementRange(op).start || previous.seq > surfaceReplacementRange(op).end) continue
       const turn = previous.data?.turn
       if (Number.isSafeInteger(turn) && turn > 0) turns.add(turn)
     }

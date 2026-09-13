@@ -1,6 +1,7 @@
 import { createChatHistoryImportService } from '../../tavern-plugin/lib/domain/chat-history-import-service.js'
 import { createImportContextPreparation } from '../../tavern-plugin/lib/domain/import-context-preparation.js'
-import { sessionEvents } from '../../tavern-plugin/lib/domain/session-events.js'
+import { sessionEvents, appendSessionEvent } from '../../tavern-plugin/lib/domain/session-events.js'
+import { projectRuntimePresetRequest } from '../../tavern-plugin/lib/domain/runtime-preset-lifecycle.js'
 // Production initialization, Chat journal and installed DSH Session/Agent loop.
 // All files are temporary and the text model is scripted; no paid requests.
 import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises'
@@ -18,7 +19,7 @@ import { createProfileDataStore } from '../../tavern-plugin/lib/profile-data-sto
 import { createSessionStablePrefixStorage, ensureSessionStablePrefix, sessionStablePrefixSections } from '../../tavern-plugin/lib/domain/session-stable-prefix.js'
 import { createStoryTimeline } from '../../tavern-plugin/lib/domain/story-timeline.js'
 
-export async function createInitializationNative(bootPath) {
+export async function createInitializationNative(bootPath, { preset } = {}) {
   const bootUrl = pathToFileURL(bootPath)
   const { boot } = await import(bootUrl.href)
   const { LlmAdapter } = await import(new URL('../../dsh-llm/lib/index.js', bootUrl))
@@ -28,6 +29,15 @@ export async function createInitializationNative(bootPath) {
   const packages = ['dsh-system-prompt', 'dsh-tools', 'dsh-agent', 'dsh-llm', 'dsh-session', 'dsh-session-projection', 'dsh-token-meter', 'dsh-commands', 'dsh-agent-loop']
   await writeFile(config, packages.map(name => '- id: ' + name + '\n  name: ' + new URL('../../' + name + '/lib/index.js', bootUrl).href + '\n').join(''))
   const ctx = await boot('initialization-native-test', config)
+  if (preset) {
+    const projected = new WeakSet()
+    ctx.on('llm/stream', (request, next) => {
+      if (projected.has(request)) return next()
+      const adapted = projectRuntimePresetRequest(request, preset)
+      projected.add(adapted)
+      return ctx.llm.stream(adapted)
+    })
+  }
   ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
     const assembly = await next()
     assembly.sections = sessionStablePrefixSections(context.agent.session)
@@ -132,7 +142,7 @@ export async function createInitializationNative(bootPath) {
       session.append('user/message', { id: 'later-input', role: 'user', content: [{ type: 'text', text: 'L'.repeat(2500) }], source: { kind: 'user' } }, { surfaceOp: 'append' })
       session.append('turn/start', { turn })
       session.append('step/start', { turn, step: 1 })
-      session.append('assistant/message', { turn, step: 1, message: { id: 'later-body', role: 'assistant', content: [{ type: 'text', text: 'Later body' }], source: { kind: 'model', ...selection } } }, { surfaceOp: 'append', sourceEventSeqs: [] })
+      appendSessionEvent(session, 'assistant/message', { turn, step: 1, message: { id: 'later-body', role: 'assistant', content: [{ type: 'text', text: 'Later body' }], source: { kind: 'model', ...selection } } }, { surfaceOp: 'append', sourceEventSeqs: [] })
       session.append('step/end', { turn, step: 1 })
       session.append('turn/end', { turn, reason: { kind: 'completed' } })
       session.append('turn/start', { turn: 51 })

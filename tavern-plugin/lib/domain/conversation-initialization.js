@@ -1,4 +1,4 @@
-import { sessionEvents } from './session-events.js'
+import { sessionEvents, appendSessionEvent } from './session-events.js'
 import { createHash } from 'node:crypto'
 import { cardOpeningChoices, resolveCardOpening } from './card-openings.js'
 import { projectAgentContent, projectOpeningCommit } from './runtime-content-projection.js'
@@ -282,8 +282,8 @@ export function createConversationInitialization(options) {
         if (existing.type !== type || existing.data?.turn !== 1 || (data.step !== undefined && existing.data.step !== 1)) throw new Error('开场白事件不完整且已被其他操作推进，拒绝重复写入')
         continue
       }
-      if (intent) session.append(type, data, intent)
-      else session.append(type, data)
+      if (intent) appendSessionEvent(session, type, data, intent)
+      else appendSessionEvent(session, type, data)
     }
   }
 

@@ -1808,7 +1808,16 @@ window.__ModuleLoader__.load({
 					nativeWorldInfoByName.set(String(name || "current"), copy(result.worldInfo));
 					context().worldbook = copy(result.worldbook);
 				},
-				callGenericPopup: function (content, type, title, options) { return new HelperPopup(content, type, title, options).show(); },
+				callGenericPopup: function (content, type, title, options) {
+					// MVU's legacy JSONL compaction is not a DSH history operation. Decline only
+					// this maintenance prompt; never delete snapshots or dismiss other confirms.
+					const legacyCleanup = typeof content === "string" && (
+						content.startsWith("检测到可以清理本聊天文件中的旧变量以减小文件体积，是否清理？") ||
+						content.startsWith("Old variables can be removed from this chat to reduce its file size. Clean them now?")
+					);
+					if (type === "confirm" && legacyCleanup) return Promise.resolve(0);
+					return new HelperPopup(content, type, title, options).show();
+				},
 				saveChat: chatData.save,
 				saveMetadata: chatData.save,
 				saveMetadataDebounced: chatData.save,

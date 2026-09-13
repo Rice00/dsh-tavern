@@ -1,5 +1,5 @@
 import { rewindBackgroundSurface } from './background-surface.js'
-import { sessionEvents } from './session-events.js'
+import { sessionEvents, appendSessionEvent } from './session-events.js'
 import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
 import { clearRegenerationAttemptSurface, locateRegenerationSurface, locateRollbackSurface, planRegenerationSurface, regenerationAttemptTurns } from './rollback-surface.js'
@@ -106,6 +106,19 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
       }
     }
     const { eventStart, msgs0, oldAssistantIndex, oldSeq, oldTurn, oldSource } = selection
+    // V3 hosts may reject assistant replacements. Check an isolated copy before
+    // rolling back the Chat, cancelling settlement or paying for a new reply.
+    if (session.header?.version >= 3) {
+      const preview = session.constructor.fromRestore(session.id, structuredClone(sessionEvents(session)), structuredClone(session.header), session.inheritedEventCount, 'detached')
+      try {
+        appendSessionEvent(preview, 'assistant/message', {
+          turn: oldTurn, step: 1,
+          message: { id: randomUUID(), role: 'assistant', content: [{ type: 'text', text: msgs0[oldAssistantIndex].text }], source: oldSource }
+        }, { surfaceOp: { op: 'replace', start: oldSeq, end: oldSeq }, sourceEventSeqs: [oldSeq] })
+      } catch (error) {
+        throw new Error('当前 DSH 不支持正文替换，未启动重新生成。' + str(error?.message || error), { cause: error })
+      }
+    }
     const originalUserText = str(msgs0[oldAssistantIndex - 1].text).trim()
     const originalChat = structuredClone(chat)
     let restored = false
@@ -228,7 +241,7 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
       eventStart
     })
     // 正文替代先独立提交到可见 Surface；后台结算失败不能撤销用户已经得到的新正文。
-    session.append('assistant/message', {
+    appendSessionEvent(session, 'assistant/message', {
       turn: oldTurn,
       step: 1,
       message: { id: randomUUID(), role: 'assistant', content: [{ type: 'text', text: body }], source: oldSource }
@@ -374,7 +387,7 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
 
     // 3) 原生消息面：用空消息替换最近一轮的所有 surface 节点（模型不再看到），UI 由客户端隐藏对应 turn tail
     try {
-      session.append('assistant/message', {
+      appendSessionEvent(session, 'assistant/message', {
         turn: rollbackSurface.turn,
         step: rollbackSurface.step,
         message: {

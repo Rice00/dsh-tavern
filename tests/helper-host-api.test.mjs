@@ -217,6 +217,19 @@ test('悬浮角色库读取当前人物卡名称，并随宿主上下文更新',
   assert.equal(run.window.getCurrentCharacterName(), '新卡')
 })
 
+test('旧聊天 MVU 清理提示静默拒绝，不弹窗、不修改或清理历史变量', async () => {
+  for (const content of [
+    '检测到可以清理本聊天文件中的旧变量以减小文件体积，是否清理？（备份会消耗较多内存，手机上建议关闭其他后台应用后进行，或在计算机上备份）',
+    'Old variables can be removed from this chat to reduce its file size. Clean them now? (Creating a backup uses considerable memory; on mobile, close other background apps first or create the backup on a computer.)'
+  ]) {
+    const run = helperHostHarness({ messages: [{ message_id: 0, variables: { stat_data: { hp: 10 } } }] })
+    const before = JSON.stringify(run.window.getVariables({ type: 'message', message_id: 0 }))
+    const result = await run.window.SillyTavern.callGenericPopup(content, 'confirm', '', {})
+    assert.equal(result, run.window.SillyTavern.POPUP_RESULT.NEGATIVE)
+    assert.equal(run.calls().length, 0)
+    assert.equal(JSON.stringify(run.window.getVariables({ type: 'message', message_id: 0 })), before)
+  }
+})
 
 test('script context exposes the bound character avatar and follows chat changes', () => {
   const run = helperHostHarness({ chatId: 'one', character: { name: 'A', path: 'cards/a.png' } })

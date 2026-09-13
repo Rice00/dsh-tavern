@@ -188,6 +188,7 @@ body.dsh-tavern-shell-active [data-ref-chip="file"] { max-width: calc(100% - 4px
 .dsh-tavern-card-pick.with-image,.dsh-tavern-library-card.with-image { display: flex; align-items: center; gap: 12px; }
 .dsh-tavern-card-thumb { display: block; flex: none; width: 56px; height: 56px; margin: 0; border: 1px solid var(--dsw-alias-border-l2); border-radius: 50%; object-fit: cover; object-position: center top; background: var(--dsw-alias-interactive-bg-hover); }
 .dsh-tavern-card-list-copy { display: block; min-width: 0; flex: 1; margin: 0; }
+.dsh-tavern-card-pick .dsh-tavern-card-list-copy,.dsh-tavern-library-card .dsh-tavern-card-list-copy { color: inherit; font-size: inherit; }
 .dsh-tavern-card-pick-wrap { display: flex; align-items: center; gap: 7px; width: 100%; box-sizing: border-box; }
 .dsh-tavern-card-pick-wrap .dsh-tavern-card-pick { flex: 1 1 auto; min-width: 0; margin-top: 0; }
 .dsh-tavern-card-pick-wrap .dsh-tavern-script-file { flex: 0 0 auto; }

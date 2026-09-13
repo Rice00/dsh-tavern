@@ -1268,12 +1268,24 @@ window.__ModuleLoader__.load({
 			const nativeSet = descriptor.set;
 			const bridgedSet = function (value) { return nativeSet.call(this, bundledTavernStylesheetHref(value)); };
 			Object.defineProperty(prototype, "href", Object.assign({}, descriptor, { set: bridgedSet }));
-			entry = { prototype: prototype, descriptor: descriptor, bridgedSet: bridgedSet, references: 1 };
+            // Trusted scripts use host jQuery to mount UI, while their own document
+            // remains an iframe. Its icon stylesheet cannot style those host nodes.
+            const hostDocument = hostWindow.document;
+            let icons = null;
+            if (hostDocument && hostDocument.head && hostDocument.createElement) {
+                icons = hostDocument.createElement("link");
+                icons.rel = "stylesheet";
+                icons.setAttribute("data-dsh-tavern-host-icons", "");
+                icons.href = "/api/dsh-tavern/vendor/runtime-assets/fontawesome/css/all.min.css";
+                hostDocument.head.appendChild(icons);
+            }
+			entry = { prototype: prototype, descriptor: descriptor, bridgedSet: bridgedSet, references: 1, icons: icons };
 			tavernHostStylesheetBridges.set(hostWindow, entry);
 			function release() {
 				if (!entry || entry.references <= 0) return;
 				entry.references -= 1;
 				if (entry.references > 0) return;
+                if (entry.icons) entry.icons.remove();
 				const current = Object.getOwnPropertyDescriptor(entry.prototype, "href");
 				if (current && current.set === entry.bridgedSet) Object.defineProperty(entry.prototype, "href", entry.descriptor);
 				tavernHostStylesheetBridges.delete(hostWindow);

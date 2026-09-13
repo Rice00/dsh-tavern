@@ -492,9 +492,15 @@ test('人物卡挂到宿主 Shadow DOM 的 Font Awesome 样式改用内置资源
     get() { return this.value || '' },
     set(value) { this.value = String(value) }
   })
-  const hostWindow = { HTMLLinkElement: FakeLink }
+  const links = [];
+  const hostWindow = { HTMLLinkElement: FakeLink, document: {
+    head: { appendChild(node) { links.push(node) } },
+    createElement() { const node = new FakeLink(); node.setAttribute = () => {}; node.remove = () => { links.splice(links.indexOf(node), 1) }; return node }
+  } }
   const disposeFirst = client.createTavernHostStylesheetBridge({ window: hostWindow })
   const disposeSecond = client.createTavernHostStylesheetBridge({ window: hostWindow })
+  assert.equal(links.length, 1, 'shared runtime installs one host stylesheet');
+  assert.equal(links[0].href, '/api/dsh-tavern/vendor/runtime-assets/fontawesome/css/all.min.css');
   const phoneIcons = new FakeLink()
   phoneIcons.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css'
   assert.equal(phoneIcons.href, '/api/dsh-tavern/vendor/runtime-assets/fontawesome/css/all.min.css')
@@ -504,10 +510,12 @@ test('人物卡挂到宿主 Shadow DOM 的 Font Awesome 样式改用内置资源
   assert.equal(unrelated.href, 'https://example.test/card-theme.css')
 
   disposeFirst()
+  assert.equal(links.length, 1, 'other runtime still needs host icons');
   const shared = new FakeLink()
   shared.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css'
   assert.equal(shared.href, '/api/dsh-tavern/vendor/runtime-assets/fontawesome/css/all.min.css')
   disposeSecond()
+  assert.equal(links.length, 0, 'last owner removes host stylesheet');
 
   const restored = new FakeLink()
   restored.href = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css'

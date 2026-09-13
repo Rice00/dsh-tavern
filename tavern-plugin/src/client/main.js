@@ -6339,12 +6339,12 @@ window.__ModuleLoader__.load({
 			const sessionId = props.scope && props.scope.sessionId || "";
 			const [record, setRecord] = React.useState(null);
 			const [currentConversation, setCurrentConversation] = React.useState(null);
-			const selectedProfileEnabled = currentConversation?.enabled === true && (currentConversation.profileId || "default") === record?.profileId;
 			const [editing, setEditing] = React.useState(false);
 			const [injectionText, setInjectionText] = React.useState("");
 			const [busy, setBusy] = React.useState(false);
 			const [dimensionsOpen, setDimensionsOpen] = React.useState(false);
 			const [answersOpen, setAnswersOpen] = React.useState(false);
+			const [choosing, setChoosing] = React.useState(false);
 			const editingRef = React.useRef(editing);
 			editingRef.current = editing;
 			const refreshRef = React.useRef(null);
@@ -6372,8 +6372,8 @@ window.__ModuleLoader__.load({
 			}, [sessionId]);
 			async function manageProfile(action, profileId) {
 				if (busy || editing) return;
-				const name = action === "select" ? undefined : window.prompt(action === "create" ? "新画像名称" : "画像名称", action === "rename" ? record.name : "");
-				if (action !== "select" && !name) return;
+				const name = (action === "select" || action === "default") ? undefined : window.prompt(action === "create" ? "新画像名称" : "画像名称", action === "rename" ? record.name : "");
+				if (action !== "select" && action !== "default" && !name) return;
 				setBusy(true); setError("");
 				if (refreshRef.current) refreshRef.current.invalidate();
 				try {
@@ -6386,29 +6386,18 @@ window.__ModuleLoader__.load({
 			function openAgentTask() {
 				window.dispatchEvent(new CustomEvent("dsh-tavern-open-user-profile-task"));
 			}
-			async function toggleCurrent(applySelected) {
+			async function toggleCurrent(applySelected, profileId) {
 				if (!currentConversation || busy) return;
-				const enabled = applySelected === false ? false : applySelected === true || !selectedProfileEnabled;
+				const enabled = applySelected === true;
 				if (!window.confirm((enabled ? "开启" : "关闭") + "当前游戏的用户画像会修改 system 提示词，使原有提示词缓存失效，下次生成可能增加耗时和费用。已有对话和变量会保留，从下一轮生效。继续吗？")) return;
 				setBusy(true); setError("");
 				if (refreshRef.current) refreshRef.current.invalidate();
 				try {
-					const result = await rpc("setConversationUserProfileEnabled", { sessionId: sessionId, enabled: enabled, profileId: enabled ? record.profileId : undefined }, sessionId);
+					const result = await rpc("setConversationUserProfileEnabled", { sessionId: sessionId, enabled: enabled, profileId: enabled ? (profileId || record.profileId) : undefined }, sessionId);
 					if (refreshRef.current) refreshRef.current.invalidate();
 					applyResult(result);
+					setChoosing(false);
 					notifyTavernDataChanged(["user-profile", "sessions"], "user-profile");
-				} catch (err) { setError(String(err && err.message || err)); }
-				finally { setBusy(false); }
-			}
-			async function toggleDefault() {
-				if (!record || !record.hasConfirmed || busy) return;
-				setBusy(true); setError("");
-				if (refreshRef.current) refreshRef.current.invalidate();
-				try {
-					const result = await rpc("setUserPreferenceProfileDefaultEnabled", { enabled: record.defaultEnabled !== true, profileId: record.profileId }, sessionId);
-					if (refreshRef.current) refreshRef.current.invalidate();
-					applyResult(result);
-					notifyTavernDataChanged(["user-profile"], "user-profile");
 				} catch (err) { setError(String(err && err.message || err)); }
 				finally { setBusy(false); }
 			}
@@ -6419,7 +6408,7 @@ window.__ModuleLoader__.load({
 			}
 			async function saveEdit() {
 				if (!injectionText.trim() || busy) return;
-				if (!window.confirm("保存后将成为新的已确认用户画像，仅影响以后新开的游戏。继续吗？")) return;
+				if (!window.confirm("保存画像修改？已开始的游戏会保留原来的内容，直到你主动更新。")) return;
 				setBusy(true); setError("");
 				if (refreshRef.current) refreshRef.current.invalidate();
 				try {
@@ -6431,19 +6420,23 @@ window.__ModuleLoader__.load({
 				} catch (err) { setError(String(err && err.message || err)); }
 				finally { setBusy(false); }
 			}
-			const header = h("div", { className: "dsh-tavern-status-head" },
-				h("div", { className: "dsh-tavern-status-title" }, "用户画像"),
-				record ? h("div", { className: "dsh-tavern-user-profile-actions" },
-					h("label", null, "画像库 / 新游戏使用", h("select", { value: record.profileId, disabled: busy || editing, onChange: function (event) { manageProfile("select", event.target.value); } }, (record.profiles || []).map(function (item) { return h("option", { key: item.id, value: item.id }, item.name); }))),
-					h("button", { className: "dsh-tavern-btn", disabled: busy || editing, onClick: function () { manageProfile("create"); } }, "新建画像"),
-					h("button", { className: "dsh-tavern-btn", disabled: busy || editing, onClick: function () { manageProfile("rename", record.profileId); } }, "重命名"),
-					currentConversation && record.hasConfirmed ? h("button", { className: "dsh-tavern-btn", disabled: busy || editing, onClick: function () { toggleCurrent(true); } }, "应用到当前游戏") : null,
-					currentConversation && currentConversation.enabled && !record.hasConfirmed ? h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: function () { toggleCurrent(false); } }, "关闭当前游戏画像") : null,
-					currentConversation ? h("small", null, "当前游戏：" + (currentConversation.enabled ? ((record.profiles || []).find(function (item) { return item.id === currentConversation.profileId; }) || {}).name || "默认画像" : "未启用") + "。选择画像不会自动更改当前游戏。") : null
-				) : null
-			);
+			const profiles = record && record.profiles || [];
+			const active = currentConversation && currentConversation.enabled ? profiles.find(function (item) { return item.id === (currentConversation.profileId || "default"); }) : null;
+			const outdated = active && active.confirmedRevision > currentConversation.revision;
+			const header = h("div", { className: "dsh-tavern-status-head" }, h("div", { className: "dsh-tavern-status-title" }, "用户画像"));
+			const controls = record ? h("div", { className: "dsh-tavern-profile-controls" },
+				currentConversation ? h("section", { className: "dsh-tavern-profile-game", "aria-label": "当前游戏画像" },
+					h("div", { className: "dsh-tavern-profile-section-title" }, "当前游戏"),
+					h("div", { className: "dsh-tavern-profile-current" }, h("strong", null, currentConversation.enabled ? active && active.name || "默认画像" : "未使用画像"),
+						h("div", { className: "dsh-tavern-user-profile-actions" }, h("button", { className: "dsh-tavern-btn", disabled: busy || editing, onClick: function () { setChoosing(!choosing); } }, currentConversation.enabled ? "更换" : "选择画像"), currentConversation.enabled ? h("button", { className: "dsh-tavern-btn", disabled: busy || editing, onClick: function () { toggleCurrent(false); } }, "停用") : null)),
+					outdated ? h("div", { className: "dsh-tavern-profile-update" }, h("span", null, "画像已修改，这局仍使用修改前的内容。"), h("button", { className: "dsh-tavern-btn", disabled: busy || editing, onClick: function () { toggleCurrent(true, active.id); } }, "更新到当前游戏")) : null,
+					choosing ? h("div", { className: "dsh-tavern-profile-choices" }, h("p", null, "选择后会提示缓存失效，确认才生效。"), profiles.filter(function (item) { return item.hasConfirmed; }).map(function (item) { return h("button", { key: item.id, className: "dsh-tavern-btn", disabled: busy || item.id === active?.id, onClick: function () { toggleCurrent(true, item.id); } }, item.name + (item.id === active?.id ? " · 使用中" : "")); }), !profiles.some(function (item) { return item.hasConfirmed; }) ? h("p", null, "还没有可用画像，请先在下方建立并确认。") : null) : null
+				) : null,
+				h("section", { className: "dsh-tavern-profile-default" }, h("label", { htmlFor: "tavern-profile-default" }, "新游戏默认画像"), h("select", { id: "tavern-profile-default", value: record.defaultProfileId || "", disabled: busy || editing, onChange: function (event) { manageProfile("default", event.target.value); } }, h("option", { value: "" }, "不启用"), profiles.filter(function (item) { return item.hasConfirmed; }).map(function (item) { return h("option", { key: item.id, value: item.id }, item.name); })), h("small", null, "只影响新开的游戏。")),
+				h("section", { className: "dsh-tavern-profile-library" }, h("div", { className: "dsh-tavern-profile-section-title" }, "画像库"), h("div", { className: "dsh-tavern-profile-library-bar" }, h("select", { "aria-label": "查看画像", value: record.profileId, disabled: busy || editing, onChange: function (event) { manageProfile("select", event.target.value); } }, profiles.map(function (item) { return h("option", { key: item.id, value: item.id }, item.name); })), h("button", { className: "dsh-tavern-btn", disabled: busy || editing, onClick: function () { manageProfile("create"); } }, "新建"), h("button", { className: "dsh-tavern-btn", disabled: busy || editing, onClick: function () { manageProfile("rename", record.profileId); } }, "重命名")), h("small", null, "在这里查看和编辑，不会改变游戏使用的画像。"))
+			) : null;
 			if (record === null) return h("div", { className: "dsh-tavern-user-profile" }, header, h("div", { className: "dsh-tavern-user-profile-body" }, error ? h("div", { className: "dsh-card-error" }, error) : h("div", { className: "dsh-tavern-status-empty" }, "正在读取用户画像…")));
-			if (!record.hasConfirmed) return h("div", { className: "dsh-tavern-user-profile" }, header,
+			if (!record.hasConfirmed) return h("div", { className: "dsh-tavern-user-profile" }, header, controls,
 				h("div", { className: "dsh-tavern-user-profile-body" },
 					error ? h("div", { className: "dsh-card-error" }, error) : null,
 					h("div", { className: "dsh-tavern-status-empty" }, record.hasDraft ? "已有未确认草案，可交给卡片 Agent 继续核对。" : "通过分批访谈建立长期游玩与写作偏好。"),
@@ -6452,28 +6445,20 @@ window.__ModuleLoader__.load({
 			const confirmed = record.confirmed || {};
 			const dimensions = Array.isArray(confirmed.dimensions) ? confirmed.dimensions : [];
 			const rawAnswers = Array.isArray(confirmed.rawAnswers) ? confirmed.rawAnswers : [];
-			return h("div", { className: "dsh-tavern-user-profile" }, header,
+			return h("div", { className: "dsh-tavern-user-profile" }, header, controls,
 				h("div", { className: "dsh-tavern-user-profile-body" },
 					error ? h("div", { className: "dsh-card-error" }, error) : null,
 					record.hasDraft ? h("div", { className: "dsh-tavern-extension-note" }, "存在尚未确认的新草案；当前仍使用已确认版本。") : null,
-					currentConversation ? h("div", { className: "dsh-tavern-user-profile-switch" },
-						h("span", null, h("b", null, "当前游戏启用此画像"), h("small", null, (selectedProfileEnabled ? "此画像已生效。" : "此画像未生效，开启后将替换当前游戏的画像。") + "切换会使提示词缓存失效，从下一轮生效。")),
-						h("button", { className: "dsh-tavern-prompt-state is-toggle " + (selectedProfileEnabled ? "on" : "off"), disabled: busy, onClick: toggleCurrent, "aria-pressed": selectedProfileEnabled }, selectedProfileEnabled ? "已开启" : "已关闭")
-					) : null,
-					h("div", { className: "dsh-tavern-user-profile-switch" },
-					h("span", null, h("b", null, "新游戏默认启用"), h("small", null, "只影响以后新开的游戏，不改变当前游戏。")),
-					h("button", { className: "dsh-tavern-prompt-state is-toggle " + (record.defaultEnabled ? "on" : "off"), disabled: busy, onClick: toggleDefault, "aria-pressed": record.defaultEnabled === true }, record.defaultEnabled ? "已开启" : "已关闭")
-				),
 					editing ? h("div", { className: "dsh-tavern-user-profile-editor" },
-						h("div", { className: "dsh-tavern-status-label", style: { marginTop: "14px" } }, "实际生效的偏好"),
+						h("div", { className: "dsh-tavern-status-label", style: { marginTop: "14px" } }, "画像内容"),
 						h("textarea", { value: injectionText, onChange: function (event) { setInjectionText(event.target.value); } }),
-						h("div", { className: "dsh-tavern-user-profile-meta" }, "这次修改只影响以后新开的游戏，不改写已有 Session。"),
+						h("div", { className: "dsh-tavern-user-profile-meta" }, "保存到画像库，不会自动改变正在玩的游戏。"),
 						h("div", { className: "dsh-tavern-user-profile-actions" },
 							h("button", { className: "dsh-tavern-script-primary", disabled: busy || !injectionText.trim(), onClick: saveEdit }, "保存并确认修改"),
 							h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: function () { setEditing(false); } }, "取消")
 						)
 					) : h(React.Fragment, null,
-						h("div", { className: "dsh-tavern-status-label", style: { marginTop: "14px" } }, "实际生效的偏好"),
+						h("div", { className: "dsh-tavern-status-label", style: { marginTop: "14px" } }, "画像内容"),
 						h("div", { className: "dsh-tavern-user-profile-text" }, String(confirmed.injectionText || "")),
 						dimensions.length ? h("details", { open: dimensionsOpen, onToggle: function (event) { setDimensionsOpen(event.currentTarget.open); } },
 							h("summary", null, "偏好维度 · " + dimensions.length),

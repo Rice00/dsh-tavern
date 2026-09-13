@@ -438,3 +438,18 @@ test('new games and profile workbenches bind the selected profile without changi
   assert.equal(workbench.userProfileId, created.profileId)
   assert.equal(workbench.userProfileEnabled, false)
 })
+
+test('new games use the configured default even while browsing an unfinished profile', async () => {
+  const profile = await profileFixture()
+  await profile.manage({ action: 'default', profileId: 'default' })
+  const browsing = await profile.manage({ action: 'create', name: '尚未完成' })
+  const h = initializationFixture({ userPreferenceProfile: profile })
+  const game = await h.make().start({ ...h.input, sessionId: 'separate-default' })
+  assert.equal(game.userProfileId, 'default')
+  assert.equal(game.userProfileEnabled, true)
+  assert.match(game.userProfileContextSnapshot, /慢热/)
+  const workbench = await h.make().start({ ...h.input, sessionId: 'separate-library', mode: 'card', cardPath: '' })
+  assert.equal(workbench.userProfileId, browsing.profileId)
+  await profile.manage({ action: 'default', profileId: '' })
+  assert.equal((await h.make().start({ ...h.input, sessionId: 'without-default' })).userProfileEnabled, false)
+})

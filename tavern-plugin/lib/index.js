@@ -828,7 +828,7 @@ export async function apply(ctx) {
   function presentUserPreferenceProfile(value) {
     const confirmed = value && value.hasConfirmed && value.confirmed ? value.confirmed : null
     return {
-      profileId: value?.profileId, name: value?.name, profiles: value?.profiles || [],
+      defaultProfileId: value?.defaultProfileId || '', profileId: value?.profileId, name: value?.name, profiles: value?.profiles || [],
       hasDraft: Boolean(value && value.hasDraft),
       draftRevision: value && value.hasDraft ? Number(value.draft && value.draft.revision) || 0 : 0,
       hasConfirmed: confirmed !== null,

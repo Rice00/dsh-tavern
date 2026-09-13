@@ -140,9 +140,12 @@ export function createConversationInitialization(options) {
     if (cardEditExperiment) chat.cardEditContext = { version: 1 }
     if (preparation && groupOfMode(chatMode) === 'play') chat.openingWorldbookSnapshot = structuredClone(preparation.worldbookSnapshot)
     // The sidebar setting is the sole opt-in; opening previews and legacy clients cannot override it.
-    const profile = (groupOfMode(chat.mode) === 'play' || chat.mode === 'card') && options.userPreferenceProfile
+    let profile = (groupOfMode(chat.mode) === 'play' || chat.mode === 'card') && options.userPreferenceProfile
       ? await options.userPreferenceProfile.read()
       : null
+    if (profile && groupOfMode(chat.mode) === 'play' && Object.hasOwn(profile, 'defaultProfileId')) {
+      profile = profile.defaultProfileId ? { ...await options.userPreferenceProfile.read(profile.defaultProfileId), defaultEnabled: true } : null
+    }
     chat.userProfileId = profile?.profileId || 'default'
     chat.userProfileEnabled = (groupOfMode(chat.mode) === 'play' || chat.cardEditContext?.version === 1) && profile?.hasConfirmed === true && profile.defaultEnabled === true
     chat.webSearchEnabled = groupOfMode(chat.mode) === 'play' && currentSettings.webSearchEnabled === true

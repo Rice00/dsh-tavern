@@ -703,3 +703,21 @@ body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
 .dsh-tavern-preset-drop.over { background: rgba(166,107,53,.18); }
 
 .dsh-tavern-preset-entry-head.has-drag { grid-template-columns: auto minmax(0, 1fr) auto; }
+
+/* Profile scope: current game, future games, and library browsing are separate. */
+.dsh-tavern-profile-controls { display: grid; gap: 18px; padding: 16px 18px 0; }
+.dsh-tavern-profile-game { padding: 14px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; background: var(--dsw-specific-input-major); }
+.dsh-tavern-profile-section-title { font-size: 12px; font-weight: 600; margin-bottom: 9px; }
+.dsh-tavern-profile-current, .dsh-tavern-profile-library-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.dsh-tavern-profile-current { justify-content: space-between; }
+.dsh-tavern-profile-current strong { font-size: 16px; overflow-wrap: anywhere; }
+.dsh-tavern-profile-current .dsh-tavern-user-profile-actions { margin: 0; }
+.dsh-tavern-profile-controls select { min-width: 0; max-width: 100%; padding: 7px 9px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 7px; background: var(--dsw-specific-input-major); color: inherit; font: inherit; }
+.dsh-tavern-profile-library-bar select { flex: 1; }
+.dsh-tavern-profile-default { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px 12px; align-items: center; }
+.dsh-tavern-profile-controls small { display: block; color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 1.5; margin-top: 6px; }
+.dsh-tavern-profile-default small { grid-column: 1 / -1; margin: 0; }
+.dsh-tavern-profile-library { border-top: 1px solid var(--dsw-alias-border-l2); padding-top: 16px; }
+.dsh-tavern-profile-update { margin-top: 12px; display: grid; justify-items: start; gap: 8px; font-size: 12px; line-height: 1.5; }
+.dsh-tavern-profile-choices { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.dsh-tavern-profile-choices p { flex-basis: 100%; margin: 0; font-size: 11px; color: var(--dsw-alias-label-tertiary); }

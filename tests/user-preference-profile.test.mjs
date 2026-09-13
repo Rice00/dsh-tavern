@@ -112,3 +112,18 @@ test('a confirmation cannot cross profile boundaries after a selection change', 
   await assert.rejects(profiles.confirm({ draftRevision: first.draft.revision, confirmation: '确认保存用户画像' }), /已变化/)
   assert.equal((await profiles.read('default')).draft.summary, 'A')
 })
+
+test('browsing and creating profiles never change the separate new-game default', async () => {
+  const profiles = createUserPreferenceProfile({ store: memoryStore() })
+  const draft = await profiles.saveDraft({ summary: '日常', injectionText: '日常' })
+  await profiles.confirm({ draftRevision: draft.draft.revision, confirmation: '确认保存用户画像' })
+  await profiles.manage({ action: 'default', profileId: 'default' })
+  const other = await profiles.manage({ action: 'create', name: '冒险' })
+  assert.equal(other.defaultProfileId, 'default')
+  await assert.rejects(profiles.manage({ action: 'default', profileId: other.profileId }), /确认画像/)
+  await profiles.manage({ action: 'select', profileId: 'default' })
+  assert.equal((await profiles.read()).defaultProfileId, 'default')
+  await profiles.manage({ action: 'default', profileId: '' })
+  assert.equal((await profiles.read()).defaultProfileId, '')
+  assert.equal((await profiles.read()).hasConfirmed, true)
+})

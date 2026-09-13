@@ -203,8 +203,12 @@ export const USER_PREFERENCE_PROFILE_PATH = PROFILE_PATH
 // Keep the existing draft/confirmation rules inside each independently named profile.
 export function createUserPreferenceProfile({ store, now = Date.now }) {
   function collection(value) {
-    if (value?.version === 3 && Array.isArray(value.profiles) && value.profiles.length) return structuredClone(value)
-    return { spec: SPEC, version: 3, selectedId: 'default', profiles: [{ id: 'default', name: '默认画像', data: document(value) }] }
+    if (value?.version === 3 && Array.isArray(value.profiles) && value.profiles.length) {
+      const next = structuredClone(value)
+      if (!Object.hasOwn(next, 'defaultProfileId')) next.defaultProfileId = next.profiles.find(item => item.id === next.selectedId)?.data.defaultEnabled ? next.selectedId : ''
+      return next
+    }
+    return { spec: SPEC, version: 3, selectedId: 'default', defaultProfileId: value?.defaultEnabled === true ? 'default' : '', profiles: [{ id: 'default', name: '默认画像', data: document(value) }] }
   }
   function entry(value, id) {
     const item = value.profiles.find(item => item.id === (id || value.selectedId))
@@ -232,8 +236,8 @@ export function createUserPreferenceProfile({ store, now = Date.now }) {
   async function read(id) {
     const value = collection(await store.readJson(PROFILE_PATH))
     const item = entry(value, id)
-    return { ...present(item.data), profileId: item.id, name: item.name, selectedId: value.selectedId,
-      profiles: value.profiles.map(item => ({ id: item.id, name: item.name, hasConfirmed: !!item.data.confirmed })) }
+    return { ...present(item.data), defaultEnabled: value.defaultProfileId === item.id, profileId: item.id, name: item.name, selectedId: value.selectedId, defaultProfileId: value.defaultProfileId,
+      profiles: value.profiles.map(item => ({ id: item.id, name: item.name, hasConfirmed: !!item.data.confirmed, confirmedRevision: integer(item.data.confirmed?.profileRevision) })) }
   }
   async function mutateProfile(action, input = {}) {
     const id = input.profileId || (await read()).profileId
@@ -251,6 +255,10 @@ export function createUserPreferenceProfile({ store, now = Date.now }) {
         value.selectedId = id
       } else if (input.action === 'select') {
         value.selectedId = entry(value, input.profileId).id
+      } else if (input.action === 'default') {
+        if (typeof input.profileId !== 'string') throw new Error('请选择默认画像')
+        if (input.profileId && !entry(value, input.profileId).data.confirmed) throw new Error('请先确认画像')
+        value.defaultProfileId = input.profileId
       } else if (input.action === 'rename') {
         const name = str(input.name, 100)
         if (!name) throw new Error('请输入画像名称')
@@ -272,6 +280,7 @@ export function createUserPreferenceProfile({ store, now = Date.now }) {
     setDefaultEnabled: async (enabled, id) => {
       const selected = id || (await read()).profileId
       await model(selected).setDefaultEnabled(enabled)
+      await manage({ action: 'default', profileId: enabled ? selected : '' })
       return await read(selected)
     }
   })

@@ -4489,18 +4489,28 @@ window.__ModuleLoader__.load({
 					return;
 				}
 				if (data.type === "dsh-tavern-helper-event-complete") {
-					const pending = pendingEvents.get(String(data.eventId || ""));
-					if (!pending) return;
-					pendingEvents.delete(String(data.eventId || ""));
-					closeEventId(data.eventId);
-					hostWindow.clearTimeout(pending.timer);
-					if (data.error) {
-						const script = record.scripts.get(String(data.scriptId || pending.activeScriptId || ""));
-						const prefix = script ? "人物卡脚本「" + script.name + "」" : "共享脚本沙箱";
-						const error = new Error(prefix + "处理事件「" + pending.name + "」失败：" + String(data.error));
-						reportError(script ? "人物卡脚本「" + script.name + "」" : "人物卡共享脚本沙箱", error);
-						pending.reject(error);
-					} else pending.resolve(clone(Array.isArray(data.args) ? data.args : []));
+					const eventId = String(data.eventId || "");
+					const pending = pendingEvents.get(eventId);
+					if (!pending || pending.record !== record || pending.finishing) return;
+					// Close admission now, but keep accepted RPCs and the deadline alive
+					// until persistence finishes. A callback reply is not a write receipt.
+					pending.finishing = true;
+					const finish = function () {
+						if (pendingEvents.get(eventId) !== pending) return;
+						pendingEvents.delete(eventId);
+						closeEventId(eventId);
+						hostWindow.clearTimeout(pending.timer);
+						if (data.error) {
+							const script = record.scripts.get(String(data.scriptId || pending.activeScriptId || ""));
+							const prefix = script ? "人物卡脚本「" + script.name + "」" : "共享脚本沙箱";
+							const error = new Error(prefix + "处理事件「" + pending.name + "」失败：" + String(data.error));
+							reportError(script ? "人物卡脚本「" + script.name + "」" : "人物卡共享脚本沙箱", error);
+							pending.reject(error);
+						} else if (pending.writeError) pending.reject(pending.writeError);
+						else pending.resolve(clone(Array.isArray(data.args) ? data.args : []));
+					};
+					if (data.error || !pending.writes || pending.writes.size === 0) finish();
+					else Promise.all(Array.from(pending.writes)).then(finish);
 					return;
 				}
 				if (data.type === "dsh-tavern-helper-bootstrap-failed") {
@@ -4526,7 +4536,7 @@ window.__ModuleLoader__.load({
 					return;
 				}
 				if (data.type !== "dsh-tavern-helper-call" || !allowedMethods.has(data.method)) return;
-				if (data.eventId && closedEventIds.has(String(data.eventId))) {
+				if (data.eventId && (closedEventIds.has(String(data.eventId)) || pendingEvents.get(String(data.eventId))?.finishing)) {
 					post(record, { type: "dsh-tavern-helper-response", requestId: data.requestId, ok: false, error: "事件已经结束，已拒绝迟到写入" });
 					return;
 				}
@@ -4558,6 +4568,16 @@ window.__ModuleLoader__.load({
 					record.rpcTail = rpcTask;
 					if (batch) { batch.task = rpcTask; record.queuedPromptBatch = batch; }
 				}
+				const writeOwner = pendingEvents.get(String(data.eventId || ""));
+				if (writeOwner && writeOwner.record === record) {
+					if (!writeOwner.writes) writeOwner.writes = new Set();
+					const receipt = rpcTask.then(function (result) {
+						if (result && result.stale) throw new Error("聊天已变化，事件写入未保存");
+					}).catch(function (error) { if (!writeOwner.writeError) writeOwner.writeError = error; });
+					writeOwner.writes.add(receipt);
+					receipt.then(function () { writeOwner.writes.delete(receipt); });
+				}
+
 				rpcTask.then(function (result) {
 					if (records.get(record.id) === record && result && !result.stale) {
 						const pending = pendingEvents.get(String(data.eventId || ""));

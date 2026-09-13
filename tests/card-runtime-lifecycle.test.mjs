@@ -870,3 +870,48 @@ test('trusted card direct iframe height survives document.write and updates oute
   assert.equal(h.lifecycle.snapshot().height, 1200, 'detached frames cannot resize the active slot')
   h.stop()
 })
+
+for (const fail of [false, true]) test(`事件收尾等待已接收的排队写入，保存${fail ? '失败不能报成功' : '成功不误判迟到'}`, async () => {
+  const h = sandbox(), blocked = deferred()
+  h.runtime.sync('A', view())
+  const frame = h.ready()
+  h.respond((method) => method === 'getTavernHelperWorldbook' ? blocked.promise : fail ? Promise.reject(new Error('保存失败')) : Promise.resolve({ updated: true }))
+  h.message(frame, 'dsh-tavern-helper-call', { requestId: 'read', method: 'getTavernHelperWorldbook', args: {} })
+  await tick()
+  const event = h.runtime.emit('UPDATE', [1], context(), [], 'queued-event')
+  let result
+  const done = event.then(() => { result = 'success' }, error => { result = error.message })
+  h.message(frame, 'dsh-tavern-helper-call', { eventId: 'queued-event', scriptId: 'script', requestId: 'write', method: 'updateTavernHelperPrompts', args: { operation: { kind: 'remove', ids: ['phone'] } } })
+  h.message(frame, 'dsh-tavern-helper-event-complete', { eventId: 'queued-event', args: [1] })
+  await tick()
+  assert.equal(result, undefined, '宿主不能在已接收写入还排队时宣布事件完成')
+  h.message(frame, 'dsh-tavern-helper-call', { eventId: 'queued-event', requestId: 'late', method: 'updateTavernHelperPrompts', args: {} })
+  assert.match(frame.contentWindow.messages.find(x => x.requestId === 'late').error, /迟到写入/)
+  blocked.resolve({})
+  await done
+  assert.equal(h.calls.filter(x => x.method === 'updateTavernHelperPrompts').length, 1)
+  assert.equal(result, fail ? '保存失败' : 'success')
+  h.runtime.dispose()
+})
+
+test('收尾等待仍受事件超时约束，超时后排队写入不能落地', async () => {
+  let now = 0
+  const h = sandbox({ now: () => now, eventTimeoutMs: 10 }), blocked = deferred()
+  h.runtime.sync('A', view())
+  const frame = h.ready()
+  h.respond(method => method === 'getTavernHelperWorldbook' ? blocked.promise : Promise.resolve({ updated: true }))
+  h.message(frame, 'dsh-tavern-helper-call', { requestId: 'read', method: 'getTavernHelperWorldbook', args: {} })
+  await tick()
+  const event = h.runtime.emit('UPDATE', [1], context(), [], 'timeout-event')
+  const rejected = assert.rejects(event, /超时/)
+  h.message(frame, 'dsh-tavern-helper-call', { eventId: 'timeout-event', requestId: 'write', method: 'updateTavernHelperPrompts', args: {} })
+  h.message(frame, 'dsh-tavern-helper-event-complete', { eventId: 'timeout-event', args: [1] })
+  now = 100
+  for (const timer of Array.from(h.timers.values())) if (timer.delay === 10) timer.run()
+  await rejected
+  blocked.resolve({})
+  await tick()
+  assert.equal(h.calls.filter(x => x.method === 'updateTavernHelperPrompts').length, 0)
+  assert.match(frame.contentWindow.messages.find(x => x.requestId === 'write').error, /迟到写入/)
+  h.runtime.dispose()
+})

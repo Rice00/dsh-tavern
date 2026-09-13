@@ -673,3 +673,21 @@ body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
 .dsh-tavern-worldbook-bound { padding: 8px 12px; font-size: 12px; text-align: left; overflow-wrap: anywhere; }
 .dsh-tavern-worldbook-new { margin: 12px 0 8px; padding: 8px 12px; }
 .dsh-tavern-worldbook > .dsh-tavern-script-row:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
+
+/* Worldbook bindings: existing relationships lead; additions stay folded. */
+.dsh-tavern-worldbook-bindings { margin: 0 0 16px; padding: 14px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; color: var(--dsw-alias-label-primary); }
+.dsh-tavern-worldbook-bindings-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 12px; font-weight: 600; }
+.dsh-tavern-worldbook-bindings-count { color: var(--dsw-alias-label-secondary); font-size: 11px; font-weight: 400; }
+.dsh-tavern-worldbook-bound-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.dsh-tavern-worldbook-bound-card { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 9px 10px; border-radius: 7px; background: var(--dsw-specific-input-major); }
+.dsh-tavern-worldbook-bound-name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 13px; font-weight: 500; }
+.dsh-tavern-worldbook-binding-link { flex-shrink: 0; padding: 3px 0 3px 6px; border: 0; background: transparent; color: var(--dsw-alias-label-secondary); font: inherit; font-size: 11px; cursor: pointer; }
+.dsh-tavern-worldbook-binding-link:hover:not(:disabled) { color: var(--dsw-alias-label-primary); text-decoration: underline; }
+.dsh-tavern-worldbook-binding-add { margin-top: 10px; }
+.dsh-tavern-worldbook-binding-add summary { width: fit-content; padding: 3px 0; color: var(--dsw-alias-label-secondary); font-size: 11px; cursor: pointer; }
+.dsh-tavern-worldbook-binding-form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.dsh-tavern-worldbook-binding-form select { flex: 1 1 170px; min-width: 0; max-width: 100%; height: 32px; padding: 0 8px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; background: var(--dsw-specific-input-major); color: inherit; font: inherit; font-size: 12px; }
+.dsh-tavern-worldbook-binding-confirm { min-height: 32px; padding: 4px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 6px; background: transparent; color: inherit; font: inherit; font-size: 12px; cursor: pointer; }
+.dsh-tavern-worldbook-bindings button:disabled { opacity: .45; cursor: default; }
+.dsh-tavern-worldbook-bindings :is(button, summary, select):focus-visible { outline: 2px solid var(--dsw-alias-label-secondary); outline-offset: 3px; }
+.dsh-tavern-worldbook-binding-empty, .dsh-tavern-worldbook-binding-hint { margin: 6px 0 0; color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 1.6; }

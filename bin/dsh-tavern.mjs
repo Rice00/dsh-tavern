@@ -35,7 +35,7 @@ async function main() {
     case 'start':
       {
         const state = await startService()
-        bootstrapFrontendOnce(state)
+        await bootstrapFrontendOnce(state)
       }
       break
     case 'stop':
@@ -45,7 +45,7 @@ async function main() {
       await stopService()
       {
         const state = await startService()
-        if (!bootstrapFrontendOnce(state)) console.log('如页面未恢复连接，请运行 dsh-tavern open，或使用上方完整地址重新进入。')
+        if (!await bootstrapFrontendOnce(state)) console.log('如页面未恢复连接，请运行 dsh-tavern open，或使用上方完整地址重新进入。')
       }
       break
     case 'status':

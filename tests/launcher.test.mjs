@@ -102,7 +102,7 @@ test('升级时只用本次启动标识引导一次新页面，之后交给页�
   assert.equal(needsFrontendBootstrap({ version: 2 }), false)
   assert.match(serviceSource, /const target = restartBrowserTarget\(state\.port, state\.runtimeGeneration, state\.webUrl\)/)
   assert.match(serviceSource, /openBrowserTarget\(target\)/)
-  assert.match(launcherSource, /if \(!bootstrapFrontendOnce\(state\)\)/)
+  assert.match(launcherSource, /if \(!await bootstrapFrontendOnce\(state\)\)/)
   assert.doesNotMatch(launcherSource, /Shift \+ R 强制刷新/)
   assert.deepEqual(browserOpenCommand('http://127.0.0.1:3081/?tavern-boot=x', 'darwin'), {
     command: 'open',

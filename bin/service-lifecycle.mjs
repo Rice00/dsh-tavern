@@ -47,25 +47,44 @@ export function browserOpenCommand(url, platform = process.platform) {
   return { command: 'xdg-open', args: [url] }
 }
 
-function openBrowserTarget(url) {
+async function openBrowserTarget(url) {
   const target = browserOpenCommand(url)
-  const child = spawn(target.command, target.args, { detached: true, stdio: 'ignore', windowsHide: true })
-  child.on('error', function () {})
-  child.unref()
+  await new Promise((resolve, reject) => {
+    const child = spawn(target.command, target.args, { detached: true, stdio: 'ignore', windowsHide: true })
+    const timer = setTimeout(() => {
+      child.unref()
+      fail('等待系统响应超时，未能确认打开结果')
+    }, 5000)
+    const fail = detail => {
+      clearTimeout(timer)
+      reject(new Error(`无法自动打开浏览器（${detail}）。请复制上方完整地址，在浏览器中手动打开。`))
+    }
+    child.once('error', error => fail(error.code || '启动失败'))
+    child.once('exit', (code, signal) => {
+      clearTimeout(timer)
+      if (code === 0) resolve()
+      else fail(signal || `退出码 ${code}`)
+    })
+  })
 }
 
 export function needsFrontendBootstrap(record, requiredVersion = FRONTEND_BOOTSTRAP_VERSION) {
   return !record || Number(record.version) < requiredVersion
 }
 
-export function bootstrapFrontendOnce(state) {
+export async function bootstrapFrontendOnce(state) {
   if (!state?.webUrl) return false
   if (process.env.DSH_TAVERN_NO_OPEN === '1') return false
   let record = null
   try { record = JSON.parse(readFileSync(FRONTEND_BOOTSTRAP_FILE, 'utf8')) } catch {}
   if (!needsFrontendBootstrap(record)) return false
   const target = restartBrowserTarget(state.port, state.runtimeGeneration, state.webUrl)
-  openBrowserTarget(target)
+  try {
+    await openBrowserTarget(target)
+  } catch (error) {
+    console.warn(error.message)
+    return false
+  }
   mkdirSync(LOG_DIR, { recursive: true })
   writeFileSync(FRONTEND_BOOTSTRAP_FILE, `${JSON.stringify({ version: FRONTEND_BOOTSTRAP_VERSION, completedAt: new Date().toISOString() }, null, 2)}\n`)
   console.log(`已一次性打开新版前端：${target}`)
@@ -195,7 +214,7 @@ export async function openService() {
   const url = await currentServiceWebUrl(state)
   printServiceWebUrl(url)
   if (!url) { process.exitCode = 1; return }
-  openBrowserTarget(url)
+  await openBrowserTarget(url)
 }
 
 export async function stopService() {

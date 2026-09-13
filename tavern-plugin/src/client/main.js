@@ -6339,6 +6339,7 @@ window.__ModuleLoader__.load({
 			const sessionId = props.scope && props.scope.sessionId || "";
 			const [record, setRecord] = React.useState(null);
 			const [currentConversation, setCurrentConversation] = React.useState(null);
+			const selectedProfileEnabled = currentConversation?.enabled === true && (currentConversation.profileId || "default") === record?.profileId;
 			const [editing, setEditing] = React.useState(false);
 			const [injectionText, setInjectionText] = React.useState("");
 			const [busy, setBusy] = React.useState(false);
@@ -6387,7 +6388,7 @@ window.__ModuleLoader__.load({
 			}
 			async function toggleCurrent(applySelected) {
 				if (!currentConversation || busy) return;
-				const enabled = applySelected === true || !currentConversation.enabled;
+				const enabled = applySelected === false ? false : applySelected === true || !selectedProfileEnabled;
 				if (!window.confirm((enabled ? "开启" : "关闭") + "当前游戏的用户画像会修改 system 提示词，使原有提示词缓存失效，下次生成可能增加耗时和费用。已有对话和变量会保留，从下一轮生效。继续吗？")) return;
 				setBusy(true); setError("");
 				if (refreshRef.current) refreshRef.current.invalidate();
@@ -6437,10 +6438,9 @@ window.__ModuleLoader__.load({
 					h("button", { className: "dsh-tavern-btn", disabled: busy || editing, onClick: function () { manageProfile("create"); } }, "新建画像"),
 					h("button", { className: "dsh-tavern-btn", disabled: busy || editing, onClick: function () { manageProfile("rename", record.profileId); } }, "重命名"),
 					currentConversation && record.hasConfirmed ? h("button", { className: "dsh-tavern-btn", disabled: busy || editing, onClick: function () { toggleCurrent(true); } }, "应用到当前游戏") : null,
-					currentConversation && currentConversation.enabled && !record.hasConfirmed ? h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: toggleCurrent }, "关闭当前游戏画像") : null,
+					currentConversation && currentConversation.enabled && !record.hasConfirmed ? h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: function () { toggleCurrent(false); } }, "关闭当前游戏画像") : null,
 					currentConversation ? h("small", null, "当前游戏：" + (currentConversation.enabled ? ((record.profiles || []).find(function (item) { return item.id === currentConversation.profileId; }) || {}).name || "默认画像" : "未启用") + "。选择画像不会自动更改当前游戏。") : null
-				) : null,
-				h("div", { className: "dsh-tavern-user-profile-meta" }, record && record.hasConfirmed ? "已确认版本 v" + record.confirmedRevision : "尚未建立")
+				) : null
 			);
 			if (record === null) return h("div", { className: "dsh-tavern-user-profile" }, header, h("div", { className: "dsh-tavern-user-profile-body" }, error ? h("div", { className: "dsh-card-error" }, error) : h("div", { className: "dsh-tavern-status-empty" }, "正在读取用户画像…")));
 			if (!record.hasConfirmed) return h("div", { className: "dsh-tavern-user-profile" }, header,
@@ -6457,8 +6457,8 @@ window.__ModuleLoader__.load({
 					error ? h("div", { className: "dsh-card-error" }, error) : null,
 					record.hasDraft ? h("div", { className: "dsh-tavern-extension-note" }, "存在尚未确认的新草案；当前仍使用已确认版本。") : null,
 					currentConversation ? h("div", { className: "dsh-tavern-user-profile-switch" },
-						h("span", null, h("b", null, "当前游戏启用"), h("small", null, (currentConversation.enabled ? "已启用画像 v" + currentConversation.revision + "。" : "未启用画像。") + "切换会使提示词缓存失效，从下一轮生效。")),
-						h("button", { className: "dsh-tavern-prompt-state is-toggle " + (currentConversation.enabled ? "on" : "off"), disabled: busy, onClick: toggleCurrent, "aria-pressed": currentConversation.enabled === true }, currentConversation.enabled ? "已开启" : "已关闭")
+						h("span", null, h("b", null, "当前游戏启用此画像"), h("small", null, (selectedProfileEnabled ? "此画像已生效。" : "此画像未生效，开启后将替换当前游戏的画像。") + "切换会使提示词缓存失效，从下一轮生效。")),
+						h("button", { className: "dsh-tavern-prompt-state is-toggle " + (selectedProfileEnabled ? "on" : "off"), disabled: busy, onClick: toggleCurrent, "aria-pressed": selectedProfileEnabled }, selectedProfileEnabled ? "已开启" : "已关闭")
 					) : null,
 					h("div", { className: "dsh-tavern-user-profile-switch" },
 					h("span", null, h("b", null, "新游戏默认启用"), h("small", null, "只影响以后新开的游戏，不改变当前游戏。")),

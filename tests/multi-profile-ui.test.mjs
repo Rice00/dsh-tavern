@@ -3,13 +3,13 @@ import test from 'node:test'
 import { readFileSync } from 'node:fs'
 const source = readFileSync(new URL('../tavern-plugin/src/client/main.js', import.meta.url), 'utf8')
 const component = source.slice(source.indexOf('function UserPreferenceProfileTab('), source.indexOf('function createUserPreferenceProfileFeatureModule('))
-function render(hasConfirmed, consent = true) {
+function render(hasConfirmed, consent = true, activeId = 'a') {
   const calls = [], warnings = []
   const record = { profileId: 'b', name: '冒险', hasConfirmed, confirmed: hasConfirmed ? { injectionText: '快节奏' } : null,
     profiles: [{ id: 'a', name: '日常' }, { id: 'b', name: '冒险' }] }
   let index = 0
   const React = { createElement: (type, props, ...children) => ({ type, props, children }), Fragment: 'fragment',
-    useState: initial => [[record, { enabled: true, profileId: 'a', revision: 3 }][index++] ?? initial, () => {}],
+    useState: initial => [[record, { enabled: true, profileId: activeId, revision: 3 }][index++] ?? initial, () => {}],
     useRef: value => ({ current: value }), useEffect: () => {} }
   const rpc = async (name, args) => { calls.push({ name, args }); return { userProfile: record } }
   const window = { confirm: text => { warnings.push(text); return consent }, prompt: () => '新画像' }
@@ -34,4 +34,19 @@ test('an empty selected profile still allows disabling the game profile and crea
   assert.equal(ui.button('应用到当前游戏'), undefined)
   await ui.button('关闭当前游戏画像').props.onClick()
   assert.equal(ui.calls[0].args.enabled, false)
+})
+
+
+test('only the game-bound profile is enabled; another profile replaces it instead of disabling it', async () => {
+  const other = render(true)
+  assert.equal(other.button('已关闭').props['aria-pressed'], false)
+  await other.button('已关闭').props.onClick()
+  assert.deepEqual(other.calls[0].args, { sessionId: 'game', enabled: true, profileId: 'b' })
+  const active = render(true, true, 'b')
+  assert.equal(active.button('已开启').props['aria-pressed'], true)
+  await active.button('已开启').props.onClick()
+  assert.equal(active.calls[0].args.enabled, false)
+  const cancelled = render(true, false)
+  await cancelled.button('已关闭').props.onClick()
+  assert.equal(cancelled.calls.length, 0)
 })

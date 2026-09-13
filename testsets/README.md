@@ -8,6 +8,8 @@ node testsets/run.mjs 001-duan-yingying-continue          # 真实模型请求
 node testsets/report-ui.mjs                             # http://127.0.0.1:4318
 ```
 
+打开网页后，选择左侧案例可查看模型、输入、候选步骤及断言，点击“启动测试”即可执行。页面自动刷新运行状态并打开本次报告，同一网页服务同时只运行一个测试。关闭网页不会停止测试。案例从 `testsets/<案例名>/scenario.yaml` 读取；配置无效时禁用执行。网页服务支持 `--runtime-home PATH` 和 `--results PATH`。
+
 人物卡用 `sourceCard: 段莹莹_自由.json` 引用。在正式酒馆保存修改后，下次新开测试由正式游戏直接读取。模型与推理强度只设置到新测试会话；后台模型仍遵循正式酒馆的后台模型设置。
 
 - `test-play.mjs`：多轮案例运行器。
@@ -15,7 +17,7 @@ node testsets/report-ui.mjs                             # http://127.0.0.1:4318
 - `lib/recording.mjs`：各 Agent 输出、工具结果和失败记录。
 - `lib/scenario.mjs`、`lib/refusal.mjs`：断言及拒绝标记。
 - `results/`：每次报告、输入、请求、回复、原生事件和存档快照，不提交。
-- `ui/`、`report-ui.mjs`：报告界面。
+- `ui/`、`report-ui.mjs`：案例列表、手动启动与报告界面。
 - 正式能力接口位于 `tavern-plugin/lib/gameplay-api.js`。
 
 可传 `--runtime-home PATH`、`--output PATH`。不再支持 `--headed`、自动导入 `card` 文件或测试配置覆盖；旧 `tavernSettings` 不会改写正式设置，报告会注明。旧 `profiles/` 与已有报告保留，但不再使用。

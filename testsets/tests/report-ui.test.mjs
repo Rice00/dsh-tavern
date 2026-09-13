@@ -34,3 +34,70 @@ test('report viewer lists nested results and exposes evidence without serving cr
     assert.equal((await fetch(base + '/api/runs', { method: 'POST' })).status, 405)
   } finally { await new Promise(resolve => server.close(resolve)); await rm(root, { recursive: true, force: true }) }
 })
+
+test('case catalog starts the existing runner once and reports process failures', async () => {
+  const { EventEmitter } = await import('node:events')
+  const root = await mkdtemp(path.join(os.tmpdir(), 'tavern-cases-'))
+  await mkdir(path.join(root, 'demo'))
+  await writeFile(path.join(root, 'demo/scenario.yaml'), 'name: Demo\nmodel: { provider: test, model: test }\nsteps:\n  - { action: play, sourceCard: demo.json }\n  - { action: say, input: hello }\n')
+  const children = [], calls = []
+  const server = await createReportServer(path.join(root, 'results'), { casesRoot: root, runtimeHome: '/tmp/test-runtime', launch: (...args) => {
+    calls.push(args); const child = new EventEmitter(); children.push(child); return child
+  } })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  const base = 'http://127.0.0.1:' + server.address().port
+  const start = id => fetch(base + '/api/start?' + new URLSearchParams({ id }), { method: 'POST', headers: { Origin: base } })
+  try {
+    const cases = await (await fetch(base + '/api/cases')).json()
+    assert.equal(cases.length, 1); assert.equal(cases[0].steps[1].input, 'hello')
+    assert.equal((await fetch(base + '/api/start?id=demo', { method: 'POST' })).status, 403)
+    assert.equal((await fetch(base + '/api/start?id=demo')).status, 405)
+    assert.equal((await start('../secret')).status, 404)
+    const responses = await Promise.all([start('demo'), start('demo')])
+    assert.deepEqual(responses.map(r => r.status).sort(), [202, 409]); assert.equal(calls.length, 1)
+    assert.equal(calls[0][1][0], path.join(root, 'test-play.mjs'))
+    assert.equal(calls[0][1][1], path.join(root, 'demo/scenario.yaml'))
+    assert.deepEqual(calls[0][1].slice(-2), ['--runtime-home', '/tmp/test-runtime'])
+    assert.equal(calls[0][2].shell, false)
+    children[0].emit('exit', 1, null)
+    assert.equal((await (await fetch(base + '/api/job')).json()).status, 'failed')
+    assert.equal((await start('demo')).status, 202)
+    children[1].emit('error', new Error('private detail'))
+    assert.equal((await (await fetch(base + '/api/job')).json()).error, '测试进程启动失败')
+    assert.equal((await start('demo')).status, 202)
+    children[2].emit('exit', 0, null)
+    assert.equal((await (await fetch(base + '/api/job')).json()).status, 'completed')
+  } finally { await new Promise(resolve => server.close(resolve)); await rm(root, { recursive: true, force: true }) }
+})
+
+test('manual start launches a subprocess and its report is readable through the viewer', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'tavern-process-'))
+  await mkdir(path.join(root, 'demo'))
+  await writeFile(path.join(root, 'demo/scenario.yaml'), 'model: { provider: fixture, model: fixture }\nsteps: [{ action: play, sourceCard: demo.json }]\n')
+  await writeFile(path.join(root, 'test-play.mjs'), `
+    import { mkdir, writeFile } from 'node:fs/promises'
+    import path from 'node:path'
+    const run = path.join(process.argv[process.argv.indexOf('--output') + 1], 'run-fixture')
+    await mkdir(run)
+    await writeFile(path.join(run, 'report.json'), JSON.stringify({ name: 'Process fixture', status: 'passed', steps: [] }))
+  `)
+  const server = await createReportServer(path.join(root, 'results'), { casesRoot: root })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  const base = 'http://127.0.0.1:' + server.address().port
+  try {
+    const response = await fetch(base + '/api/start?id=demo', { method: 'POST', headers: { Origin: base } })
+    assert.equal(response.status, 202)
+    const started = await response.json()
+    let job
+    for (let attempt = 0; attempt < 100; attempt++) {
+      job = await (await fetch(base + '/api/job')).json()
+      if (job.status !== 'running') break
+      await new Promise(resolve => setTimeout(resolve, 20))
+    }
+    assert.equal(job.status, 'completed')
+    const runs = await (await fetch(base + '/api/runs')).json()
+    assert.equal(runs[0].directory, started.directory + '/run-fixture')
+    const detail = await (await fetch(base + '/api/run?id=' + runs[0].id)).json()
+    assert.equal(detail.report.status, 'passed')
+  } finally { await new Promise(resolve => server.close(resolve)); await rm(root, { recursive: true, force: true }) }
+})

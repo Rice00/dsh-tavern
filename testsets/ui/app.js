@@ -1,6 +1,7 @@
 const $ = selector => document.querySelector(selector)
 const labels = { passed: '成功', completed: '已完成', failed: '失败', interrupted: '已中断', running: '运行中', incomplete: '未完成', 'not-run': '未执行', 'not-covered': '未覆盖', 'not-invoked': '未调用', unreadable: '读取失败', cancelled: '已取消' }
 const roles = { foreground: '前台正文', background: '后台结算', image: '文生图', card: '卡片 Agent' }
+let cases = [], job = null, caseSelected = '', starting = false
 let runs = [], filter = 'all', selected = '', selectionVersion = 0
 function el(tag, className, text) { const n = document.createElement(tag); if (className) n.className = className; if (text !== undefined) n.textContent = text; return n }
 function badge(status, text) { return el('span', 'badge ' + (['passed', 'completed'].includes(status) ? 'good' : ['failed', 'interrupted', 'unreadable', 'incomplete'].includes(status) ? 'bad' : status === 'running' ? 'busy' : 'muted'), text || labels[status] || status || '未知') }
@@ -24,12 +25,14 @@ function renderRuns() {
   if (!visible.length) $('#runs').append(el('div', 'empty', '没有匹配的测试记录'))
 }
 async function refresh() {
-  runs = await get('/api/runs'); renderRuns()
+  ;[runs, cases, job] = await Promise.all([get('/api/runs'), get('/api/cases'), get('/api/job')]); renderRuns(); renderCases()
+  if (caseSelected) { showCase(caseSelected); return }
   if (selected && runs.some(r => r.id === selected)) await selectRun(selected)
   else if (runs.length) await selectRun(runs[0].id)
-  else $('#detail').replaceChildren(el('div', 'empty', '暂无测试报告。运行测试后，点击“刷新报告”。'))
+  else $('#detail').replaceChildren(el('div', 'empty', '暂无测试报告。选择左侧案例即可手动启动测试。'))
 }
 async function selectRun(id) {
+  caseSelected = ''; renderCases()
   const version = ++selectionVersion; selected = id; location.hash = id; renderRuns()
   $('#detail').replaceChildren(el('div', 'empty', '正在读取报告…'))
   let data
@@ -129,3 +132,64 @@ $('#filters').onclick = event => { if (!event.target.dataset.filter) return; fil
 $('#refresh').onclick = () => refresh().catch(error => notify(error.message))
 selected = location.hash.slice(1)
 refresh().catch(error => { $('#detail').replaceChildren(el('div', 'error', error.message)) })
+
+function renderCases() {
+  $('#cases').replaceChildren()
+  for (const item of cases) {
+    const b = button('', () => showCase(item.id)); b.className = 'run' + (caseSelected === item.id ? ' active' : '')
+    b.append(el('div', 'run-name', item.name), el('div', 'meta', item.error || `${item.steps.length} 步 · ${item.model.model}`))
+    $('#cases').append(b)
+  }
+  if (!cases.length) $('#cases').append(el('p', 'hint', '暂无案例。请在 testsets/<案例名>/scenario.yaml 添加配置。'))
+  $('#job').replaceChildren()
+  if (job) {
+    $('#job').append(el('p', 'hint', `${job.caseId} · ${labels[job.status] || job.status}`))
+    if (job.error) $('#job').append(el('p', 'error', job.error))
+    const report = runs.find(r => r.directory.startsWith(job.directory + '/'))
+    if (report) $('#job').append(button('查看本次报告', () => selectRun(report.id)))
+  }
+}
+function showCase(id) {
+  const item = cases.find(c => c.id === id); if (!item) return
+  ++selectionVersion; caseSelected = id; selected = ''; location.hash = ''; renderRuns(); renderCases()
+  const detail = $('#detail'); detail.replaceChildren(el('div', 'eyebrow', 'TEST CASE / 测试案例'), el('h2', '', item.name))
+  if (item.error) { detail.append(el('div', 'error', item.error)); return }
+  detail.append(el('p', 'meta', `${item.model.provider} · ${item.model.model} · ${item.model.reasoningEffort || '默认推理强度'}`))
+  detail.append(el('p', 'hint', '使用正式酒馆当前配置，新建独立测试存档。启动会调用真实模型并产生费用。'))
+  if (item.steps.some(step => step.action === 'card')) detail.append(el('p', 'hint', '此案例包含卡片 Agent，资源编辑会作用于正式卡库。'))
+  const start = button(starting || job?.status === 'running' ? '测试运行中…' : '启动测试', async () => {
+    starting = true; showCase(id)
+    try {
+      const response = await fetch('/api/start?' + new URLSearchParams({ id }), { method: 'POST' })
+      const data = await response.json(); if (!response.ok) throw new Error(data.error || '启动失败')
+      job = data; notify('测试已启动'); await refresh()
+    } finally { starting = false; if (caseSelected === id) showCase(id) }
+  })
+  start.disabled = starting || job?.status === 'running'; detail.append(start)
+  for (const [index, step] of item.steps.entries()) {
+    const block = el('div', 'case-step')
+    block.append(el('strong', '', `${index + 1}. ${{ play: '新开游戏', card: '打开卡片工作台', say: '发送输入', image: '生成图片' }[step.action]}`))
+    if (step.sourceCard || step.cardName) block.append(el('p', 'meta', '人物卡：' + (step.sourceCard || step.cardName)))
+    if (step.input) block.append(el('div', 'prose', step.input))
+    if (step.inputFrom) block.append(el('p', 'hint', `使用上一轮第 ${step.inputFrom.candidate} 个${step.inputFrom.type === 'scene' ? '场景' : '行动'}候选`))
+    if (step.candidates) block.append(el('p', 'hint', '完成本轮后生成候选项'))
+    if (step.expect) block.append(el('pre', '', JSON.stringify(step.expect, null, 2)))
+    detail.append(block)
+  }
+}
+let polling = false
+setInterval(async () => {
+  if (polling || document.hidden) return
+  polling = true
+  try {
+    const previous = job
+    job = await get('/api/job')
+    if (job?.status === 'running' || previous?.status === 'running' || (job && job.startedAt !== previous?.startedAt)) {
+      runs = await get('/api/runs'); renderRuns(); renderCases()
+      const currentReport = runs.find(r => r.directory.startsWith(job.directory + '/'))
+      if (caseSelected === job.caseId && currentReport) await selectRun(currentReport.id)
+      else if (caseSelected) showCase(caseSelected)
+      else if (selected && runs.some(r => r.id === selected && r.directory.startsWith(job.directory + '/'))) await selectRun(selected)
+    }
+  } catch (error) { notify(error.message) } finally { polling = false }
+}, 2500)

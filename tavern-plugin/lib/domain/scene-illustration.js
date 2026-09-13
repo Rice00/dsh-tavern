@@ -70,8 +70,11 @@ export function sceneInput(chat, target, stateAtTarget) {
   return { text, posture, ...(state.sources.length || state.omitted.length ? { state } : {}) }
 }
 
-function sceneLineage(chat, target) {
-  return (chat.messages || []).filter(item => item.role === 'assistant' && Number(item.turn || (item.greeting ? 1 : 0)) <= target.turn)
+function sceneLineage(chat, target, turns) {
+  return (chat.messages || []).filter(item => {
+    const turn = Number(item.turn || (item.greeting ? 1 : 0))
+    return item.role === 'assistant' && turn <= target.turn && (!turns || turns.has(turn))
+  })
     .map(item => sceneTarget(chat, Number(item.turn || 1)))
 }
 function sceneSources(chat, target, snapshot, sinceTurn = target.turn) {
@@ -126,8 +129,17 @@ export function createSceneIllustrations(deps) {
   const imageQueue = createSceneImageQueue(deps)
   const imageReferences = createSceneImageReferences({ store: deps.store })
   const pathFor = (chatId, key) => 'scene-images/' + hash(String(chatId)) + '/' + key + '.json'
-  async function resolve(sessionId, turn) {
-    const chat = await deps.chatForSession(sessionId)
+  // Coalesce simultaneous display reads; never cache across completed reads or mutations.
+  const statusReads = new Map()
+  function readStatusChat(sessionId) {
+    if (!statusReads.has(sessionId)) {
+      const pending = Promise.resolve().then(() => deps.chatForSession(sessionId)).finally(() => statusReads.delete(sessionId))
+      statusReads.set(sessionId, pending)
+    }
+    return statusReads.get(sessionId)
+  }
+  async function resolve(sessionId, turn, readChat = id => deps.chatForSession(id)) {
+    const chat = await readChat(sessionId)
     const target = sceneTarget(chat, turn)
     return { chat, target, path: pathFor(chat.id, target.key) }
   }
@@ -152,14 +164,14 @@ export function createSceneIllustrations(deps) {
   }
   async function status(sessionId, turn) {
     let resolved
-    try { resolved = await resolve(sessionId, turn) } catch (error) {
+    try { resolved = await resolve(sessionId, turn, readStatusChat) } catch (error) {
       if (error.code !== 'SCENE_TARGET_UNAVAILABLE') throw error
       return { turn: Number(turn), status: 'unavailable', reason: 'target-unavailable', versions: [] }
     }
     const { chat, target, path } = resolved
     const current = await config()
     const last = [...chat.messages].reverse().find(item => item.role === 'assistant')
-    const reference = await imageReferences.select({ chatId: chat.id, lineage: sceneLineage(chat, sceneTarget(chat, Number(last.turn || 1))), config: current })
+    const reference = await imageReferences.select({ chatId: chat.id, lineage: turns => sceneLineage(chat, { turn: Number(last.turn || 1) }, turns), config: current })
     return { ...present(target, await readRecord(path)), enabled: current.enabled, profile: imageExpressionProfile(current),
       reference: { ...reference.capability, warning: reference.warning,
         bindings: reference.active.filter(record => record.source.key === target.key).map(record => ({ versionId: record.source.versionId, personId: record.person.id, name: record.person.name })),
@@ -252,7 +264,7 @@ export function createSceneIllustrations(deps) {
       // An explicit retry waits for that cleanup, rather than returning the old failure.
       if (jobs.has(path)) await jobs.get(path).promise
       if (!channelReady(active, apiKey)) throw new Error('请先在设置中完成生图渠道配置（地址、模型或 API Key）')
-      const selectedImageReferences = await imageReferences.select({ chatId: chat.id, lineage: sceneLineage(chat, target), config: active })
+      const selectedImageReferences = await imageReferences.select({ chatId: chat.id, lineage: turns => sceneLineage(chat, target, turns), config: active })
       if (typeof deps.attachments()?.saveImage !== 'function' || typeof deps.attachments()?.readImage !== 'function') throw new Error('当前 DSH 未提供图片附件服务，无法保存插画')
       const profile = imageExpressionProfile(active)
       const style = await styles.resolve(active.style, profile)

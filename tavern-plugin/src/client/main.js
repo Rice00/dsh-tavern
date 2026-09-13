@@ -6372,6 +6372,20 @@ window.__ModuleLoader__.load({
 			function openAgentTask() {
 				window.dispatchEvent(new CustomEvent("dsh-tavern-open-user-profile-task"));
 			}
+			async function toggleCurrent() {
+				if (!currentConversation || busy) return;
+				const enabled = !currentConversation.enabled;
+				if (!window.confirm((enabled ? "开启" : "关闭") + "当前游戏的用户画像会修改 system 提示词，使原有提示词缓存失效，下次生成可能增加耗时和费用。已有对话和变量会保留，从下一轮生效。继续吗？")) return;
+				setBusy(true); setError("");
+				if (refreshRef.current) refreshRef.current.invalidate();
+				try {
+					const result = await rpc("setConversationUserProfileEnabled", { sessionId: sessionId, enabled: enabled }, sessionId);
+					if (refreshRef.current) refreshRef.current.invalidate();
+					applyResult(result);
+					notifyTavernDataChanged(["user-profile", "sessions"], "user-profile");
+				} catch (err) { setError(String(err && err.message || err)); }
+				finally { setBusy(false); }
+			}
 			async function toggleDefault() {
 				if (!record || !record.hasConfirmed || busy) return;
 				setBusy(true); setError("");
@@ -6421,9 +6435,12 @@ window.__ModuleLoader__.load({
 				h("div", { className: "dsh-tavern-user-profile-body" },
 					error ? h("div", { className: "dsh-card-error" }, error) : null,
 					record.hasDraft ? h("div", { className: "dsh-tavern-extension-note" }, "存在尚未确认的新草案；当前仍使用已确认版本。") : null,
-					currentConversation ? h("div", { className: "dsh-tavern-extension-note" }, "当前游戏：" + (currentConversation.enabled ? "已启用画像 v" + currentConversation.revision : "未启用画像") + "。本局创建后保持冻结。") : null,
+					currentConversation ? h("div", { className: "dsh-tavern-user-profile-switch" },
+						h("span", null, h("b", null, "当前游戏启用"), h("small", null, (currentConversation.enabled ? "已启用画像 v" + currentConversation.revision + "。" : "未启用画像。") + "切换会使提示词缓存失效，从下一轮生效。")),
+						h("button", { className: "dsh-tavern-prompt-state is-toggle " + (currentConversation.enabled ? "on" : "off"), disabled: busy, onClick: toggleCurrent, "aria-pressed": currentConversation.enabled === true }, currentConversation.enabled ? "已开启" : "已关闭")
+					) : null,
 					h("div", { className: "dsh-tavern-user-profile-switch" },
-					h("span", null, h("b", null, "新游戏默认启用"), h("small", null, "仅在此处开启或关闭；只影响以后新开的游戏，不改变当前游戏。")),
+					h("span", null, h("b", null, "新游戏默认启用"), h("small", null, "只影响以后新开的游戏，不改变当前游戏。")),
 					h("button", { className: "dsh-tavern-prompt-state is-toggle " + (record.defaultEnabled ? "on" : "off"), disabled: busy, onClick: toggleDefault, "aria-pressed": record.defaultEnabled === true }, record.defaultEnabled ? "已开启" : "已关闭")
 				),
 					editing ? h("div", { className: "dsh-tavern-user-profile-editor" },

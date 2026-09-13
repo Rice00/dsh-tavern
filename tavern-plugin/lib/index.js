@@ -2508,6 +2508,21 @@ export async function apply(ctx) {
         }
       }
       case 'updateUserPreferenceProfile': return { userProfile: presentUserPreferenceProfile(await userPreferenceProfile.updateConfirmed(args)) }
+      case 'setConversationUserProfileEnabled': {
+        const sessionId = str(args?.sessionId)
+        const chat = await chatForSession(sessionId)
+        if (!chat || groupOfMode(chat.mode) !== 'play') throw new Error('请先打开游玩会话')
+        if (typeof args.enabled !== 'boolean') throw new Error('画像开关必须为布尔值')
+        if ((await sessionActivity(sessionId))?.busy || agentRegistry.get(sessionId)?.phase?.kind === 'running') throw new Error('请等待当前生成和后台任务完成后再切换画像')
+        const patch = await playCardSnapshots.preferenceReplacement(chat, args.enabled)
+        const saved = Object.keys(patch).length ? await updateChat(chat.id, current => {
+          if (current._storageRevision !== chat._storageRevision || Number(current.cardContextRevision || 0) !== Number(chat.cardContextRevision || 0) || current.cardContextSnapshot !== chat.cardContextSnapshot || current.userProfileEnabled !== chat.userProfileEnabled) throw new Error('当前游戏配置已变化，请刷新后重试')
+          return Object.assign(current, patch)
+        }, { source: 'user-profile.toggle-conversation' }) : chat
+        return { userProfile: presentUserPreferenceProfile(await userPreferenceProfile.read()), currentConversation: {
+          enabled: saved.userProfileEnabled === true, revision: Math.max(0, Number(saved.userProfileRevision) || 0)
+        } }
+      }
       case 'setUserPreferenceProfileDefaultEnabled': return { userProfile: presentUserPreferenceProfile(await userPreferenceProfile.setDefaultEnabled(args && args.enabled === true)) }
       case 'getCard': {
         const cardPath = normalizeResourcePath(args && args.path, 'card')
@@ -3702,7 +3717,7 @@ export async function apply(ctx) {
           confirmedRevision: { type: 'integer', required: true }
         } },
         render: function (_args, value) {
-          return [{ type: 'text', text: '用户画像已确认保存为 Profile 版本 v' + value.confirmedRevision + '。以后新开游戏时可手动启用。' }]
+          return [{ type: 'text', text: '用户画像已确认保存为 Profile 版本 v' + value.confirmedRevision + '。可在用户画像面板为当前游戏或新游戏启用。' }]
         }
       },
       async execute(args, exec) {

@@ -232,3 +232,44 @@ test('应用新版只生成背景补丁，保留历史、变量、预设和开�
   assert.equal(patch.cardContentDigest.length, 64)
   for (const key of ['messages', 'mvu', 'runtimePresetSnapshot', 'sceneOpeningWorldbook']) assert.equal(Object.hasOwn(patch, key), false)
 })
+
+test('游玩中切换画像仅修改固定前缀，保留 200 轮历史、变量与原卡背景', async () => {
+  const { Session } = await import('./fixtures/dsh-session-host.mjs')
+  const { ensureSessionStablePrefix, sessionStablePrefixSections } = await import('../tavern-plugin/lib/domain/session-stable-prefix.js')
+  let preference = { revision: 3, text: '【用户已确认的长期偏好】\n温和叙事' }
+  const snapshots = createPlayCardSnapshots({ userPreferenceProfile: { stableContext: async () => preference },
+    planner: { plan: () => { throw new Error('切换画像不得重建人物卡背景') } },
+    writeChat: () => { throw new Error('补丁不能直接写存档') } })
+  let chat = { id: 'profile-toggle', mode: 'story', cardContextSnapshotVersion: 7, cardContextSnapshot: '【故事设定 · 人物卡】\n原卡背景\n\n【常驻世界书】\n原世界书', cardContentDigest: 'old-card',
+    userProfileEnabled: false, messages: Array.from({ length: 200 }, (_, turn) => ({ turn, text: '历史' })), variables: { hp: 12 }, mvu: { enabled: true }, runtimePresetSnapshot: { id: 'preset' } }
+  const original = structuredClone(chat)
+  const session = Session.create('profile-toggle')
+  await ensureSessionStablePrefix(session, chat.cardContextSnapshot, undefined, 0)
+  const enabled = await snapshots.preferenceReplacement(chat, true)
+  assert.deepEqual(chat, original)
+  chat = { ...chat, ...enabled }
+  await ensureSessionStablePrefix(session, chat.cardContextSnapshot, undefined, chat.cardContextRevision)
+  assert.match(sessionStablePrefixSections(session).map(s => s.text).join('\n'), /温和叙事/)
+  assert.equal(chat.userProfileRevision, 3)
+  assert.equal(chat.cardContextRevision, 1)
+  assert.equal(chat.cardContentDigest, 'old-card')
+  assert.deepEqual(await snapshots.preferenceReplacement(chat, true), {}, '重复开启不破坏缓存')
+  preference = { revision: 4, text: '【用户已确认的长期偏好】\n新的偏好' }
+  const disabled = await snapshots.preferenceReplacement(chat, false)
+  chat = { ...chat, ...disabled }
+  await ensureSessionStablePrefix(session, chat.cardContextSnapshot, undefined, chat.cardContextRevision)
+  assert.equal(chat.cardContextSnapshot, original.cardContextSnapshot)
+  assert.doesNotMatch(sessionStablePrefixSections(session).map(s => s.text).join('\n'), /温和叙事|新的偏好/)
+  assert.equal(chat.userProfileRevision, 0)
+  chat = { ...chat, ...await snapshots.preferenceReplacement(chat, true) }
+  assert.equal(chat.userProfileRevision, 4)
+  assert.equal(chat.cardContextRevision, 3)
+  for (const field of ['messages', 'variables', 'mvu', 'runtimePresetSnapshot']) assert.deepEqual(chat[field], original[field])
+})
+
+test('未确认画像或快照不一致时拒绝切换，不误删人物卡背景', async () => {
+  const snapshots = createPlayCardSnapshots({ userPreferenceProfile: { stableContext: async () => null } })
+  await assert.rejects(snapshots.preferenceReplacement({ mode: 'story', cardContextSnapshot: '背景' }, true), /确认用户画像/)
+  await assert.rejects(snapshots.preferenceReplacement({ mode: 'card' }, true), /游玩会话/)
+  await assert.rejects(snapshots.preferenceReplacement({ mode: 'story', userProfileEnabled: true, cardContextSnapshot: '背景', userProfileContextSnapshot: '不匹配的偏好' }, false), /不一致/)
+})

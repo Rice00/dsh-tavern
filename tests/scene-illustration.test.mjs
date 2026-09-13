@@ -1270,3 +1270,58 @@ test('status tolerates an unsynced or removed body while image writes stay stric
   fx.chat().messages.push({ role: 'assistant', turn: 3, text: '正文同步完成。' })
   assert.equal((await fx.service.status('parent', 3)).status, 'idle')
 })
+
+test('status on a long chat does not hash every historical prefix without image references', async t => {
+  const fx = await fixture(t)
+  const chat = { ...chatFixture(), messages: Array.from({ length: 100 }, (_, i) => ({ role: 'assistant', turn: i + 1, text: '普通合成正文。'.repeat(100) })) }
+  let reads = 0
+  Object.defineProperty(chat.messages[0], 'text', { get() { reads++; return '第一轮。' } })
+  fx.deps.chatForSession = async () => chat
+  const status = await fx.service.status('parent', 100)
+  assert.equal(status.status, 'idle')
+  assert.ok(reads <= 2, `Expected one target prefix, observed ${reads} historical reads`)
+})
+
+test('concurrent illustration status reads share only an in-flight chat read', async t => {
+  const fx = await fixture(t)
+  let reads = 0, release
+  fx.deps.chatForSession = async () => { reads++; await new Promise(resolve => { release = resolve }); return structuredClone(fx.chat()) }
+  const first = fx.service.status('parent', 2), second = fx.service.status('parent', 2)
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(reads, 1, 'message mounts share the current read, not independent full chat loads')
+  release();await Promise.all([first, second])
+  fx.chat().messages[1].swipes[0] = '已修改的正文。'
+  const next = fx.service.status('parent', 2)
+  await new Promise(resolve => setImmediate(resolve));assert.equal(reads, 2)
+  release();assert.equal((await next).key, sceneTarget(fx.chat(), 2).key, 'later reads see story edits')
+})
+
+test('sparse reference status preserves branch validation without hashing unrelated turns', async t => {
+  const fx = await fixture(t)
+  const chat = { ...chatFixture(), messages: Array.from({ length: 100 }, (_, i) => ({ role: 'assistant', turn: i + 1, text: '合成正文。' })) }
+  const source = sceneTarget(chat, 2), activation = sceneTarget(chat, 3)
+  await fx.store.writeJson(imagePath + 'references.json', { version: 1, records: [{ id: 'ref', source: { ...source, versionId: 'pic' }, activation,
+    person: { id: 'alice', name: 'Alice' }, enabled: true, gateway: 'old-channel' }] })
+  let reads = 0, opening = '合成正文。'
+  Object.defineProperty(chat.messages[0], 'text', { get() { reads++; return opening } })
+  fx.deps.chatForSession = async () => chat
+  const state = await fx.service.status('parent', 2)
+  assert.deepEqual(state.reference.versions, ['pic'], 'existing references remain visible even after a channel change')
+  assert.ok(reads <= 3, `Only target, source and activation prefixes are needed; observed ${reads}`)
+  opening = '另一条剧情分支。'
+  assert.deepEqual((await fx.service.status('parent', 2)).reference.versions, [], 'edited prefixes invalidate the old branch reference')
+})
+
+test('status read coalescing cannot mix sessions or retain a rejected read', async t => {
+  const fx = await fixture(t)
+  let fail = true
+  fx.deps.chatForSession = async sessionId => {
+    if (sessionId === 'broken' && fail) throw new Error('read failed')
+    return { ...structuredClone(fx.chat()), id: sessionId }
+  }
+  const results = await Promise.allSettled([fx.service.status('broken', 2), fx.service.status('healthy', 2)])
+  assert.equal(results[0].status, 'rejected')
+  assert.equal(results[1].status, 'fulfilled')
+  fail = false
+  assert.notEqual((await fx.service.status('broken', 2)).key, results[1].value.key)
+})

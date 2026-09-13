@@ -1,4 +1,4 @@
-import { appendSystemInstruction } from './domain/system-append.js'
+import { prependSystemInstruction } from './domain/system-append.js'
 import { rewindBackgroundSurface } from './domain/background-surface.js'
 import { sessionEvents } from './domain/session-events.js'
 import { randomUUID } from 'node:crypto'
@@ -167,7 +167,7 @@ export function createBackgroundAgentTask(options) {
         const assembly = await next()
         const sections = [...(assembly.sections || []), ...sessionStablePrefixSections(_context?.agent?.session)]
         assembly.sections = state.currentWorldbook === undefined ? sections : withCurrentWorldbook(sections, state.currentWorldbook)
-        appendSystemInstruction(assembly, options.systemAppend?.())
+        prependSystemInstruction(assembly, options.systemAppend?.())
         if (state.input.task === 'phone') {
           assembly.sections = (assembly.sections || []).filter(function (section) {
             return !section || typeof section.name !== 'string' || !section.name.startsWith('tool:')

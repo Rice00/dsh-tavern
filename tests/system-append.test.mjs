@@ -13,7 +13,7 @@ test('附加指令默认空白，保存、清空和导入均可立即读取', ()
   assert.doesNotThrow(() => applyTavernSettingsPatch(settings, { systemPrompts: { 'system-append': '' } }))
 })
 
-for (const task of ['settlement', 'image']) test(task + ' 复用会话时追加最新指令且清空后移除', async () => {
+for (const task of ['settlement', 'image', 'phone']) test(task + ' 复用会话时置顶最新指令且清空后移除', async () => {
   let assemble, pending, text = '第一版'
   const seen = []
   const session = { id: task, header: {}, events: [], append(type, data) { this.events.push({ type, data }) } }
@@ -30,6 +30,6 @@ for (const task of ['settlement', 'image']) test(task + ' 复用会话时追加�
   })
   try {
     for (text of ['第一版', '第二版', '']) await runner.run({ sessionId: 'parent', persistent: true, task, selection: { provider: 'test', model: 'fake' }, messages: [], tools: [] })
-    assert.deepEqual(seen, [['原有指令', '第一版'], ['原有指令', '第二版'], ['原有指令']])
+    assert.deepEqual(seen, [['第一版', '原有指令'], ['第二版', '原有指令'], ['原有指令']])
   } finally { await runner.dispose() }
 })

@@ -1,6 +1,6 @@
 import { conversationStateAtTurn, conversationForkBoundary } from './domain/conversation-fork-point.js'
 import { createCardResponseTest } from './domain/card-response-test.js'
-import { appendSystemInstruction } from './domain/system-append.js'
+import { prependSystemInstruction } from './domain/system-append.js'
 import { createGameplayApi } from './gameplay-api.js'
 import { cardOpeningChoices } from './domain/card-openings.js'
 import { marked } from 'marked'
@@ -3598,7 +3598,7 @@ export async function apply(ctx) {
         ? withCurrentWorldbook(sessionStablePrefixSections(agent.session), (await nativeWorldBookTemplateContext(chat, await readChatCard(chat))).context)
         : sessionStablePrefixSections(agent.session)
     })
-    return appendSystemInstruction(assembled, chat ? runtimePrompt('system-append') : '')
+    return prependSystemInstruction(assembled, chat ? runtimePrompt('system-append') : '')
   })
 
   // ---------- 模型可选工具 ----------

@@ -1,3 +1,4 @@
+import { createCardResponseTest } from './domain/card-response-test.js'
 import { appendSystemInstruction } from './domain/system-append.js'
 import { createGameplayApi } from './gameplay-api.js'
 import { cardOpeningChoices } from './domain/card-openings.js'
@@ -472,6 +473,7 @@ export async function apply(ctx) {
   const cardDeletion = createCardDeletion({ resources: fileResources })
   const cardTaskPrompts = Object.freeze({
     edit: 'card-task-edit',
+    gentle: 'card-task-gentle',
     extract: 'card-task-extract',
     script: 'card-task-script',
     material: 'card-task-script',
@@ -2442,6 +2444,9 @@ export async function apply(ctx) {
     requiresBrowser: async chat => hasTavernScriptRuntime(chat, (await readCardExtensions(chat.cardPath))?.helperScripts)
   })
 
+  const cardResponseTest = createCardResponseTest({ api: gameplayApi, store: profileData, chatForSession })
+  ctx.effect(() => () => cardResponseTest.dispose())
+
   async function dispatchMethod(method, args) {
     if (method.startsWith('gameplay.')) return await gameplayApi.call(method.slice(9), args || {})
     switch (method) {
@@ -3296,7 +3301,7 @@ export async function apply(ctx) {
     })
   }
 
-  const controlledToolNames = new Set(['bash', 'pwsh', ...dshFileToolNames, 'skill', 'web_search', 'tavern_save_skill', ...cordisToolNames, 'tavern_user_profile_read', 'tavern_user_profile_save_draft', 'tavern_user_profile_confirm', 'tavern_read_card', 'tavern_read_card_raw', 'tavern_read_play_chat', 'tavern_read_script', 'tavern_recall_history', 'tavern_read_worldbook', 'tavern_update_worldbook', 'tavern_read_preset', 'tavern_update_preset', 'tavern_update_card', 'tavern_restore_card', 'tavern_validate_card'])
+  const controlledToolNames = new Set(['bash', 'pwsh', ...dshFileToolNames, 'skill', 'web_search', 'tavern_save_skill', ...cordisToolNames, 'tavern_user_profile_read', 'tavern_user_profile_save_draft', 'tavern_user_profile_confirm', 'tavern_read_card', 'tavern_read_card_raw', 'tavern_read_play_chat', 'tavern_read_script', 'tavern_recall_history', 'tavern_read_worldbook', 'tavern_update_worldbook', 'tavern_read_preset', 'tavern_update_preset', 'tavern_update_card', 'tavern_restore_card', 'tavern_validate_card', 'tavern_test_response'])
   const foregroundStrategies = createForegroundOrchestrationStrategies({
     compatibility: {
       beforeTurn: async function (input) {
@@ -3540,6 +3545,33 @@ export async function apply(ctx) {
   // ---------- 模型可选工具 ----------
   const tools = ctx.get('tools')
   if (tools !== undefined) {
+    tools.register(defineTool({
+      name: 'tavern_test_response',
+      description: '用正式游玩 API 为已保存人物卡创建独立测试存档，按保存的案例逐轮调用模型并检查拒绝信号。configure 保存案例，start 启动，status 查询（最多等待 10 秒），cancel 停止。最长 5 分钟；真实调用产生费用。不支持浏览器脚本卡。未发现拒绝不等于内容合规。',
+      parameters: {
+        action: { type: 'string', enum: ['configure', 'start', 'status', 'cancel'], required: true },
+        name: { type: 'string', description: 'configure 必填，案例名称。' },
+        caseId: { type: 'string', description: 'start 必填，configure 返回的案例 ID。' },
+        sourceCard: { type: 'string', description: 'configure 必填，库中人物卡文件名，不含 cards/。' },
+        provider: { type: 'string', description: 'configure 必填，用户指定的 provider。' },
+        model: { type: 'string', description: 'configure 必填，用户指定的模型。' },
+        reasoningEffort: { type: 'string' },
+        steps: { type: 'array', description: 'configure 必填，1 至 10 轮。首轮 input；后续可 input 或 inputFrom 二选一。candidates 表示本轮后生成候选项。', items: { type: 'object', additionalProperties: false, properties: {
+          input: { type: 'string' },
+          inputFrom: { type: 'object', additionalProperties: false, properties: { candidate: { type: 'integer', required: true }, type: { type: 'string', enum: ['action', 'scene'] } } },
+          candidates: { type: 'boolean' }
+        } } },
+        sessionId: { type: 'string', description: 'status/cancel 必填，start 返回的测试会话 ID。' }
+      },
+      output: {
+        schema: { type: 'object', additionalProperties: false, properties: { report: { type: 'string', required: true } } },
+        render: function (_args, value) { return [{ type: 'text', text: value.report }] }
+      },
+      isConcurrencySafe: function () { return false },
+      async execute(args, exec) {
+        return { report: JSON.stringify(await cardResponseTest.execute(exec?.agent?.session?.id || '', args), null, 2) }
+      }
+    }))
     tools.register(defineTool({
       name: HISTORY_RECALL_TOOL.name,
       description: HISTORY_RECALL_TOOL.description,

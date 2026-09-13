@@ -114,6 +114,7 @@ test('卡片 Agent 以极简模式工具为底座，游玩 Agent 不暴露文件
   assert.doesNotMatch(orchestratorSource, /mode === 'revision'|mode === 'extract'/)
   assert.doesNotMatch(orchestratorSource, /if \(mode === 'script'\) return \[[^\]]*'bash'/)
 	assert.match(serverSource, /controlledToolNames = new Set\(\['bash', 'pwsh', \.\.\.dshFileToolNames, 'skill', 'web_search', 'tavern_save_skill', \.\.\.cordisToolNames, 'tavern_user_profile_read'/)
+	assert.match(serverSource, /controlledToolNames = new Set\([^\n]*'tavern_test_response'/)
   assert.match(serverSource, /name: 'tavern_save_skill'/)
   assert.doesNotMatch(serverSource, /name: 'tavern_bind_script'/)
 })

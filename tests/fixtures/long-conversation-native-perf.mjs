@@ -53,11 +53,14 @@ const report={verdict:Math.max(...typing)>200||result.long.some(x=>x.duration>20
 if(process.argv.includes('--navigation')) {
  const t=Date.now();await page.getByRole('tab',{name:'轨迹',exact:true}).click();await page.locator('[data-chat-flow]').waitFor({state:'hidden'});const trajectoryMs=Date.now()-t;
  const back=Date.now();await page.getByRole('tab',{name:'对话',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('[data-chat-flow-key]').length>=900);await composer.waitFor();
+ await page.waitForFunction(()=>Array.from(CSS.highlights.values()).some(highlight=>highlight.size>0));
+ await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
  report.navigation={trajectoryMs,conversationMs:Date.now()-back};
+ if(report.navigation.conversationMs>3000)report.verdict='STALL';
 }
 await writeFile(root+`/result-${count}-${rate}-${mode}.json`,JSON.stringify(report,null,2));
 console.log(JSON.stringify(report));
 await page.screenshot({path:root+`/measure-${count}-${rate}-${mode}.png`});
 if(result.rows<900)throw new Error('The full synthetic history was not mounted');
-if(report.verdict==='STALL')throw new Error('Long conversation input/scroll exceeds the 200 ms stall budget');
+if(report.verdict==='STALL')throw new Error('Long conversation exceeds the input/scroll (200 ms) or remount (3000 ms) budget');
 }catch(e){console.log(String(e).replace(/https?:\/\/[^\s\"]+/g,'[test URL]'));process.exitCode=1}finally{await browser.close()}

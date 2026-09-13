@@ -336,7 +336,7 @@ body.dsh-tavern-shell-active [data-ref-chip="file"] { max-width: calc(100% - 4px
 .dsh-tavern-system-prompt-row .dsh-tavern-prompt-title b { overflow: visible; white-space: normal; overflow-wrap: anywhere; font-size: 14px; line-height: 1.5; }
 .dsh-tavern-system-prompt-row .dsh-tavern-prompt-title span { overflow: visible; white-space: normal; overflow-wrap: anywhere; font-size: 12px; line-height: 1.6; }
 .dsh-tavern-system-prompt-row .dsh-tavern-prompt-state { justify-self: end; font-size: 11px; }
-.dsh-tavern-system-prompt-row .dsh-tavern-prompt-state::before { display: none; }
+.dsh-tavern-system-prompt-row .dsh-tavern-prompt-state:not(.is-toggle)::before { display: none; }
 
 .dsh-tavern-prompt-state.is-toggle { position: relative; flex-shrink: 0; min-height: 32px; gap: 7px; border: 0; border-radius: 6px; padding: 4px 5px; background: transparent; font: inherit; font-weight: 600; cursor: pointer; }
 .dsh-tavern-prompt-state.is-toggle.on { color: #16766b; }

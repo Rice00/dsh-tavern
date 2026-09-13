@@ -25,7 +25,9 @@ for (const file of ['src/client/main.js', 'lib/client.js']) {
         }
         visit(tree)
         assert.equal(switches.length, 1)
-        assert.equal(switches[0].props.checked, false)
+        assert.equal(switches[0].type, 'button')
+        assert.match(switches[0].props.className, /is-toggle/)
+        assert.equal(switches[0].props['aria-checked'], false)
       }
       assert.doesNotMatch(JSON.stringify(tree), /应用到当前游戏/)
     }

@@ -474,7 +474,6 @@ export async function apply(ctx) {
   const cardDeletion = createCardDeletion({ resources: fileResources })
   const cardTaskPrompts = Object.freeze({
     edit: 'card-task-edit',
-    gentle: 'card-task-gentle',
     extract: 'card-task-extract',
     script: 'card-task-script',
     material: 'card-task-script',

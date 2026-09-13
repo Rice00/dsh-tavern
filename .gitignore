@@ -33,3 +33,6 @@ docs/research/sillytavern-successful-prompt-snapshot-*.json
 
 # Local installation context (host and isolated home)
 .dsh-tavern-local.json
+
+# 本地私人测试案例
+/testsets/002-duan-yingying-three-continues/

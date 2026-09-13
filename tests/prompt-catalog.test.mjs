@@ -16,7 +16,6 @@ const names = [
   'story-compaction',
   'card-mode-greeting',
   'card-task-edit',
-  'card-task-gentle',
   'card-task-extract',
   'card-task-script',
   'card-task-worldbook',

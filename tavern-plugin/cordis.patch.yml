@@ -46,4 +46,5 @@
         - sandboxPolicy
         - shell
         - agentPresets
+        - settings
         - tokenMeter

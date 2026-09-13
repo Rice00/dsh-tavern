@@ -1,3 +1,4 @@
+import { clearLegacyTavernDefault } from './domain/legacy-agent-default.js'
 import { conversationStateAtTurn, conversationForkBoundary } from './domain/conversation-fork-point.js'
 import { createCardResponseTest } from './domain/card-response-test.js'
 import { prependSystemInstruction } from './domain/system-append.js'
@@ -140,6 +141,7 @@ import { prompt, SYSTEM_PROMPT_DEFINITIONS, SYSTEM_PROMPT_NAMES } from './prompt
 // RPC：同源 HTTP 路由 /api/dsh-tavern/<method>（客户端 fetch 调用）
 // DSH 生命周期负责回合状态；模型工具只处理按需读取和明确修改。
 export async function apply(ctx) {
+  await clearLegacyTavernDefault(ctx.get('settings'))
   const llm = ctx.get('llm')
   const agentRegistry = ctx.get('agents')
   const sessionStore = ctx.get('sessions')

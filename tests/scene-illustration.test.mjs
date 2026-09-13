@@ -1325,3 +1325,21 @@ test('status read coalescing cannot mix sessions or retain a rejected read', asy
   fail = false
   assert.notEqual((await fx.service.status('broken', 2)).key, results[1].value.key)
 })
+
+test('deleting the last image permits a fresh generation without replaying the deleted request', async t => {
+  const fx = await fixture(t)
+  const before = structuredClone(fx.chat()), key = sceneTarget(fx.chat(), 2).key
+  await fx.service.start('parent', 2, key, { requestId: 'original-image-request' })
+  const first = await until(async () => { const state = await fx.service.status('parent', 2); return state.status === 'succeeded' && state })
+  const removed = await fx.service.removeImage('parent', 2, key, first.versions[0].id)
+  assert.equal(removed.status, 'idle'); assert.equal(removed.hasDeletedImages, true); assert.deepEqual(removed.versions, [])
+  await assert.rejects(fx.service.readImage('parent', 2, key, first.versions[0].id), /已删除/)
+  const restarted = fx.createService()
+  assert.equal((await restarted.status('parent', 2)).hasDeletedImages, true)
+  await restarted.start('parent', 2, key, { requestId: 'original-image-request' })
+  assert.equal(fx.imageCalls(), 1)
+  await restarted.start('parent', 2, key, { requestId: 'replacement-image-request' })
+  const next = await until(async () => { const state = await restarted.status('parent', 2); return state.status === 'succeeded' && state })
+  assert.equal(next.versions.length, 1); assert.notEqual(next.versions[0].id, first.versions[0].id)
+  assert.equal(fx.imageCalls(), 2); assert.deepEqual(fx.chat(), before)
+})

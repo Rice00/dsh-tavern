@@ -2203,3 +2203,25 @@ test('trusted parent toastr survives a card forwarding its local toastr to paren
   release()
   assert.equal(Object.hasOwn(host, 'toastr'), false)
 })
+
+test('Helper 增量不遍历未变历史，替换、追加与截断保留旧状态', () => {
+  const untouched = { message_id: 0, get variables() { throw new Error('不应读取未变历史变量') } }
+  const previous = { stateRevision: 1, messages: [untouched, { variables: { hp: 10 } }], chatVariables: { location: 'old' } }
+  const value = { variables: { hp: 9 } }
+  const appended = { variables: { hp: 8 } }
+  const patch = { version: 1, kind: 'patch', baseRevision: 1, stateRevision: 2, operations: [
+    { op: 'message.replace', index: 1, value }, { op: 'messages.append', values: [appended] },
+    { op: 'value.replace', key: 'chatVariables', value: { location: 'new' } }
+  ] }
+  const next = client.applyTavernHelperContextUpdate(previous, patch).context
+  assert.equal(next.messages[0], untouched)
+  assert.equal(previous.messages.length, 2)
+  assert.equal(previous.messages[1].variables.hp, 10)
+  assert.equal(previous.chatVariables.location, 'old')
+  value.variables.hp = 0; appended.variables.hp = 0
+  assert.equal(next.messages[1].variables.hp, 9)
+  assert.equal(next.messages[2].variables.hp, 8)
+  const truncated = client.applyTavernHelperContextUpdate(next, { version: 1, kind: 'patch', baseRevision: 2, stateRevision: 3, operations: [{ op: 'messages.truncate', length: 1 }] }).context
+  assert.equal(truncated.messages.length, 1)
+  assert.equal(next.messages.length, 3)
+})

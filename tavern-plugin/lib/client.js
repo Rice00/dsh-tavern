@@ -4986,8 +4986,9 @@ window.__ModuleLoader__.load({
 			if (update.kind === "snapshot") return { context: clone(update.context || {}), turn: Math.max(0, Number(update.turn) || 0), events: Array.isArray(update.events) ? update.events.slice() : [] };
 			const before = previous && typeof previous === "object" ? previous : {};
 			if (update.kind !== "patch" || Math.max(0, Number(before.stateRevision) || 0) !== Math.max(0, Number(update.baseRevision) || 0)) throw new Error("Helper Context 版本失配");
-			const context = clone(before);
-			if (!Array.isArray(context.messages)) context.messages = [];
+			// Patch operations replace complete messages/values; untouched history stays shared.
+			// Copy the envelope and message list so append/truncate never mutate the prior view.
+			const context = Object.assign({}, before, { messages: Array.isArray(before.messages) ? before.messages.slice() : [] });
 			for (const operation of Array.isArray(update.operations) ? update.operations : []) {
 				if (operation.op === "message.replace") context.messages[Math.max(0, Number(operation.index) || 0)] = clone(operation.value);
 				else if (operation.op === "messages.append") context.messages.push(...clone(Array.isArray(operation.values) ? operation.values : []));

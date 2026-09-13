@@ -3,8 +3,10 @@ export function createPerformanceDiagnostics() {
   const methods = new Map()
   const slow = []
   let browser = null
+  let http = null
   const openings = []
   return {
+    http(snapshot) { http = structuredClone(snapshot) },
     opening(value) {
       if (!value || !['resources', 'readCard', 'readExtensions', 'preview', 'prepare'].includes(value.stage)) return
       const row = { at: Date.now(), stage: value.stage }
@@ -37,6 +39,7 @@ export function createPerformanceDiagnostics() {
     },
     read() {
       return { version: 1, scope: 'server-process-and-last-reporting-browser', resetsOnRestart: true,
+        ...(http ? { http: structuredClone(http) } : {}),
         ...(openings.length ? { openings: openings.map(row => ({ ...row })) } : {}),
         slowThresholdMs: 1000, browserLongTaskThresholdMs: 100, browser: browser && { ...browser },
         methods: [...methods].map(([method, row]) => ({ method, count: row.count, averageMs: Math.round(row.totalMs / row.count), maxMs: row.maxMs, slowCount: row.slowCount })),

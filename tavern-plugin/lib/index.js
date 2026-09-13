@@ -9,6 +9,7 @@ import { presentModelError } from './domain/model-error-presentation.js'
 import { validateCardFile } from './domain/card-validation.js'
 import { resolveAgentCompaction } from './agent-compaction.js'
 import { createAutoCompaction, installCompactionPolicy } from './domain/auto-compaction.js'
+import { observeHttpRequests } from './domain/http-performance-diagnostics.js'
 import { createPerformanceDiagnostics } from './domain/performance-diagnostics.js'
 import { backgroundSuppressedTurns } from './domain/background-surface.js'
 import { ensureCardWorkspaceMessage } from './domain/card-workspace-message.js'
@@ -2878,6 +2879,7 @@ export async function apply(ctx) {
 
   const webServer = ctx.get('webServer')
   if (webServer !== undefined) {
+    ctx.effect(() => observeHttpRequests(webServer.server, snapshot => performanceDiagnostics.http(snapshot)))
     // Fixed SillyTavern compatibility version for card-script feature probes.
     ctx.effect(() => {
       return webServer.register({

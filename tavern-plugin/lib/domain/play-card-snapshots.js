@@ -93,5 +93,28 @@ export function createPlayCardSnapshots({ worldBooks, planner, readCard, writeCh
     return { ...patch, cardContextRevision: (Number(chat.cardContextRevision) || 0) + 1 }
   }
 
-  return Object.freeze({ prepare, ensure, constantContext, replacement })
+  async function preferenceReplacement(chat, enabled) {
+    if (!usesFixedContext(chat) || chat.mode === 'card') throw new Error('仅支持游玩会话')
+    if (typeof enabled !== 'boolean') throw new Error('画像开关必须为布尔值')
+    if ((chat.userProfileEnabled === true) === enabled) return {}
+    const preference = enabled ? await userPreferenceProfile?.stableContext() : null
+    if (enabled && !preference) throw new Error('请先建立并确认用户画像')
+    let base = str(chat.cardContextSnapshot)
+    if (!base) throw new Error('当前游戏缺少人物卡快照，请先恢复会话后重试')
+    const previous = sanitizeAgentProjectionText(str(chat.userProfileContextSnapshot))
+    if (previous) {
+      if (base === previous) base = ''
+      else if (base.startsWith(previous + '\n\n')) base = base.slice(previous.length + 2)
+      else throw new Error('当前画像与提示词快照不一致，未修改游戏')
+    }
+    return {
+      userProfileEnabled: enabled,
+      userProfileRevision: preference?.revision || 0,
+      userProfileContextSnapshot: preference?.text || '',
+      cardContextSnapshot: sanitizeAgentProjectionText([preference?.text, base].filter(Boolean).join('\n\n')),
+      cardContextRevision: (Number(chat.cardContextRevision) || 0) + 1
+    }
+  }
+
+  return Object.freeze({ prepare, ensure, constantContext, replacement, preferenceReplacement })
 }

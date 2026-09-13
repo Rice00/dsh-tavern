@@ -20,10 +20,11 @@ try {
   process.exit(1)
 }
 
-const tests = readdirSync(path.join(SOURCE_ROOT, 'tests'))
-  .filter(name => name.endsWith('.test.mjs'))
-  .sort()
-  .map(name => path.join(SOURCE_ROOT, 'tests', name))
+const tests = ['tests', 'testsets/tests'].flatMap(directory =>
+  readdirSync(path.join(SOURCE_ROOT, directory))
+    .filter(name => name.endsWith('.test.mjs'))
+    .sort()
+    .map(name => path.join(SOURCE_ROOT, directory, name)))
 const result = spawnSync(process.execPath, ['--test', ...tests], {
   cwd: SOURCE_ROOT,
   env: { ...process.env, DSH_BOOT_MODULE: boot },

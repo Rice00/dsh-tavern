@@ -7,7 +7,7 @@ function object(value) {
 
 function promptOverride(document, name) {
   const value = object(document.promptOverrides)[name]
-  return typeof value === 'string' && value.trim() !== '' ? value : null
+  return typeof value === 'string' && (value.trim() !== '' || name === 'system-append') ? value : null
 }
 
 export function normalizeBackgroundTasks(value) {
@@ -41,7 +41,7 @@ export function applyTavernSettingsPatch(current, patch) {
     if (promptChange.text === null) {
       delete overrides[name]
     } else {
-      if (typeof promptChange.text !== 'string' || promptChange.text.trim() === '') throw new Error('系统提示词不能为空')
+      if (typeof promptChange.text !== 'string' || (promptChange.text.trim() === '' && name !== 'system-append')) throw new Error('系统提示词不能为空')
       if (promptChange.text.length > 100000) throw new Error('系统提示词不能超过 100000 字符')
       overrides[name] = promptChange.text.trim()
     }
@@ -52,7 +52,7 @@ export function applyTavernSettingsPatch(current, patch) {
     const values = object(input.systemPrompts)
     const overrides = Object.assign({}, object(next.promptOverrides))
     for (const [name, value] of Object.entries(values)) {
-      if (typeof value !== 'string' || value.trim() === '') throw new Error('系统提示词不能为空: ' + name)
+      if (typeof value !== 'string' || (value.trim() === '' && name !== 'system-append' && name !== 'card-system')) throw new Error('系统提示词不能为空: ' + name)
       if (value.length > 100000) throw new Error('系统提示词不能超过 100000 字符: ' + name)
       overrides[name] = value.trim()
     }

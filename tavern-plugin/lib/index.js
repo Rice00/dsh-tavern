@@ -1,3 +1,5 @@
+import { appendSystemInstruction } from './domain/system-append.js'
+import { createGameplayApi } from './gameplay-api.js'
 import { cardOpeningChoices } from './domain/card-openings.js'
 import { marked } from 'marked'
 import { presentModelError } from './domain/model-error-presentation.js'
@@ -241,7 +243,8 @@ export async function apply(ctx) {
     const source = document.prompts && typeof document.prompts === 'object' && !Array.isArray(document.prompts) ? document.prompts : {}
     const values = {}
     for (const name of SYSTEM_PROMPT_NAMES) {
-      if (typeof source[name] !== 'string' || source[name].trim() === '') throw new Error('系统提示词文件缺少有效内容: ' + name)
+      if (name === 'system-append' && source[name] === undefined) continue
+      if (typeof source[name] !== 'string' || (source[name].trim() === '' && name !== 'system-append' && name !== 'card-system')) throw new Error('系统提示词文件缺少有效内容: ' + name)
       values[name] = source[name]
     }
     return values
@@ -1500,6 +1503,7 @@ export async function apply(ctx) {
   }
   const runtimePresetSnapshots = new Map()
   const backgroundAgentRunner = createBackgroundAgentRunner({
+    systemAppend: () => runtimePrompt('system-append'),
     resolveWebSearch: async () => (await readTavernSettings()).webSearchEnabled === true,
     resolveBackgroundTasks: async () => normalizeBackgroundTasks((await readTavernSettings()).backgroundTasks),
     backgroundTools: [POSTURE_SUBMIT_TOOL, CHARACTER_DESIGN_READ_TOOL, CHARACTER_DESIGN_SAVE_TOOL, MVU_SUBMIT_UPDATE_TOOL, CANDIDATE_SUBMIT_TOOL, SCRIPT_READ_TOOL, SCRIPT_POINT_TOOL],
@@ -2424,7 +2428,22 @@ export async function apply(ctx) {
     finally { performanceDiagnostics.record(method, performance.now() - started) }
   }
 
+  const gameplayApi = createGameplayApi({
+    controller: () => ctx.get('sessionController'), registry: agentRegistry, llm, dataRoot,
+    store: profileData, dispatch: (method, args) => dispatchMethod(method, args),
+    chatForSession, listCards,
+    requests: async chat => (await modelRequestLog.evidence(chat.id)).requests,
+    native: async id => {
+      const live = sessionDebugEvidence(id)
+      if (live.loaded) return live.events
+      const handle = await agentRegistry.resume({ resumeSessionId: id })
+      try { return sessionEvents(handle.agent.session) } finally { await handle.dispose() }
+    },
+    requiresBrowser: async chat => hasTavernScriptRuntime(chat, (await readCardExtensions(chat.cardPath))?.helperScripts)
+  })
+
   async function dispatchMethod(method, args) {
+    if (method.startsWith('gameplay.')) return await gameplayApi.call(method.slice(9), args || {})
     switch (method) {
       case 'listCards': return { cards: await listCards() }
       case 'getUpdateStatus': return { status: await applicationUpdater.status() }
@@ -2817,6 +2836,10 @@ export async function apply(ctx) {
         const readsRuntimeAsset = req.method === 'GET' && pathname.startsWith(TAVERN_RUNTIME_ASSET_PREFIX)
         const readsClientAsset = req.method === 'GET' && pathname.startsWith(TAVERN_CLIENT_ASSET_PREFIX)
         const origin = req.headers.origin
+        const gameplayRoute = pathname.startsWith('/api/dsh-tavern/gameplay.')
+        if (gameplayRoute && origin && origin !== 'http://' + req.headers.host && origin !== 'https://' + req.headers.host) {
+          res.writeHead(403); res.end('forbidden'); return
+        }
         const sceneImageRoute = TAVERN_RELEASE_CAPABILITIES.sceneImages && /^\/api\/dsh-tavern\/(?:scene-image|getSceneImageSettings|saveSceneImageSettings|testSceneImageConnection|listSceneImageModels|sceneImageStatus|recordSceneImageInteraction|generateSceneImage|retrySceneImageSave|cancelSceneImage|removeSceneImage|setSceneImageReference)$/.test(pathname)
         const sceneSameOrigin = sceneImageRoute && (origin === 'http://' + req.headers.host || origin === 'https://' + req.headers.host)
         if (sceneImageRoute && origin && !sceneSameOrigin) {
@@ -2966,6 +2989,7 @@ export async function apply(ctx) {
           for await (const chunk of req) {
             const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
             bodyBytes += bytes.length
+            if (gameplayRoute && bodyBytes > 2 * 1024 * 1024) throw new Error('游戏 API 请求超过 2 MB')
             if (sceneImageRoute && bodyBytes > sceneImageBodyLimit) {
               throw new Error(method === 'saveSceneImageSettings'
                 ? '无法保存生图配置：工作流与配置数据超过当前 2 MB 请求大小限制。请精简工作流后重试；这不是图片尺寸或显存不足。'
@@ -3501,7 +3525,7 @@ export async function apply(ctx) {
     let workspaceProjection = null
     try { workspaceProjection = await publishResourceWorkspace(agent.session.id, chat) }
     catch { console.error('dsh-tavern: 资源工作区投影刷新失败，继续使用现有资源文件') }
-    return await foregroundStrategies.assembleSystemPrompt(assembly, {
+    const assembled = await foregroundStrategies.assembleSystemPrompt(assembly, {
       sessionId: agent.session.id,
       chat,
       cwd: agent.session.header && agent.session.header.cwd,
@@ -3510,6 +3534,7 @@ export async function apply(ctx) {
         ? withCurrentWorldbook(sessionStablePrefixSections(agent.session), (await nativeWorldBookTemplateContext(chat, await readChatCard(chat))).context)
         : sessionStablePrefixSections(agent.session)
     })
+    return appendSystemInstruction(assembled, chat ? runtimePrompt('system-append') : '')
   })
 
   // ---------- 模型可选工具 ----------

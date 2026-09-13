@@ -8,7 +8,7 @@ window.__ModuleLoader__.load({
 			let DshUi = require("@deepseek-ai/dsh-client-ui-primitives");
 
 		const stylesheetId = "dsh-tavern-plugin/tavern.css";
-		const stylesheetUrl = "/api/dsh-tavern/client-assets/tavern.css?v=20260912-system-prompts";
+		const stylesheetUrl = "/api/dsh-tavern/client-assets/tavern.css?v=20260913-landing-performance";
 		if (typeof document !== "undefined") {
 			const existing = document.querySelector("link[data-plugin-css=" + JSON.stringify(stylesheetId) + "]");
 			if (existing && existing.getAttribute("href") !== stylesheetUrl) existing.setAttribute("href", stylesheetUrl);
@@ -1331,6 +1331,7 @@ window.__ModuleLoader__.load({
 
 		// @include opening-preview.js
 		// @include legacy-composer.js
+		// @include landing-styles.js
 		// @include subagent-catalog-sync.js
 
 		// @include text-colors.js
@@ -5900,7 +5901,8 @@ window.__ModuleLoader__.load({
 			const uiConversation = ctx.get("uiConversation") || ctx.get("conversation");
 			ctx.effect(function () {
 				document.body.classList.add("dsh-tavern-shell-active");
-				return function () { document.body.classList.remove("dsh-tavern-shell-active"); };
+				const releaseLandingStyles = installTavernLandingStyles(document);
+				return function () { releaseLandingStyles(); document.body.classList.remove("dsh-tavern-shell-active"); };
 			}, "dsh-tavern: shell marker");
 			ctx.effect(() => slots.inject("sidebar.workspaces", () => slots.register(
 				{ name: "sidebar.workspaces", priority: -1 },
@@ -7966,7 +7968,8 @@ window.__ModuleLoader__.load({
 					finally { setBusy(false); }
 				}
 				return React.createElement(React.Fragment, null,
-					React.createElement("style", null, 'body:has([data-tavern-log-export]) button[class*="_sessionLogButton"]{display:none!important}.dsh-tavern-log-export{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--dsw-alias-border-l2);border-radius:18px;background:transparent;color:var(--dsw-alias-label-primary);padding:6px 12px;height:32px;font:inherit;font-size:13px;cursor:pointer}.dsh-tavern-log-export:disabled{cursor:wait;opacity:.6}'),
+					// This stylesheet is mounted only while the Tavern export action exists.
+					React.createElement("style", null, 'button[class*="_sessionLogButton"]{display:none!important}.dsh-tavern-log-export{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--dsw-alias-border-l2);border-radius:18px;background:transparent;color:var(--dsw-alias-label-primary);padding:6px 12px;height:32px;font:inherit;font-size:13px;cursor:pointer}.dsh-tavern-log-export:disabled{cursor:wait;opacity:.6}'),
 					React.createElement("button", { className: "dsh-tavern-log-export", "data-tavern-log-export": "", disabled: busy, "aria-label": "日志", "aria-busy": busy, title: "下载 Session、MVU、生图与更新日志；含私人剧情，分享前请检查隐私", onClick: exportLogs }, "日志",
 						React.createElement("svg", { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true }, React.createElement("path", { d: "M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4" }))),
 					React.createElement("button", { className: "dsh-tavern-export-action", disabled: busy, title: "导出只包含玩家与角色正文的 TXT", onClick: exportText }, "纯对话 TXT ↓"));

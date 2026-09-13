@@ -213,7 +213,7 @@ test('酒馆 Shell Feature module 封装工作区入口并只暴露注册 interf
 test('品牌首页只匹配没有会话的 hero，空白任务和已有对话保留输入框', async () => {
   const source = await readFile(new URL('../tavern-plugin/lib/client.js', import.meta.url), 'utf8')
   const css = await readFile(new URL('../tavern-plugin/lib/client-assets/tavern.css', import.meta.url), 'utf8')
-  const selector = 'body.dsh-tavern-shell-active [data-phase="hero"]:has([data-composer-seat]):not(:has(> [data-slot="conversation.session.header"]))'
+  const selector = 'body.dsh-tavern-shell-active .dsh-tavern-landing'
   assert.ok(css.includes(selector + ' > * { display: none !important; }'))
   assert.ok(css.includes(selector + '::before { content: "🍺 DSH Tavern";'))
   assert.doesNotMatch(source, /mountTavernHomePlaceholder|dsh-tavern: home placeholder/)
@@ -237,7 +237,7 @@ test('游玩历史菜单不重复提供分叉入口', async () => {
 test('首页选择器行只在 Tavern hero 隐藏，不更改宿主预设和工作区逻辑', async () => {
   const source = await readFile(new URL('../tavern-plugin/lib/client.js', import.meta.url), 'utf8')
   const css = await readFile(new URL('../tavern-plugin/lib/client-assets/tavern.css', import.meta.url), 'utf8')
-  assert.ok(css.includes('body.dsh-tavern-shell-active [data-phase="hero"] div:has(> [data-slot="conversation.hero.agentPreset"]) { display: none !important; }'))
+  assert.ok(css.includes('body.dsh-tavern-shell-active .dsh-tavern-hero-preset-row { display: none !important; }'))
   assert.match(source, /const agentPreset = "tavern"/)
   assert.match(source, /props\.workspaces\.create\(\{ path: resourceRoot\.path \}\)/)
 })

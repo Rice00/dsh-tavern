@@ -4724,19 +4724,28 @@ window.__ModuleLoader__.load({
 					finally { setBusy(false); notify(); }
 				}
 				async function generate(kind) {
-				const reusable = requestRef.current && !(state && requestRef.current.id === state.requestId && ["failed", "cancelled"].includes(state.status));
+				const reusable = requestRef.current && !(state && requestRef.current.id === state.requestId && ["failed", "cancelled", "idle"].includes(state.status));
 				const clickId = reusable && requestRef.current.signature === kind + ":" + (version && version.id) + ":" + instruction ? requestRef.current.id : sceneImageRequestId();
 				recordImageInteraction(props.sessionId, props.turn, clickId, "click");
-					if (!version || busy || state.status === "running") { recordImageInteraction(props.sessionId, props.turn, clickId, "blocked", "busy-or-existing"); return; }
+					if ((!version && kind !== "generate") || busy || state.status === "running" || state.recovery === "save") { recordImageInteraction(props.sessionId, props.turn, clickId, "blocked", "busy-or-existing"); return; }
 					const confirmNewRequestId = sceneImagePurchaseConfirmation(state);
 					if (confirmNewRequestId === false) { recordImageInteraction(props.sessionId, props.turn, clickId, "cancelled", "confirmation"); return; }
-					if (requestRef.current && requestRef.current.id === state.requestId && ["failed", "cancelled"].includes(state.status)) requestRef.current = null;
+					if (requestRef.current && requestRef.current.id === state.requestId && ["failed", "cancelled", "idle"].includes(state.status)) requestRef.current = null;
 					setBusy(true); setError("");
-					const signature = kind + ":" + version.id + ":" + instruction;
+					const signature = kind + ":" + (version && version.id) + ":" + instruction;
 					if (!requestRef.current || requestRef.current.signature !== signature) requestRef.current = { signature: signature, id: clickId };
 					try {
-						await rpc("generateSceneImage", { turn: props.turn, key: state.key, kind: kind, versionId: version.id, instruction: kind === "adjust" ? instruction : "", requestId: requestRef.current.id, confirmNewRequestId: confirmNewRequestId }, props.sessionId);
+						await rpc("generateSceneImage", { turn: props.turn, key: state.key, kind: kind, versionId: version && version.id, instruction: kind === "adjust" ? instruction : "", requestId: requestRef.current.id, confirmNewRequestId: confirmNewRequestId }, props.sessionId);
 						requestRef.current = null; setAdjusting(false); setInstruction("");
+					} catch (e) { setError(String(e.message || e)); }
+					finally { setBusy(false); notify(); }
+				}
+				async function removeImage() {
+					if (!version || locked || !window.confirm("删除这张图片？删除后可以重新生成。")) return;
+					setBusy(true); setError("");
+					try {
+						await rpc("removeSceneImage", { turn: props.turn, key: state.key, versionId: version.id }, props.sessionId);
+						setSelected(""); setAdjusting(false); setReferenceDraft(null); setInstruction(""); requestRef.current = null;
 					} catch (e) { setError(String(e.message || e)); }
 					finally { setBusy(false); notify(); }
 				}
@@ -4753,7 +4762,7 @@ window.__ModuleLoader__.load({
 					finally { setBusy(false); notify(); }
 				}
 				const url = version ? "/api/dsh-tavern/scene-image?" + new URLSearchParams({ sessionId: props.sessionId, turn: String(props.turn), key: state.key, versionId: version.id }).toString() : "";
-				if (!state || state.status === "idle") return null;
+				if (!state || state.status === "idle" && !state.hasDeletedImages) return null;
 				const locked = busy || state.status === "running" || state.recovery === "save";
 				const referencePeople = version && version.referencePeople || [];
 				const referenceBindings = state.reference && state.reference.bindings ? state.reference.bindings.filter(function (binding) { return version && binding.versionId === version.id; }) : [];
@@ -4762,6 +4771,7 @@ window.__ModuleLoader__.load({
 				return React.createElement("div", { className: "dsh-tavern-illustration" },
 					url ? React.createElement("a", { href: url, "aria-label": "放大场景插画", onClick: function (event) { event.preventDefault(); openSceneImagePreview(url, event.currentTarget); } }, React.createElement("img", { src: url, alt: "本段场景插画", loading: "lazy", onError: function () { setError("图片加载失败，请刷新后重试"); } })) : null,
 					version ? React.createElement("div", { className: "dsh-tavern-image-actions" },
+						React.createElement("button", { type: "button", className: "dsh-tavern-btn", disabled: locked, onClick: removeImage }, "删除图片"),
 						versions.length > 1 ? React.createElement(React.Fragment, null,
 							React.createElement("button", { type: "button", className: "dsh-tavern-btn", "aria-label": "上一张插图", disabled: index <= 0, onClick: function () { setSelected(versions[index - 1].id); } }, "‹"),
 							React.createElement("span", null, String(index + 1) + " / " + String(versions.length)),
@@ -4771,6 +4781,7 @@ window.__ModuleLoader__.load({
 							React.createElement("button", { type: "button", className: "dsh-tavern-btn", disabled: locked, onClick: function () { setAdjusting(true); } }, "重画")
 						) : null
 					) : null,
+					!version && state.hasDeletedImages && state.enabled ? React.createElement("button", { type: "button", className: "dsh-tavern-btn", disabled: locked, onClick: function () { return generate("generate"); } }, "重新生图") : null,
 					canBindReference || referenceBindings.length ? React.createElement("button", { type: "button", className: "dsh-tavern-btn", disabled: locked, onClick: openReference }, referenceBindings.length ? "管理造型参考" : "用作造型参考") : null,
 					version && state.enabled && version.profile && version.profile !== state.profile ? React.createElement("span", { role: "status" }, "将按新渠道重新整理画面，可能产生文字模型费用。") : null,
 					state.referenceWarning || state.reference && state.reference.warning ? React.createElement("span", { role: "status" }, state.referenceWarning || state.reference.warning) : null,
@@ -6000,13 +6011,13 @@ window.__ModuleLoader__.load({
 				return function () { active = false; window.clearInterval(timer); window.removeEventListener("dsh-tavern-image-settings-changed", refresh); window.removeEventListener("focus", refresh); };
 			}, []);
 			async function generate() {
-				const reusable = requestRef.current && !(state && requestRef.current.id === state.requestId && ["failed", "cancelled"].includes(state.status));
+				const reusable = requestRef.current && !(state && requestRef.current.id === state.requestId && ["failed", "cancelled", "idle"].includes(state.status));
 				const clickId = reusable && state && requestRef.current.key === state.key ? requestRef.current.id : sceneImageRequestId();
 				recordImageInteraction(props.sessionId, props.turn, clickId, "click");
 				if (!settings || !settings.enabled || !settings.ready || settings.migrationPending || !state || !state.key || busy || props.running || state.status === "running" || state.recovery === "save" || state.versions && state.versions.length) { recordImageInteraction(props.sessionId, props.turn, clickId, "blocked", "not-ready"); return; }
 				const confirmNewRequestId = sceneImagePurchaseConfirmation(state);
 				if (confirmNewRequestId === false) { recordImageInteraction(props.sessionId, props.turn, clickId, "cancelled", "confirmation"); return; }
-				if (requestRef.current && requestRef.current.id === state.requestId && ["failed", "cancelled"].includes(state.status)) requestRef.current = null;
+				if (requestRef.current && requestRef.current.id === state.requestId && ["failed", "cancelled", "idle"].includes(state.status)) requestRef.current = null;
 				setBusy(true); setError("");
 				if (!requestRef.current || requestRef.current.key !== state.key) requestRef.current = { key: state.key, id: clickId };
 				try { await rpc("generateSceneImage", { turn: props.turn, key: state.key, requestId: requestRef.current.id, confirmNewRequestId: confirmNewRequestId }, props.sessionId); requestRef.current = null; }

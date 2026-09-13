@@ -1,3 +1,4 @@
+import { conversationStateAtTurn, conversationForkBoundary } from './domain/conversation-fork-point.js'
 import { createCardResponseTest } from './domain/card-response-test.js'
 import { appendSystemInstruction } from './domain/system-append.js'
 import { createGameplayApi } from './gameplay-api.js'
@@ -1209,6 +1210,16 @@ export async function apply(ctx) {
     const liveSession = sessionStore.get(str(chat.sessionId)) || agentRegistry.get(str(chat.sessionId))?.session
     const latestAssistant = latestStoryTurn > 0 ? assistantResultForTurn(liveSession, latestStoryTurn) : null
     const latestAssistantMessageId = str(latestAssistant?.event?.data?.message?.id)
+    const forkTurnsByMessageId = {}
+    const visibleTurns = new Set(debugTurns.map(item => item.turn))
+    const messagesByTurn = new Map()
+    for (const event of sessionEvents(liveSession)) {
+      const turn = Number(event.data?.turn)
+      if (!visibleTurns.has(turn)) continue
+      if (event.type === 'turn/start') messagesByTurn.delete(turn)
+      if (event.type === 'assistant/message' && event.data?.message?.source?.kind === 'model') messagesByTurn.set(turn, event.data.message.id)
+    }
+    for (const [turn, messageId] of messagesByTurn) if (messageId) forkTurnsByMessageId[messageId] = turn
     const inputSources = {}
     const runtimeInputs = chat.runtimeInputs && typeof chat.runtimeInputs === 'object' ? chat.runtimeInputs : {}
     for (const turn of Object.keys(runtimeInputs)) {
@@ -1255,6 +1266,7 @@ export async function apply(ctx) {
       guides: Array.isArray(chat.guides) ? chat.guides : [],
       debugTurns: debugTurns.slice(-12).reverse(),
       latestAssistantMessageId,
+      forkTurnsByMessageId,
       latestAssistantTurn: latestStoryTurn,
       inputSources,
       canRollback: hasRollbackMessages(chat.messages),
@@ -1488,21 +1500,33 @@ export async function apply(ctx) {
       flush: session => sessionStore.flush(session)
     }
   })
-  async function forkChat(sourceChatId, sourceSessionId, targetSessionId, requestedTurn) {
+  async function prepareConversationFork(sourceChatId, sourceSessionId, requestedTurn) {
     const source = str(sourceChatId) === '' ? await chatForSession(str(sourceSessionId)) : await readChat(str(sourceChatId))
-    if (source === undefined) throw new Error('找不到要分叉的源对话')
-    const sourceAgent = agentRegistry.get(str(source.sessionId))
-    assertConversationForkable(source, { agentRunning: sourceAgent?.phase?.kind === 'running' })
+    if (!source) throw new Error('找不到要分叉的源对话')
+    assertConversationForkable(source, { agentRunning: agentRegistry.get(source.sessionId)?.phase?.kind === 'running' })
+    const { state, turn } = await conversationStateAtTurn(source, requestedTurn, readChatRevision)
+    let handle
+    let session = sessionStore.get(source.sessionId) || agentRegistry.get(source.sessionId)?.session
+    if (!session) { handle = await agentRegistry.resume({ resumeSessionId: source.sessionId }); session = handle.agent.session }
+    try {
+      return { source, state, turn, atSeq: conversationForkBoundary(session, state, turn) }
+    } finally { if (handle) await handle.dispose() }
+  }
+  async function forkChat(sourceChatId, sourceSessionId, targetSessionId, requestedTurn, expectedRevision, expectedAtSeq) {
+    const { source, state, turn, atSeq } = await prepareConversationFork(sourceChatId, sourceSessionId, requestedTurn)
+    if (expectedRevision !== source._storageRevision || expectedAtSeq !== atSeq) throw new Error('源对话已变化，请重新选择分叉回合')
     const targetId = str(targetSessionId)
     if (targetId === '' || await chatForSession(targetId) !== undefined) throw new Error('分叉目标必须是尚未绑定对话的新 Session')
-    const sourceTurn = [...(Array.isArray(source.messages) ? source.messages : [])].reverse().find(message => message && message.role === 'assistant')
-    const latestTurn = Math.max(0, Number(sourceTurn?.turn || (sourceTurn?.greeting ? 1 : 0)) || 0)
-    const turn = Math.max(0, Number(requestedTurn) || 0)
-    if (turn > 0 && turn !== latestTurn) throw new Error('暂只能从当前最新的已提交进度分叉')
-    const fork = forkConversationChat(source, { chatId: uid('chat'), sessionId: targetId, id: uid, now: Date.now })
+    const target = sessionStore.get(targetId) || agentRegistry.get(targetId)?.session
+    const targetEnd = sessionEvents(target).findLast(event => event.type === 'turn/end')
+    if (!targetEnd || targetEnd.seq !== atSeq) throw new Error('原生分叉没有停在指定回合，已拒绝绑定游戏状态')
+    const fork = forkConversationChat(state, { chatId: uid('chat'), sessionId: targetId, id: uid, now: Date.now })
+    fork.forkedFrom = { ...fork.forkedFrom, chatId: source.id, sessionId: source.sessionId, storageRevision: source._storageRevision,
+      stateChatId: state.id, stateRevision: state._storageRevision, turn, atSeq }
     await conversationRegistry.publish(fork)
-    return conversationForkReceipt(fork, { lastTurn: latestTurn, messageCount: fork.messages.length })
+    return conversationForkReceipt(fork, { lastTurn: turn, messageCount: fork.messages.length })
   }
+
   const runtimePresetSnapshots = new Map()
   const backgroundAgentRunner = createBackgroundAgentRunner({
     systemAppend: () => runtimePrompt('system-append'),
@@ -2647,7 +2671,11 @@ export async function apply(ctx) {
       case 'prepareDeleteChats': return await deleteChats(args && args.chatIds, true)
       case 'deleteChats': return await deleteChats(args && args.chatIds)
       case 'deleteChat': return await deleteChat(args && args.chatId)
-      case 'forkChat': return { fork: await forkChat(args && args.chatId, args && args.sessionId, args && args.targetSessionId, args && args.turn) }
+      case 'prepareConversationFork': {
+        const plan = await prepareConversationFork(args?.chatId, args?.sessionId, args?.turn)
+        return { turn: plan.turn, atSeq: plan.atSeq, sourceRevision: plan.source._storageRevision }
+      }
+      case 'forkChat': return { fork: await forkChat(args?.chatId, args?.sessionId, args?.targetSessionId, args?.turn, args?.sourceRevision, args?.atSeq) }
       case 'exportConversation': return await exportConversation(args && args.chatId, args && args.sessionId, args && args.title)
       case 'exportTavernLogs': return await exportTavernLogs(args && args.sessionId)
       case 'recordTavernCompatibilityCalls': {

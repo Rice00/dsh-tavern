@@ -838,9 +838,9 @@ window.__ModuleLoader__.load({
 				// uiWorkspace.connectWorkspace may reuse a blank Session that already has a
 				// Tavern opening and a locked preset. New conversations must have their own Session.
 				connectWorkspace: function (workspaceId) { return ctx.sessions.create({ workspaceId: workspaceId }); },
-				forkSession: function (sessionId) {
+				forkSession: function (sessionId, atSeq) {
 					if (!ctx.sessions || typeof ctx.sessions.fork !== "function") throw new Error("当前 DSH 版本不支持原生分叉，请升级 DSH 后重试");
-					return ctx.sessions.fork({ sessionId: sessionId, increaseTitle: true });
+					return ctx.sessions.fork({ sessionId: sessionId, atSeq: atSeq, increaseTitle: true });
 				},
 				ensurePreset: async function (sessionId, request) {
 					// Select before writing the opening; the Session stream publishes preset state.
@@ -5651,18 +5651,18 @@ window.__ModuleLoader__.load({
 				const liveState = useLiveTavernView(props.sessionId, String(props.messageId || ""));
 				const [forking, setForking] = React.useState(false);
 				const view = liveState.view;
-				const latestTurn = view && Array.isArray(view.debugTurns) ? Number(view.debugTurns[0] && view.debugTurns[0].turn) || 0 : 0;
-				const canFork = view && isPlayMode(view.mode) && latestTurn > 0 && String(view.latestAssistantMessageId || "") === String(props.messageId || "");
+				const forkTurn = Number(view && view.forkTurnsByMessageId && view.forkTurnsByMessageId[String(props.messageId || "")]) || 0;
+				const canFork = view && isPlayMode(view.mode) && forkTurn > 0;
 				if (!canFork) return null;
 				async function fork() {
 					if (forking) return;
 					setForking(true);
-					try { await tavernConversationForkRequests.request({ sessionId: props.sessionId, turn: latestTurn }); }
+					try { await tavernConversationForkRequests.request({ sessionId: props.sessionId, turn: forkTurn }); }
 					catch (error) { tavernErrorHub.report("分叉对话", error); }
 					finally { setForking(false); }
 				}
-				return React.createElement(DshUi.Tooltip, { label: forking ? "正在分叉…" : "从当前进度分叉", side: "bottom" },
-					React.createElement("button", { type: "button", className: "dsh-tavern-message-fork", "aria-label": "从当前进度分叉", disabled: forking, onClick: fork },
+				return React.createElement(DshUi.Tooltip, { label: forking ? "正在分叉…" : "从这一轮分叉", side: "bottom" },
+					React.createElement("button", { type: "button", className: "dsh-tavern-message-fork", "aria-label": "从这一轮分叉", disabled: forking, onClick: fork },
 						React.createElement(DshUi.IconBranchOutline16, null)));
 			}
 			function register(input) {
@@ -6423,12 +6423,13 @@ window.__ModuleLoader__.load({
 				let targetSessionId = "";
 				let forkCreated = false;
 				try {
-					targetSessionId = await props.conversationHost.forkSession(item.sessionId);
+					const plan = await call("prepareConversationFork", { chatId: item.chatId, sessionId: item.sessionId, turn: Number(turn) || 0 });
+					targetSessionId = await props.conversationHost.forkSession(item.sessionId, plan.atSeq);
 					await call("forkChat", {
 						chatId: item.chatId,
 						sessionId: item.sessionId,
 						targetSessionId: targetSessionId,
-						turn: Number(turn) || 0
+						turn: plan.turn, sourceRevision: plan.sourceRevision, atSeq: plan.atSeq
 					});
 					forkCreated = true;
 					const forkTitle = (currentTitle || item.cardName + "的新对话") + " · 分支";

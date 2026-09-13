@@ -13,37 +13,31 @@ test('Tavern 客户端样式作为独立本地资源提供', async () => {
   assert.match(asset.body.toString('utf8'), /@keyframes dsh-tavern-pulse/)
 })
 
-test('Web 宿主加载带版本的样式，并在新样式就绪前保留旧样式', async () => {
+test('Web 宿主直接注入完整内置样式，重复加载与升级复用同一个节点', async () => {
   const source = await readFile(new URL('../tavern-plugin/lib/client.js', import.meta.url), 'utf8')
-  const links = []
+  const css = await readFile(new URL('../tavern-plugin/lib/client-assets/tavern.css', import.meta.url), 'utf8')
+  const nodes = []
   const document = {
-    defaultView: { clearTimeout() {}, removeEventListener() {} },
-    querySelectorAll() { return links },
-    createElement() {
-      return { dataset: {}, events: {}, addEventListener(name, fn) { this.events[name] = fn }, getAttribute(name) { return this[name] }, remove() { links.splice(links.indexOf(this), 1) } }
+    querySelector() { return nodes.find(node => node.tag === 'style') },
+    querySelectorAll() { return [...nodes] },
+    createElement(tag) {
+      assert.equal(tag, 'style', 'no external stylesheet link')
+      return { tag, dataset: {}, remove() { nodes.splice(nodes.indexOf(this), 1) } }
     },
-    head: { appendChild(node) { links.push(node) } }
+    head: { appendChild(node) { nodes.push(node) } }
   }
   let descriptor
   vm.runInNewContext(source, { document, window: { __ModuleLoader__: { load(value) { descriptor = value } } }, console })
   descriptor.factory(() => ({}))
-  assert.equal(links.length, 1)
-  const current = links[0]
-  assert.equal(current.rel, 'stylesheet')
-  assert.equal(current.dataset.pluginCss, 'dsh-tavern-plugin/tavern.css')
-  assert.equal(current.href, '/api/dsh-tavern/client-assets/tavern.css?v=20260913-preset-drag')
+  assert.equal(nodes.length, 1)
+  const current = nodes[0]
+  assert.equal(current.textContent, css)
+  assert.equal(current.dataset.plugin, 'dsh-tavern-plugin')
   descriptor.factory(() => ({}))
-  assert.equal(links.length, 1, 'do not duplicate an in-flight request')
-  current.sheet = {}; current.events.load()
+  assert.equal(nodes.length, 1)
+  current.textContent = 'outdated styles'
   descriptor.factory(() => ({}))
-  assert.equal(links.length, 1)
-  // Replay a newer module with a changed resource version.
-  vm.runInNewContext(source.replaceAll('20260913-preset-drag', 'next-version'), { document, window: { __ModuleLoader__: { load(value) { descriptor = value } } }, console })
-  descriptor.factory(() => ({}))
-  assert.equal(links.length, 2)
-  assert.equal(links[0], current, 'old styles remain while fetching the update')
-  links[1].sheet = {}; links[1].events.load()
-  assert.equal(links.length, 1)
-  assert.match(links[0].href, /next-version/)
-  assert.doesNotMatch(source, /const TAVERN_CSS\s*=\s*`/)
+  assert.equal(nodes[0], current)
+  assert.equal(current.textContent, css)
+  assert.doesNotMatch(source, /__TAVERN_BUNDLED_CSS__|client-assets\/tavern\.css\?v=/)
 })

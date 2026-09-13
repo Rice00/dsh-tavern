@@ -130,7 +130,7 @@ Tavern Profile 是 CLI 与 DSH Desktop 共用的宿主 seam，本身不声明 We
 - `tavern-plugin/lib/index.js` 是宿主适配器，把 DSH 生命周期、HTTP 和文件存储接到领域模块。
 - `tavern-plugin/src/client/` 是 Web 客户端维护源码。纵向产品能力按 Feature Module 拆分，模块同时拥有自己的 UI 状态、RPC 调用和注册逻辑，只向宿主暴露窄接口。
 - `tavern-plugin/lib/client.js` 是由 `pnpm build:client` 确定性组装的单一 Web 运行产物，以适配 DSH 当前的浏览器模块加载边界；提交前用 `pnpm check:client` 拒绝过期产物，不直接编辑该文件。
-- `tavern-plugin/lib/client-assets/tavern.css` 是独立客户端样式模块，由 `tavern-client-assets.js` 通过本地只读路由提供；Web 宿主适配器只负责装载，不再同时持有整份视觉实现。
+- `tavern-plugin/lib/client-assets/tavern.css` 独立维护，构建时内置到 `client.js`，由 Web 宿主注入并复用样式节点，核心布局无需额外网络请求；原只读资源路由保留供旧客户端使用。
 - `tavern-plugin/lib/prompt-catalog.js` 是提示词文件适配器。领域模块通过注入的 `prompt` 读取固定提示词，不直接依赖文件系统。
 - Tavern preset 复用 DSH 原生 Skill 注册表、文件提供方和加载工具，但只扫描 `presets/tavern/skills/` 与 `data/skills/`；全局 Skills、游玩模式和后台任务均不进入这条能力边界。
 - `Tavern Skill Module` 是用户 Skill 的唯一写入口，校验名称和正文、原子保存文件、保护内置 Skill，并要求同名覆盖具有明确意图。

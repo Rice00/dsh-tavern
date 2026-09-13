@@ -8,7 +8,7 @@ window.__ModuleLoader__.load({
 			let DshUi = require("@deepseek-ai/dsh-client-ui-primitives");
 
 		// @include stylesheet.js
-		if (typeof document !== "undefined") installTavernStylesheet(document, "/api/dsh-tavern/client-assets/tavern.css?v=20260913-preset-drag");
+		if (typeof document !== "undefined") installTavernStylesheet(document, __TAVERN_BUNDLED_CSS__);
 
 
 		function isPlayMode(mode) {

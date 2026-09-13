@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "b2bf83d4886ee3767c0940c4953f3e3055c6c806",
-  "releaseSequence": 188,
+  "revision": "47b5b89256cf4ccaec4c4c19001753c8ea66df99",
+  "releaseSequence": 189,
   "version": "1.7.0",
   "files": [
     {
@@ -41,8 +41,8 @@
     },
     {
       "path": "bin/dsh-tavern.mjs",
-      "sha256": "71bf3381199ee5ed0f58b630b32ab3afab5337eb2815a8d12fa74d15a68f3cd7",
-      "size": 2577
+      "sha256": "8d5500427aa18ede2a103780fb055f7d586f9b2325090e8ff8bf4160c9d7988e",
+      "size": 2589
     },
     {
       "path": "bin/launcher-environment.mjs",
@@ -71,8 +71,8 @@
     },
     {
       "path": "bin/service-lifecycle.mjs",
-      "sha256": "6848991f0eead035b9907cde2069334f9cdeba5c688680939c27ed96ab813c0c",
-      "size": 12588
+      "sha256": "a97660d39e75241d5d03a88160a4dc5eaa1f0436136f7be6e78be7d1f8df8628",
+      "size": 13247
     },
     {
       "path": "bin/session-prefix-migration.mjs",

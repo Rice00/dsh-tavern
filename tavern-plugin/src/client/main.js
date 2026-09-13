@@ -7,20 +7,8 @@ window.__ModuleLoader__.load({
 			let React = require("react");
 			let DshUi = require("@deepseek-ai/dsh-client-ui-primitives");
 
-		const stylesheetId = "dsh-tavern-plugin/tavern.css";
-		const stylesheetUrl = "/api/dsh-tavern/client-assets/tavern.css?v=20260913-preset-drag";
-		if (typeof document !== "undefined") {
-			const existing = document.querySelector("link[data-plugin-css=" + JSON.stringify(stylesheetId) + "]");
-			if (existing && existing.getAttribute("href") !== stylesheetUrl) existing.setAttribute("href", stylesheetUrl);
-		}
-		if (typeof document !== "undefined" && document.querySelector("link[data-plugin-css=" + JSON.stringify(stylesheetId) + "]") === null) {
-			const stylesheet = document.createElement("link");
-			stylesheet.rel = "stylesheet";
-			stylesheet.dataset.plugin = "dsh-tavern-plugin";
-			stylesheet.dataset.pluginCss = stylesheetId;
-			stylesheet.href = stylesheetUrl;
-			document.head.appendChild(stylesheet);
-		}
+		// @include stylesheet.js
+		if (typeof document !== "undefined") installTavernStylesheet(document, "/api/dsh-tavern/client-assets/tavern.css?v=20260913-preset-drag");
 
 
 		function isPlayMode(mode) {

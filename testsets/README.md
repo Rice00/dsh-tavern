@@ -3,14 +3,16 @@
 测试直接调用正在运行的正式酒馆。人物卡、世界书、预设、system 构造、提示词覆盖、后台结算均使用正式实现与正式配置；每次运行创建独立 `test-*` 会话，不覆盖已有游戏存档，不创建测试 Profile。
 
 ```sh
-node testsets/run.mjs 001-duan-yingying-continue --check  # 只检查
-node testsets/run.mjs 001-duan-yingying-continue          # 真实模型请求
+node testsets/run.mjs my-case --check  # 只检查
+node testsets/run.mjs my-case          # 真实模型请求
 node testsets/report-ui.mjs                             # http://127.0.0.1:4318
 ```
 
+先在本地创建 `testsets/my-case/scenario.yaml`，配置格式参见 `examples/`。个人案例目录默认被 Git 忽略，不随仓库提交。
+
 打开网页后，选择左侧案例可查看模型、输入、候选步骤及断言，点击“启动测试”即可执行。页面自动刷新运行状态并打开本次报告，同一网页服务同时只运行一个测试。运行时可点击“中止测试”，执行器会停止后续步骤、清理测试会话并保存已有报告；清理完成前禁止启动新测试。关闭网页不会停止测试。案例从 `testsets/<案例名>/scenario.yaml` 读取；配置无效时禁用执行。网页服务支持 `--runtime-home PATH` 和 `--results PATH`。
 
-人物卡用 `sourceCard: 段莹莹_自由.json` 引用。在正式酒馆保存修改后，下次新开测试由正式游戏直接读取。模型与推理强度只设置到新测试会话；后台模型仍遵循正式酒馆的后台模型设置。
+人物卡用 `sourceCard: 你的测试卡.json` 引用。在正式酒馆保存修改后，下次新开测试由正式游戏直接读取。模型与推理强度只设置到新测试会话；后台模型仍遵循正式酒馆的后台模型设置。
 
 - `test-play.mjs`：多轮案例运行器。
 - `lib/api.mjs`：正式游戏 HTTP 客户端。

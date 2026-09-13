@@ -264,3 +264,26 @@ test('添加保留自带书，按绑定顺序合并，移除单书不影响其�
   assert.equal((await run.library.binding('cards/命运.json')).kind, 'embedded')
   assert.equal((await run.library.bound('cards/命运.json', null, snapshot)).view.entries.length, 2)
 })
+
+test('删除内置世界书清理所有引用并保留其他世界书和人物卡内容', async () => {
+  const run = harness()
+  const source = { kind: 'card', cardPath: 'cards/命运.json' }
+  const before = clone(run.cards.get(source.cardPath))
+  await run.library.bind('cards/空白.json', source)
+  await run.library.bind('cards/空白.json', { kind: 'standalone', path: 'worldbooks/王都.json' })
+  await run.library.remove(source)
+  assert.deepEqual(run.cards.get(source.cardPath), { ...before, character_book: null })
+  assert.deepEqual((await run.library.catalog()).embedded, [])
+  assert.equal((await run.library.binding(source.cardPath)).kind, 'none')
+  assert.equal((await run.library.bound('cards/空白.json')).view.displayName, '王都')
+  assert.equal(run.files.has('worldbooks/王都.json'), true)
+  assert.deepEqual(run.removed, [])
+})
+
+test('删除独立世界书接受来源对象，拒绝跨类型路径及不存在的人物卡', async () => {
+  const run = harness()
+  await assert.rejects(run.library.remove({ kind: 'card', cardPath: 'worldbooks/王都.json' }), /路径类型错误/)
+  await assert.rejects(run.library.remove({ kind: 'card', cardPath: 'cards/不存在.json' }), /人物卡不存在/)
+  await run.library.remove({ kind: 'standalone', path: 'worldbooks/王都.json' })
+  assert.equal(run.files.has('worldbooks/王都.json'), false)
+})

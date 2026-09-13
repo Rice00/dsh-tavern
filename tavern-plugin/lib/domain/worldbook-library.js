@@ -292,8 +292,14 @@ export function createWorldBookLibrary(options = {}) {
     return exportCharacterBook(record.document || record.view.raw)
   }
 
-  async function remove(path) {
-    return await removeStandalone(normalizePath(path, 'worldbook'))
+  async function remove(locator) {
+    const source = sourceOf(typeof locator === 'string' ? { kind: 'standalone', path: locator } : locator)
+    if (source.kind === 'standalone') return await removeStandalone(source.path)
+    await readRecord(source)
+    const relations = await associations(source)
+    for (const card of relations.boundCards) await unbind(card.path, source)
+    await cards.update(source.cardPath, { character_book: null })
+    return { removed: source.cardPath, kind: 'embedded' }
   }
 
   return Object.freeze({ catalog, get, binding, associations, bound, bind, setBindings, unbind, import: importBook, update, replaceNative, export: exportBook, characterBookForCard, remove })

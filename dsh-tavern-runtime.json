@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "73452febd6e527420115ee37455f907b14cec0a5",
-  "releaseSequence": 197,
+  "revision": "df4714c6f3cfda23d18f49f71ad11d27f9c27bf5",
+  "releaseSequence": 198,
   "version": "1.7.0",
   "files": [
     {
@@ -176,8 +176,8 @@
     },
     {
       "path": "presets/tavern/skills/tavern-card-to-mvu/SKILL.md",
-      "sha256": "ce7743e5d4118431925f83ab15cb357f8472b3ab6ae2197215deb0c7b0fcf0f8",
-      "size": 11146
+      "sha256": "556c4b604d0b7c5330ea72cc3301e12d8146ec5841c2ec6344afea86c4ecff14",
+      "size": 11520
     },
     {
       "path": "presets/tavern/skills/tavern-create-skill/SKILL.md",

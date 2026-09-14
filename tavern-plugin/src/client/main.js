@@ -6037,26 +6037,28 @@ window.__ModuleLoader__.load({
 					}) : h("div", { className: "dsh-tavern-side-empty", style: { padding: "8px" } }, "暂无")
 				);
 			}
-				const initialResourceTitle = cardEntry === "worldbook" ? "世界书" : cardEntry === "preset" ? "预设" : "剧本";
+				const initialResourceTitle = cardEntry === "writing-skill" ? "剧本与素材" : cardEntry === "worldbook" ? "世界书" : cardEntry === "preset" ? "预设" : "剧本";
 			const initialResourcePicker = initialResources.length ? h(React.Fragment, null,
 				initialResourceGroup(initialResourceTitle, initialResources),
 				h("div", { className: "dsh-tavern-picker-foot" }, h("button", { className: "dsh-tavern-question-primary", disabled: busy || !chosenInitialResources.length, onClick: function () {
-						if (cardEntry === "script") newCardConversation(null, "script", "修改剧本", chosenInitialResources);
+						if (cardEntry === "writing-skill") newCardConversation(null, "writing-skill", "创建写作 Skill", chosenInitialResources);
+					else if (cardEntry === "script") newCardConversation(null, "script", "修改剧本", chosenInitialResources);
 					else if (cardEntry === "worldbook") newCardConversation(null, "worldbook", "修改世界书", chosenInitialResources);
 					else if (cardEntry === "preset") newCardConversation(null, "preset", "修改预设", chosenInitialResources);
 						else newCardConversation(null, "extract", "从剧本新建人物卡", chosenInitialResources);
 				} }, "用已选 " + chosenInitialResources.length + (cardEntry === "script" || cardEntry === "extract" ? " 份剧本开始" : " 项开始")))
 			) : h("div", { className: "dsh-tavern-empty" }, "暂无可选" + initialResourceTitle + "，可点击右上角导入。");
-			const initialImportLabel = cardEntry === "worldbook" ? "导入世界书" : cardEntry === "preset" ? "导入预设" : cardEntry === "extract" || cardEntry === "script" ? "导入剧本或素材" : "";
+			const initialImportLabel = cardEntry === "worldbook" ? "导入世界书" : cardEntry === "preset" ? "导入预设" : cardEntry === "writing-skill" || cardEntry === "extract" || cardEntry === "script" ? "导入剧本或素材" : "";
 			const initialImportAccept = cardEntry === "worldbook" || cardEntry === "preset" ? ".json,application/json" : ".txt,.md,.json,.epub,text/plain,text/markdown,application/json,application/epub+zip";
 			const cardPicker = h("div", { className: "dsh-tavern-card-picker", role: "dialog", "aria-modal": "true", "aria-label": "选择卡片工作台起始任务" }, pickerError,
-				h("div", { className: "dsh-tavern-card-picker-head" }, cardEntry ? h("button", { className: "dsh-tavern-btn", onClick: function () { setCardEntry(""); } }, "← 返回") : h("span", null, "选择起始任务"), cardEntry === "extract" ? h("span", null, "选择初始剧本（至少 1 份）") : cardEntry === "mvu" ? h("span", null, "选择要转换的人物卡") : cardEntry === "script" || cardEntry === "worldbook" || cardEntry === "preset" ? h("span", null, "选择一个编辑目标") : null, h("span", { className: "dsh-tavern-spacer" }), cardEntry === "edit" || cardEntry === "gentle" || cardEntry === "mvu" ? h(MobileCardImportButton, { inputRef: fileRef, disabled: busy, onImported: async function () { await refresh(); notifyDataChanged(["cards"]); } }) : null, initialImportLabel ? h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: function () { initialImportRef.current && initialImportRef.current.click(); } }, initialImportLabel) : null, h("button", { className: "dsh-tavern-btn", onClick: closePicker }, "关闭")),
+				h("div", { className: "dsh-tavern-card-picker-head" }, cardEntry ? h("button", { className: "dsh-tavern-btn", onClick: function () { setCardEntry(""); } }, "← 返回") : h("span", null, "选择起始任务"), cardEntry === "writing-skill" ? h("span", null, "选择参考素材（至少 1 份）") : cardEntry === "extract" ? h("span", null, "选择初始剧本（至少 1 份）") : cardEntry === "mvu" ? h("span", null, "选择要转换的人物卡") : cardEntry === "script" || cardEntry === "worldbook" || cardEntry === "preset" ? h("span", null, "选择一个编辑目标") : null, h("span", { className: "dsh-tavern-spacer" }), cardEntry === "edit" || cardEntry === "gentle" || cardEntry === "mvu" ? h(MobileCardImportButton, { inputRef: fileRef, disabled: busy, onImported: async function () { await refresh(); notifyDataChanged(["cards"]); } }) : null, initialImportLabel ? h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: function () { initialImportRef.current && initialImportRef.current.click(); } }, initialImportLabel) : null, h("button", { className: "dsh-tavern-btn", onClick: closePicker }, "关闭")),
 				h("input", { ref: fileRef, type: "file", accept: ".png,.json", style: { display: "none" }, onChange: function (e) { const f = e.target.files && e.target.files[0]; if (f) importCard(f); e.target.value = ""; } }),
 				h("input", { ref: initialImportRef, type: "file", accept: initialImportAccept, style: { display: "none" }, onChange: function (e) { const f = e.target.files && e.target.files[0]; if (f) importInitialResource(f, cardEntry); e.target.value = ""; } }),
-					(cardEntry === "edit" || cardEntry === "gentle") ? cardEditRows : cardEntry === "mvu" ? cardMvuRows : cardEntry === "extract" || cardEntry === "script" || cardEntry === "worldbook" || cardEntry === "preset" ? initialResourcePicker : h(React.Fragment, null,
+					(cardEntry === "edit" || cardEntry === "gentle") ? cardEditRows : cardEntry === "mvu" ? cardMvuRows : cardEntry === "writing-skill" || cardEntry === "extract" || cardEntry === "script" || cardEntry === "worldbook" || cardEntry === "preset" ? initialResourcePicker : h(React.Fragment, null,
 						h("button", { className: "dsh-tavern-card-pick", disabled: busy, onClick: function () { setCardEntry("edit"); } }, h("b", null, "修改人物卡"), h("span", null, "先选择人物卡，再追加修改任务提示词")),
 						h("button", { className: "dsh-tavern-card-pick", disabled: busy, onClick: function () { setCardEntry("gentle"); } }, h("b", null, "人物卡温和改写"), h("span", null, "人物卡被模型拒绝输出时，适当改写为温和版本，减少拒绝并实测效果")),
 						h("button", { className: "dsh-tavern-card-pick", disabled: busy, onClick: function () { setCardEntry("mvu"); } }, h("b", null, "把人物卡转成 MVU 版"), h("span", null, "转换为 MVU 后，状态栏绝对不会掉格式")),
+						h("button", { className: "dsh-tavern-card-pick", disabled: busy, onClick: function () { openResourcePicker("writing-skill"); } }, h("b", null, "创建写作 Skill"), h("span", null, "从素材中提炼写作提示词，明确适用与禁用场景，用于前台正文写作")),
 						h("button", { className: "dsh-tavern-card-pick", disabled: busy, onClick: function () { openResourcePicker("extract"); } }, h("b", null, "从剧本新建人物卡"), h("span", null, "先选择至少一份剧本，再进入工作台")),
 						h("button", { className: "dsh-tavern-card-pick", disabled: busy, onClick: function () { openResourcePicker("script"); } }, h("b", null, "修改剧本"), h("span", null, "先选择一份剧本，再进入工作台修改工作版")),
 					h("button", { className: "dsh-tavern-card-pick", disabled: busy, onClick: function () { openResourcePicker("worldbook"); } }, h("b", null, "修改世界书"), h("span", null, "先选择一本世界书，再进入工作台按条目修改")),
@@ -6904,10 +6906,9 @@ window.__ModuleLoader__.load({
                         items.length ? items.map(skill => h("section", { key: skill.name, draggable: !busy, className: "dsh-tavern-skill-row" + (dragging?.name === skill.name && dragging.group === group ? " is-dragging" : ""),
                             onDragStart: event => { event.dataTransfer.setData("text/plain", skill.name); event.dataTransfer.effectAllowed = "move"; setDragging({ name: skill.name, group }); },
                             onDragEnd: () => { setDragging(null); setDropGroup(null); } },
-					h("div", { className: "dsh-tavern-resource-group-title" }, h("span", { className: "dsh-tavern-skill-grip", "aria-hidden": true }, "⠿"), h("button", { className: "dsh-tavern-resource-name dsh-tavern-resource-open", disabled: busy, onClick: () => run(async () => setOpened(await rpc("getSkill", { name: skill.name }, props.sessionId))) }, skill.name), h("span", { className: "dsh-tavern-resource-meta" }, skill.source === "builtin" ? "内置" : "自建")),
+					h("div", { className: "dsh-tavern-resource-group-title" }, h("span", { className: "dsh-tavern-skill-grip", "aria-hidden": true }, "⠿"), h("button", { className: "dsh-tavern-resource-name dsh-tavern-resource-open", disabled: busy, onClick: () => run(async () => setOpened(await rpc("getSkill", { name: skill.name }, props.sessionId))) }, skill.name), h("span", { className: "dsh-tavern-resource-meta" }, skill.source === "builtin" ? "内置" : "自建"), h("button", { className: "dsh-tavern-resource-at", disabled: busy, onClick: () => { if (window.confirm("删除 Skill “" + skill.name + "”及其参考文件？")) run(async () => { await rpc("deleteSkill", { name: skill.name }, props.sessionId); await refresh(); }); } }, "删除")),
 					h("button", { type: "button", className: "dsh-tavern-question-sub dsh-tavern-skill-description", disabled: busy, onClick: () => run(async () => setOpened(await rpc("getSkill", { name: skill.name }, props.sessionId))) }, skill.description),
-					h("details", { className: "dsh-tavern-skill-options" }, h("summary", null, "调整用途"), h("div", { className: "dsh-tavern-skill-assignments" }, roles.map(([role, label]) => h("label", { key: role }, h("input", { type: "checkbox", checked: skill.agents.includes(role), disabled: busy || skill.agents.length === 1 && skill.agents.includes(role), onChange: event => { const agents = event.target.checked ? skill.agents.concat(role) : skill.agents.filter(value => value !== role); run(async () => { await rpc("assignSkill", { name: skill.name, agents }, props.sessionId); await refresh(); }); } }), label)),
-						h("button", { className: "dsh-tavern-resource-at", disabled: busy, onClick: () => { if (window.confirm("删除 Skill “" + skill.name + "”及其参考文件？")) run(async () => { await rpc("deleteSkill", { name: skill.name }, props.sessionId); await refresh(); }); } }, "删除")))
+					h("details", { className: "dsh-tavern-skill-options" }, h("summary", null, "调整用途"), h("div", { className: "dsh-tavern-skill-assignments" }, roles.map(([role, label]) => h("label", { key: role }, h("input", { type: "checkbox", checked: skill.agents.includes(role), disabled: busy || skill.agents.length === 1 && skill.agents.includes(role), onChange: event => { const agents = event.target.checked ? skill.agents.concat(role) : skill.agents.filter(value => value !== role); run(async () => { await rpc("assignSkill", { name: skill.name, agents }, props.sessionId); await refresh(); }); } }), label))))
                     )) : h("div", { className: "dsh-tavern-skill-empty" }, "拖动 Skill 到这里"));
                 }), !skills.length ? h("div", { className: "dsh-tavern-status-empty" }, busy ? "正在读取 Skill…" : "暂无 Skill") : null));
 		}
@@ -9485,6 +9486,11 @@ window.__ModuleLoader__.load({
 				if (!actx || !conversation) throw new Error("当前对话输入框不可用");
 				const input = conversation.input.for(actx);
 				const targetPath = card && card.path ? String(card.path).replace(/\\/g, "/").replace(/["\r\n]/g, "") : "";
+				if (task === "writing-skill") {
+					const references = String(input.state.getSnapshot().draft || "");
+					input.setDraft("/create-writing-skill\n\n请从已引用的素材中提炼写作 Skill，用于前台正文写作。先与我确认适用场景、禁用场景和写作要求，再编写自包含的提示词；成品不依赖原素材或参考文件。\n\n【参考素材】\n" + references);
+					return;
+				}
 				if (task === "gentle") {
 					if (!targetPath) throw new Error("温和改写缺少目标人物卡");
 					input.setDraft("/gentle-rewrite\n\n@\"" + targetPath + "\"\n\n将这张人物卡改写为温和副本，减少模型拒绝输出的情况；改完后配置试玩案例，实测验证效果。");

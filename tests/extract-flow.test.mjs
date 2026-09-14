@@ -927,7 +927,7 @@ test('Session 顶栏工具区可以把服务端投影后的纯对话下载为 TX
   assert.match(exporter, /rpc\("exportConversation", \{ title: summary && summary\.displayTitle \|\| "" \}, props\.sessionId\)/)
   assert.match(exporter, /text\/plain;charset=utf-8/)
   assert.match(exporter, /new Blob\(\["\\uFEFF", result\.text\]/)
-  assert.match(exporter, /"纯对话 TXT ↓"/)
+  assert.match(exporter, /"纯对话 TXT"/)
   assert.match(clientSource, /slots\.inject\("conversation\.session\.header\.utilities"/)
   assert.match(clientSource, /id: "dsh-tavern-conversation-export"/)
   assert.doesNotMatch(sidebar, /导出 TXT|exportConversation/)

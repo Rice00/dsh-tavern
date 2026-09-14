@@ -6561,6 +6561,9 @@ window.__ModuleLoader__.load({
 							React.createElement("span", { className: "dsh-tavern-settings-track", "aria-hidden": "true" })
 						)
 					),
+				),
+				React.createElement("h3", null, "后台配置"),
+				React.createElement("div", { className: "dsh-tavern-settings-group" },
 					React.createElement("label", { className: "dsh-tavern-settings-row dsh-tavern-settings-model-row" },
 						React.createElement("span", { className: "dsh-tavern-settings-copy" },
 							React.createElement("span", { className: "dsh-tavern-settings-title" }, "后台模型"),
@@ -6573,8 +6576,7 @@ window.__ModuleLoader__.load({
 								return React.createElement("option", { key: group.provider + ":" + model.id, value: value }, (group.providerName || group.provider) + " · " + (model.name || model.id));
 							}); })
 						)
-					)
-				),
+					),
                 React.createElement("label", { className: "dsh-tavern-settings-row dsh-tavern-settings-model-row" },
                     React.createElement("span", { className: "dsh-tavern-settings-copy" },
                         React.createElement("span", { className: "dsh-tavern-settings-title" }, "后台推理强度"),
@@ -6594,9 +6596,10 @@ window.__ModuleLoader__.load({
                     )
                 ),
                 modelKey && modelReasoning.key === modelKey && modelReasoning.error ? React.createElement("div", { role: "alert", className: "dsh-tavern-settings-error" }, "读取推理档位失败：" + modelReasoning.error) : null,
-				React.createElement("h3", null, "后台结算"),
-				React.createElement("p", { className: "dsh-tavern-settings-intro" }, "修改后对已有游戏的下一次后台任务生效，正在运行的任务不变，可手动中断。", React.createElement("span", { style: { color: "#dc4545", display: "block" } }, "改变配置，会导致缓存失效，请注意。")),
-				React.createElement("div", { className: "dsh-tavern-settings-group" },
+				React.createElement("div", { className: "dsh-tavern-settings-subheading" },
+                    React.createElement("h3", null, "后台结算"),
+				React.createElement("p", { className: "dsh-tavern-settings-intro" }, "修改后对已有游戏的下一次后台任务生效，正在运行的任务不变，可手动中断。", React.createElement("span", { style: { color: "#dc4545", display: "block" } }, "改变配置，会导致缓存失效，请注意。"))
+                ),
 					[["variables", "变量结算", "MVU 卡强烈建议不要关闭。关闭后剧情仍会推进，但变量和状态栏可能不再同步。普通卡不执行此任务。"], ["posture", "人物姿势结算", "总结本轮结束时人物的位置、动作和姿势。"], ["characterDesign", "人物设计档案", "按需建立、补充人物档案。人物较多时会增加等待时间和 Token 用量；关闭后候选任务也不再自动设计人物。"]].map(function (item) {
 						return React.createElement("label", { key: item[0], className: "dsh-tavern-settings-row" },
 							React.createElement("span", { className: "dsh-tavern-settings-copy" }, React.createElement("span", { className: "dsh-tavern-settings-title" }, item[1]), React.createElement("span", { className: "dsh-tavern-settings-desc" }, item[2])),
@@ -8315,6 +8318,19 @@ window.__ModuleLoader__.load({
 					}, function () { if (!stopped) setAvailable(false); });
 					return function () { stopped = true; };
 				}, [props.sessionId]);
+                const [open, setOpen] = React.useState(false);
+                const root = React.useRef(null);
+                React.useEffect(function () {
+                    setOpen(false);
+                }, [props.sessionId]);
+                React.useEffect(function () {
+                    if (!open) return;
+                    function outside(event) { if (!root.current || !root.current.contains(event.target)) setOpen(false); }
+                    function escape(event) { if (event.key === "Escape") { setOpen(false); root.current?.querySelector("[aria-haspopup]")?.focus(); } }
+                    document.addEventListener("pointerdown", outside, true);
+                    document.addEventListener("keydown", escape);
+                    return function () { document.removeEventListener("pointerdown", outside, true); document.removeEventListener("keydown", escape); };
+                }, [open]);
 				if (!available) return null;
 				async function exportText() {
 					setBusy(true);
@@ -8344,14 +8360,15 @@ window.__ModuleLoader__.load({
 					} catch (err) { tavernErrorHub.report("导出日志", err); }
 					finally { setBusy(false); }
 				}
-				return React.createElement(React.Fragment, null,
-					// This stylesheet is mounted only while the Tavern export action exists.
-					React.createElement("style", null, 'button[class*="_sessionLogButton"]{display:none!important}.dsh-tavern-log-export{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--dsw-alias-border-l2);border-radius:18px;background:transparent;color:var(--dsw-alias-label-primary);padding:6px 12px;height:32px;font:inherit;font-size:13px;cursor:pointer}.dsh-tavern-log-export:disabled{cursor:wait;opacity:.6}'),
-					React.createElement("button", { className: "dsh-tavern-log-export", "data-tavern-log-export": "", disabled: busy, "aria-label": "日志", "aria-busy": busy, title: "下载 Session、MVU、生图与更新日志；含私人剧情，分享前请检查隐私", onClick: exportLogs }, "日志",
-						React.createElement("svg", { width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": true }, React.createElement("path", { d: "M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4" }))),
-					React.createElement("button", { className: "dsh-tavern-export-action", title: "最近 10 分钟，最多 120 条；不含输入或聊天内容。刷新页面后清空", onClick: () => tavernInteractionDiagnostics.download() }, "交互诊断 ↓"),
-					React.createElement("button", { className: "dsh-tavern-export-action", disabled: busy, title: "导出只包含玩家与角色正文的 TXT", onClick: exportText }, "纯对话 TXT ↓"));
-			}
+                return React.createElement("div", { className: "dsh-tavern-more-actions dsh-tavern-export-menu", ref: root },
+                    React.createElement("style", null, 'button[class*="_sessionLogButton"]{display:none!important}'),
+                    React.createElement("button", { type: "button", className: "dsh-tavern-export-action", "aria-haspopup": "menu", "aria-expanded": open, "aria-busy": busy, onClick: function () { setOpen(value => !value); } }, busy ? "导出中…" : "导出 ▾"),
+                    React.createElement("div", { className: "dsh-tavern-more-menu", role: "menu", "aria-label": "导出", hidden: !open, onClick: function (event) { if (event.target.closest("button:not(:disabled)")) setOpen(false); } },
+                        React.createElement("button", { type: "button", role: "menuitem", "data-tavern-log-export": "", disabled: busy, "aria-label": "日志", title: "下载 Session、MVU、生图与更新日志；含私人剧情，分享前请检查隐私", onClick: exportLogs }, "日志"),
+                        React.createElement("button", { type: "button", role: "menuitem", title: "最近 10 分钟，最多 120 条；不含输入或聊天内容。刷新页面后清空", onClick: () => tavernInteractionDiagnostics.download() }, "交互诊断"),
+                        React.createElement("button", { type: "button", role: "menuitem", disabled: busy, title: "导出只包含玩家与角色正文的 TXT", onClick: exportText }, "纯对话 TXT")
+                    ));
+            }
 
 			function TavernCompactionAction(props) {
 				const [busy, setBusy] = React.useState(false);

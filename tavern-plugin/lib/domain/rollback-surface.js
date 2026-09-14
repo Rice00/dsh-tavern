@@ -158,8 +158,23 @@ export function pendingFailedSurfaceTurns({ events = [], nodes = [], suppressed 
     const event = eventAt(events, nodes[index])
     if (!isRollbackUserTombstone(event)) break
     if (event.data.source.plugin !== 'dsh-tavern-failed-turn-cleanup') continue
-    for (const turn of modelTurns(events, event.sourceEventSeqs || [])) {
-      if (!hidden.has(turn)) turns.add(turn)
+    const sources = event.sourceEventSeqs || []
+    const failed = new Set(modelTurns(events, sources))
+    // A provider can fail before emitting any assistant message. Recover the
+    // turn from the cleaned nodes' enclosing lifecycle, including old records.
+    let started = null
+    for (const candidate of events) {
+      if (candidate?.type === 'turn/start') started = candidate
+      if (candidate?.type !== 'turn/end' || !started) continue
+      if (Number(candidate.data?.turn) === Number(started.data?.turn) &&
+          ['error', 'aborted'].includes(candidate.data?.reason?.kind) &&
+          sources.some(seq => seq > started.seq && seq < candidate.seq)) {
+        failed.add(Number(candidate.data.turn))
+      }
+      started = null
+    }
+    for (const turn of failed) {
+      if (Number.isSafeInteger(turn) && turn > 0 && !hidden.has(turn)) turns.add(turn)
     }
   }
   return [...turns].sort((a, b) => a - b)

@@ -630,3 +630,22 @@ test('首次回复停止后也可清除，不要求已存在完整用户与正�
   assert.deepEqual(result.clearedIncompleteTurns, [2])
   assert.equal(h.chat.messages.length, 1)
 })
+
+for (const first of [true, false]) test(`请求 HTTP 500 且没有正文时仅清除失败轮次（首次=${first}）`, async () => {
+  const h = harness()
+  if (first) {
+    h.chat.messages.splice(1)
+    h.session.events.length = 0
+    h.session.surface.nodes.length = 0
+  }
+  const before = structuredClone(h.chat)
+  const turn = first ? 2 : 3
+  h.session.append('turn/start', { turn })
+  h.session.append('user/message', { role: 'user', content: [{ type: 'text', text: '输入' }] }, { surfaceOp: 'append' })
+  h.session.append('turn/end', { turn, reason: { kind: 'error', message: 'HTTP 500' } })
+  clearFailedTurnSurface({ session: h.session, turn })
+  const result = await h.create().rollback('session', 'chat')
+  assert.deepEqual(result.clearedIncompleteTurns, [turn])
+  assert.deepEqual(h.chat.messages, before.messages)
+  assert.deepEqual(h.chat.timeline, before.timeline)
+})

@@ -774,3 +774,24 @@ body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
 .dsh-tavern-skills > .dsh-tavern-question-sub {
   padding: 0 16px;
 }
+
+.dsh-tavern-skills > .dsh-tavern-status-head { display: flex; align-items: center; justify-content: space-between; }
+.dsh-tavern-skills > .dsh-tavern-resource-body { padding: 12px 16px; }
+.dsh-tavern-skill-group { border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; margin-bottom: 14px; overflow: hidden; }
+.dsh-tavern-skill-group > summary { cursor: pointer; padding: 12px 14px; font-size: 14px; font-weight: 600; background: var(--dsw-specific-input-major); }
+.dsh-tavern-skill-count { margin-left: 8px; font-size: 12px; font-weight: 400; opacity: .6; }
+.dsh-tavern-skill-row { padding: 14px; border-top: 1px solid var(--dsw-alias-border-l2); }
+.dsh-tavern-skill-row .dsh-tavern-resource-group-title { margin: 0; gap: 10px; }
+.dsh-tavern-skill-row .dsh-tavern-resource-name { font-size: 13px; font-weight: 600; overflow-wrap: anywhere; text-align: left; }
+.dsh-tavern-skill-row > p { font-size: 12px; line-height: 1.6; margin: 7px 0 10px; opacity: .8; }
+.dsh-tavern-skill-options > summary { cursor: pointer; font-size: 12px; opacity: .65; }
+.dsh-tavern-skill-options .dsh-tavern-skill-assignments { padding: 10px 0 0; gap: 10px 16px; font-size: 12px; }
+.dsh-tavern-skill-empty { padding: 16px; font-size: 12px; opacity: .55; }
+.dsh-tavern-skill-row[draggable="true"] { cursor: grab; }
+.dsh-tavern-skill-row.is-dragging { opacity: .4; }
+.dsh-tavern-skill-group.is-drop-target { border-color: #a66b35; box-shadow: inset 0 0 0 1px #a66b35; background: rgba(166, 107, 53, .08); }
+.dsh-tavern-skill-grip { opacity: .4; font-size: 18px; user-select: none; }
+.dsh-tavern-skill-view { margin: 0 0 10px; }
+.dsh-tavern-skill-content { overflow: auto; min-height: 0; }
+.dsh-tavern-skill-content h3 { margin: 0 0 12px; font-size: 13px; }
+.dsh-tavern-skill-content pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.7; }

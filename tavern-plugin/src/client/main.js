@@ -6996,9 +6996,11 @@ window.__ModuleLoader__.load({
 			const h = React.createElement;
 			const [skills, setSkills] = React.useState([]);
 			const [opened, setOpened] = React.useState(null);
+            const [dragging, setDragging] = React.useState(null);
+            const [dropGroup, setDropGroup] = React.useState(null);
 			const [busy, setBusy] = React.useState(false);
 			const [error, setError] = usePersistentError("Skill 库");
-			const roles = [["card", "卡片 Agent"], ["foreground", "前台 Agent"], ["background", "后台 Agent"]];
+			const roles = [["card", "卡片 Agent"], ["foreground", "前台"], ["background", "后台"]];
 			async function refresh() {
 				const result = await rpc("listSkills", {}, props.sessionId);
 				setSkills(result.skills || []);
@@ -7016,18 +7018,38 @@ window.__ModuleLoader__.load({
 			}, [props.sessionId]);
 			if (opened) return h("div", { className: "dsh-tavern-resources dsh-tavern-skills" },
 				h("div", { className: "dsh-tavern-status-head" }, h("button", { className: "dsh-tavern-btn", onClick: () => setOpened(null) }, "← 返回 Skill 库"), h("div", { className: "dsh-tavern-status-title" }, opened.skill.name)),
-				h("pre", { className: "dsh-tavern-resource-body dsh-tavern-script-preview" }, opened.skill.content),
-				(opened.references || []).map(ref => h("details", { key: ref.path, className: "dsh-tavern-resource-group" }, h("summary", null, ref.path), h("pre", { className: "dsh-tavern-script-preview" }, ref.content))));
+				h("div", { className: "dsh-tavern-resource-body dsh-tavern-skill-content" },
+                    h("h3", null, "SKILL.md"),
+                    h("pre", { className: "dsh-tavern-script-preview" }, opened.skill.content),
+				(opened.references || []).map(ref => h("details", { key: ref.path, className: "dsh-tavern-resource-group" }, h("summary", null, ref.path), h("pre", { className: "dsh-tavern-script-preview" }, ref.content)))));
 			return h("div", { className: "dsh-tavern-resources dsh-tavern-skills" },
 				h("div", { className: "dsh-tavern-status-head" }, h("div", { className: "dsh-tavern-status-title" }, "Skill 库"), h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: () => run(refresh) }, "刷新")),
-				h("p", { className: "dsh-tavern-question-sub" }, "按用途分配给 Agent，适用于所有游戏。取消全部勾选即可停用。写作 Skill 请在卡片工作台引用教学素材后创建。"),
+				h("p", { className: "dsh-tavern-question-sub" }, "拖动 Skill 调整用途，拖到“已停用”即可停用。"),
 				error ? h("div", { className: "dsh-tavern-dock-error" }, error) : null,
-				h("div", { className: "dsh-tavern-resource-body" }, skills.map(skill => h("section", { key: skill.name, className: "dsh-tavern-resource-group" },
-					h("div", { className: "dsh-tavern-resource-group-title" }, h("button", { className: "dsh-tavern-resource-name dsh-tavern-resource-open", disabled: busy, onClick: () => run(async () => setOpened(await rpc("getSkill", { name: skill.name }, props.sessionId))) }, skill.name), h("span", { className: "dsh-tavern-resource-meta" }, skill.source === "builtin" ? "内置" : "自建")),
+				h("div", { className: "dsh-tavern-resource-body" }, roles.concat([["disabled", "已停用"]]).map(([group, title]) => {
+                    const items = skills.filter(skill => group === "disabled" ? !skill.agents.length : skill.agents.includes(group));
+                    return h("details", { key: group, open: true, className: "dsh-tavern-skill-group" + (dropGroup === group ? " is-drop-target" : ""),
+                        onDragOver: event => { if (!dragging || busy) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropGroup(group); },
+                        onDragLeave: event => { if (!event.currentTarget.contains(event.relatedTarget)) setDropGroup(null); },
+                        onDrop: event => {
+                            event.preventDefault(); setDropGroup(null); setDragging(null);
+                            if (!dragging || busy || dragging.group === group) return;
+                            const skill = skills.find(item => item.name === dragging.name);
+                            if (!skill) return;
+                            const agents = group === "disabled" ? [] : Array.from(new Set(skill.agents.filter(role => role !== dragging.group).concat(group)));
+                            run(async () => { await rpc("assignSkill", { name: skill.name, agents }, props.sessionId); await refresh(); });
+                        } },
+                        h("summary", null, title, h("span", { className: "dsh-tavern-skill-count" }, items.length)),
+                        items.length ? items.map(skill => h("section", { key: skill.name, draggable: !busy, className: "dsh-tavern-skill-row" + (dragging?.name === skill.name && dragging.group === group ? " is-dragging" : ""),
+                            onDragStart: event => { event.dataTransfer.setData("text/plain", skill.name); event.dataTransfer.effectAllowed = "move"; setDragging({ name: skill.name, group }); },
+                            onDragEnd: () => { setDragging(null); setDropGroup(null); } },
+					h("div", { className: "dsh-tavern-resource-group-title" }, h("span", { className: "dsh-tavern-skill-grip", "aria-hidden": true }, "⠿"), h("button", { className: "dsh-tavern-resource-name dsh-tavern-resource-open", disabled: busy, onClick: () => run(async () => setOpened(await rpc("getSkill", { name: skill.name }, props.sessionId))) }, skill.name), h("span", { className: "dsh-tavern-resource-meta" }, skill.source === "builtin" ? "内置" : "自建")),
 					h("p", { className: "dsh-tavern-question-sub" }, skill.description),
-					h("div", { className: "dsh-tavern-skill-assignments" }, roles.map(([role, label]) => h("label", { key: role }, h("input", { type: "checkbox", checked: skill.agents.includes(role), disabled: busy, onChange: event => { const agents = event.target.checked ? skill.agents.concat(role) : skill.agents.filter(value => value !== role); run(async () => { await rpc("assignSkill", { name: skill.name, agents }, props.sessionId); await refresh(); }); } }), label)),
-						skill.source === "user" ? h("button", { className: "dsh-tavern-resource-at", disabled: busy, onClick: () => { if (window.confirm("删除 Skill “" + skill.name + "”及其参考文件？")) run(async () => { await rpc("deleteSkill", { name: skill.name }, props.sessionId); await refresh(); }); } }, "删除") : null)
-				)), !skills.length ? h("div", { className: "dsh-tavern-status-empty" }, busy ? "正在读取 Skill…" : "暂无 Skill") : null));
+                    h("button", { className: "dsh-tavern-btn dsh-tavern-skill-view", disabled: busy, onClick: () => run(async () => setOpened(await rpc("getSkill", { name: skill.name }, props.sessionId))) }, "查看内容 →"),
+					h("details", { className: "dsh-tavern-skill-options" }, h("summary", null, "调整用途"), h("div", { className: "dsh-tavern-skill-assignments" }, roles.map(([role, label]) => h("label", { key: role }, h("input", { type: "checkbox", checked: skill.agents.includes(role), disabled: busy, onChange: event => { const agents = event.target.checked ? skill.agents.concat(role) : skill.agents.filter(value => value !== role); run(async () => { await rpc("assignSkill", { name: skill.name, agents }, props.sessionId); await refresh(); }); } }), label)),
+						skill.source === "user" ? h("button", { className: "dsh-tavern-resource-at", disabled: busy, onClick: () => { if (window.confirm("删除 Skill “" + skill.name + "”及其参考文件？")) run(async () => { await rpc("deleteSkill", { name: skill.name }, props.sessionId); await refresh(); }); } }, "删除") : null))
+                    )) : h("div", { className: "dsh-tavern-skill-empty" }, "拖动 Skill 到这里"));
+                }), !skills.length ? h("div", { className: "dsh-tavern-status-empty" }, busy ? "正在读取 Skill…" : "暂无 Skill") : null));
 		}
 
 

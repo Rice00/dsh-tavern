@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "f047fe5a88efb1cfbbaf24457e44f26df5c34629",
-  "releaseSequence": 204,
+  "revision": "2b1c897debbe6fd5c29cb098967a215a85221984",
+  "releaseSequence": 205,
   "version": "1.8.0",
   "files": [
     {
@@ -591,8 +591,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/opening-preparation.js",
-      "sha256": "3253034e3bf6c89ddc1f489469200e952ed08d76b59e4c6aa3a2d1121dd1b59b",
-      "size": 9215
+      "sha256": "e471d222808eae04dd6d5ea32e74e9aba4461aec57d272bbf38bcc3a37226d5d",
+      "size": 9349
     },
     {
       "path": "tavern-plugin/lib/domain/performance-diagnostics.js",

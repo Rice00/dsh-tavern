@@ -27,8 +27,8 @@ test('任务提示继承用户已有授权，不强制重复确认或禁止适�
 test('MVU 转换优先采用无损的批量文件操作，禁止逐块转录大型 JSON', () => {
   assert.match(mvuSkill, /大文件复制或批量变换优先使用 Shell 与脚本/)
   assert.match(mvuSkill, /禁止通过分块读取和分块插入来手工转录整份 JSON/)
-  assert.match(mvuSkill, /复制后生成独立资源 ID/)
-  assert.doesNotMatch(mvuSkill, /若工具只会修改当前卡/)
+  assert.match(mvuSkill, /为副本使用独立 ID/)
+  assert.match(mvuSkill, /不能向仍指向原卡的工具提交变更/)
 })
 
 test('剧本任务不把现有界面路径描述成 Agent 的能力禁令', () => {

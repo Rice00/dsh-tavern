@@ -2364,20 +2364,26 @@ window.__ModuleLoader__.load({
 		    let enabled = options.enabled !== false, disposed = false, timer = null;
 		    const excluded = 'script,style,textarea,input,select,button,a,code,pre,kbd,samp,svg,math,[hidden],[contenteditable]:not([contenteditable="false"]),[role="button"],[role="textbox"]';
 		    const blocks = 'p,div,li,td,th,blockquote,section,article,h1,h2,h3,h4,h5,h6';
+		    // A refresh reads the same ancestors for many text nodes. Cache only for this
+		    // synchronous pass so later theme/card mutations always get fresh styles.
+		    let computedColors, explicitColors;
+		    function computedColor(element) {
+		        if (!computedColors.has(element)) computedColors.set(element, win.getComputedStyle(element).color);
+		        return computedColors.get(element);
+		    }
 		    function explicitColor(element) {
-		        for (let current = element; current; current = current.parentElement) {
-		            if (current.hasAttribute('color') || current.style.color || current.style.webkitTextFillColor) return true;
-		            // A block's baseline color is not a specialized dialogue/emphasis color.
-		            if (current.matches('span,font,q,em,i,b,strong,u,mark') && current.parentElement
-		                && win.getComputedStyle(current).color !== win.getComputedStyle(current.parentElement).color) return true;
-		            if (current === root) break;
-		        }
-		        return false;
+		        if (explicitColors.has(element)) return explicitColors.get(element);
+		        const own = element.hasAttribute('color') || Boolean(element.style.color || element.style.webkitTextFillColor)
+		            || (element.matches('span,font,q,em,i,b,strong,u,mark') && element.parentElement
+		                && computedColor(element) !== computedColor(element.parentElement));
+		        const result = Boolean(own || (element !== root && element.parentElement && explicitColor(element.parentElement)));
+		        explicitColors.set(element, result);
+		        return result;
 		    }
 		    const paletteCache = new Map();
 		    let canvas;
 		    function palette(element) {
-		        const color = win.getComputedStyle(element).color;
+		        const color = computedColor(element);
 		        if (paletteCache.has(color)) return paletteCache.get(color);
 		        let rgb = color.match(/[\d.]+/g) || [];
 		        if (!/^rgba?\(/.test(color)) {
@@ -2399,6 +2405,7 @@ window.__ModuleLoader__.load({
 		        timer = null;
 		        for (const highlight of highlights.values()) highlight.clear();
 		        if (disposed || !enabled) return;
+		        computedColors = new WeakMap(); explicitColors = new WeakMap();
 		        const walker = doc.createTreeWalker(root, 4); // SHOW_TEXT; never edit React/card-owned DOM.
 		        let group = [], block = null, text = '';
 		        function flush() {
@@ -5521,6 +5528,36 @@ window.__ModuleLoader__.load({
 		}
 		const tavernPanelRegistry = createTavernPanelRegistry();
 
+		// Stagger first mounts only. Running card scripts retain their existing lifetime.
+		function createTavernFrameActivationQueue(host) {
+		    const pending = new Set();
+		    const request = typeof host.requestAnimationFrame === "function"
+		        ? run => host.requestAnimationFrame(run) : run => host.setTimeout(run, 16);
+		    const cancel = typeof host.requestAnimationFrame === "function"
+		        ? id => host.cancelAnimationFrame(id) : id => host.clearTimeout(id);
+		    let timer = null;
+		    function schedule() {
+		        if (timer !== null || pending.size === 0) return;
+		        timer = request(function () {
+		            timer = null;
+		            const entry = pending.values().next().value;
+		            pending.delete(entry);
+		            try { if (entry) entry.run(); }
+		            finally { schedule(); }
+		        });
+		    }
+		    return function enqueue(run) {
+		        const entry = { run };
+		        pending.add(entry);
+		        schedule();
+		        return function () {
+		            pending.delete(entry);
+		            if (pending.size === 0 && timer !== null) { cancel(timer); timer = null; }
+		        };
+		    };
+		}
+		const enqueueTavernFrameActivation = createTavernFrameActivationQueue(window);
+
 		function TavernMessageFrame(props) {
 			const homeRef = React.useRef(null);
 			const panelKey = React.useRef(null);
@@ -5543,19 +5580,27 @@ window.__ModuleLoader__.load({
 			React.useEffect(function () { lifecycle.update(frameProps); });
 			React.useEffect(function () {
 				if (props.eager === true) { setActivated(true); return; }
-				if (activated || typeof window.IntersectionObserver !== "function") { setActivated(true); return; }
-				let observer = null;
+				if (activated) return;
+				let observer = null, cancelActivation = null;
+				function enqueue() {
+					if (cancelActivation) return;
+					cancelActivation = enqueueTavernFrameActivation(function () {
+						cancelActivation = null;
+						setActivated(true);
+						if (observer) observer.disconnect();
+					});
+				}
 				const timer = window.setTimeout(function () {
 					if (!slotRef.current) return;
+					if (typeof window.IntersectionObserver !== "function") { enqueue(); return; }
 					observer = new window.IntersectionObserver(function (entries) {
-						if (!entries.some(function (entry) { return entry.isIntersecting; })) return;
-						setActivated(true);
-						observer.disconnect();
+						if (entries[entries.length - 1]?.isIntersecting) enqueue();
+						else if (cancelActivation) { cancelActivation(); cancelActivation = null; }
 					}, { rootMargin: "240px 0px" });
 					observer.observe(slotRef.current);
 				}, 120);
-				return function () { window.clearTimeout(timer); if (observer) observer.disconnect(); };
-			}, [activated, props.eager]);
+				return function () { window.clearTimeout(timer); if (observer) observer.disconnect(); if (cancelActivation) cancelActivation(); };
+			}, [activated, props.eager, props.sessionId]);
 			function renderFrame(document, hidden) {
 				if (!document) return null;
 				const pendingHeight = document.height || height;

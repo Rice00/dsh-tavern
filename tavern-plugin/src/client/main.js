@@ -4486,6 +4486,9 @@ window.__ModuleLoader__.load({
 		}
 		const tavernPanelRegistry = createTavernPanelRegistry();
 
+		// @include modules/frame-activation.js
+		const enqueueTavernFrameActivation = createTavernFrameActivationQueue(window);
+
 		function TavernMessageFrame(props) {
 			const homeRef = React.useRef(null);
 			const panelKey = React.useRef(null);
@@ -4508,19 +4511,27 @@ window.__ModuleLoader__.load({
 			React.useEffect(function () { lifecycle.update(frameProps); });
 			React.useEffect(function () {
 				if (props.eager === true) { setActivated(true); return; }
-				if (activated || typeof window.IntersectionObserver !== "function") { setActivated(true); return; }
-				let observer = null;
+				if (activated) return;
+				let observer = null, cancelActivation = null;
+				function enqueue() {
+					if (cancelActivation) return;
+					cancelActivation = enqueueTavernFrameActivation(function () {
+						cancelActivation = null;
+						setActivated(true);
+						if (observer) observer.disconnect();
+					});
+				}
 				const timer = window.setTimeout(function () {
 					if (!slotRef.current) return;
+					if (typeof window.IntersectionObserver !== "function") { enqueue(); return; }
 					observer = new window.IntersectionObserver(function (entries) {
-						if (!entries.some(function (entry) { return entry.isIntersecting; })) return;
-						setActivated(true);
-						observer.disconnect();
+						if (entries[entries.length - 1]?.isIntersecting) enqueue();
+						else if (cancelActivation) { cancelActivation(); cancelActivation = null; }
 					}, { rootMargin: "240px 0px" });
 					observer.observe(slotRef.current);
 				}, 120);
-				return function () { window.clearTimeout(timer); if (observer) observer.disconnect(); };
-			}, [activated, props.eager]);
+				return function () { window.clearTimeout(timer); if (observer) observer.disconnect(); if (cancelActivation) cancelActivation(); };
+			}, [activated, props.eager, props.sessionId]);
 			function renderFrame(document, hidden) {
 				if (!document) return null;
 				const pendingHeight = document.height || height;

@@ -6151,7 +6151,7 @@ window.__ModuleLoader__.load({
 					},
 					archiveSession: function (sessionId) { return ctx.workspaces.archiveSession(sessionId); },
 					toggleSidebar: function () { if (props.wide) ctx.layout.toggleSidebar(); else props.expandSidebar(); },
-					openConversationSettingsTab: function (sessionId) { ctx.betterSidebar.openTab({ type: "dsh-tavern:conversation-settings" }, { sessionId: sessionId }); },
+					openConversationSettingsTab: async function (sessionId) { await ctx.betterSidebar.openTab({ type: "dsh-tavern:conversation-settings" }, { sessionId: sessionId }); await ctx.betterSidebar.openTab({ type: "dsh-tavern:status" }, { sessionId: sessionId }); },
 					openCardLibraryTab: function (sessionId) { ctx.betterSidebar.openTab({ type: "dsh-tavern:cards" }, { sessionId: sessionId }); ctx.betterSidebar.updateTab("dsh-tavern:cards", { meta: null }); },
 					openPresetLibraryTab: function (sessionId) { ctx.betterSidebar.openTab({ type: "dsh-tavern:presets" }, { sessionId: sessionId }); },
 					openWorldBookLibraryTab: function (sessionId) { ctx.betterSidebar.openTab({ type: "dsh-tavern:worldbooks" }, { sessionId: sessionId }); },
@@ -6840,6 +6840,7 @@ window.__ModuleLoader__.load({
 			const [skills, setSkills] = React.useState([]);
 			const [opened, setOpened] = React.useState(null);
             const [skillDraft, setSkillDraft] = React.useState(null);
+            const [skillPreview, setSkillPreview] = React.useState(false);
             const [dragging, setDragging] = React.useState(null);
             const [dropGroup, setDropGroup] = React.useState(null);
 			const [busy, setBusy] = React.useState(false);
@@ -6860,16 +6861,28 @@ window.__ModuleLoader__.load({
 				window.addEventListener("focus", update);
 				return function () { window.removeEventListener("focus", update); };
 			}, [props.sessionId]);
-			if (opened) return h("div", { className: "dsh-tavern-resources dsh-tavern-skills" },
-                error ? h("p", { role: "alert" }, error) : null,
-                h("div", null, skillDraft ? h("div", null,
-                    h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: () => run(async () => { await rpc("editSkill", { name: opened.skill.name, content: skillDraft.skill.content, references: skillDraft.references }, props.sessionId); setOpened(await rpc("getSkill", { name: opened.skill.name }, props.sessionId)); setSkillDraft(null); await refresh(); }) }, busy ? "保存中…" : "保存"),
-                    h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: () => setSkillDraft(null) }, "取消")) : h("button", { className: "dsh-tavern-btn", onClick: () => setSkillDraft(JSON.parse(JSON.stringify(opened))) }, "编辑")),
-				h("div", { className: "dsh-tavern-status-head" }, h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: () => { if (skillDraft && !window.confirm("放弃未保存的修改？")) return; setSkillDraft(null); setOpened(null); } }, "← 返回 Skill 库"), h("div", { className: "dsh-tavern-status-title" }, opened.skill.name)),
-				h("div", { className: "dsh-tavern-resource-body dsh-tavern-skill-content" },
-                    h("h3", null, "SKILL.md"),
-                    skillDraft ? h("textarea", { "aria-label": "Skill 正文", style: { width: "100%", minHeight: "50vh", fontFamily: "monospace" }, value: skillDraft.skill.content, disabled: busy, onChange: e => setSkillDraft({ ...skillDraft, skill: { ...skillDraft.skill, content: e.target.value } }) }) : h("pre", { className: "dsh-tavern-script-preview" }, opened.skill.content),
-				((skillDraft || opened).references || []).map(ref => h("details", { key: ref.path, className: "dsh-tavern-resource-group" }, h("summary", null, ref.path), skillDraft ? h("textarea", { "aria-label": ref.path, style: { width: "100%", minHeight: "30vh", fontFamily: "monospace" }, value: ref.content, disabled: busy, onChange: e => setSkillDraft({ ...skillDraft, references: skillDraft.references.map(item => item.path === ref.path ? { ...item, content: e.target.value } : item) }) }) : h("pre", { className: "dsh-tavern-script-preview" }, ref.content)))));
+            if (opened) {
+                const document = skillDraft || opened;
+                const markdown = text => h(DshUi.MarkdownText, { text, labels: { code: { copyLabel: "复制", copiedLabel: "已复制" }, footnotes: "脚注" } });
+                const editor = (label, value, onChange) => h("textarea", { className: "dsh-skill-editor", "aria-label": label, value, disabled: busy, spellCheck: false, onChange: e => onChange(e.target.value) });
+                return h("div", { className: "dsh-tavern-resources dsh-tavern-skills" },
+                    h("div", { className: "dsh-tavern-status-head dsh-skill-toolbar" },
+                        h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: () => { if (skillDraft && !window.confirm("放弃未保存的修改？")) return; setSkillDraft(null); setOpened(null); } }, "← 返回"),
+                        h("div", { className: "dsh-tavern-status-title" }, opened.skill.name),
+                        h("span", { className: "dsh-tavern-spacer" }),
+                        skillDraft ? h(React.Fragment, null,
+                            h("button", { className: "dsh-tavern-btn", onClick: () => setSkillPreview(!skillPreview) }, skillPreview ? "继续编辑" : "预览"),
+                            h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: () => setSkillDraft(null) }, "取消"),
+                            h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: () => run(async () => { await rpc("editSkill", { name: opened.skill.name, content: skillDraft.skill.content, references: skillDraft.references }, props.sessionId); setOpened(await rpc("getSkill", { name: opened.skill.name }, props.sessionId)); setSkillDraft(null); await refresh(); }) }, busy ? "保存中…" : "保存")
+                        ) : h("button", { className: "dsh-tavern-btn", onClick: () => { setSkillPreview(false); setSkillDraft(JSON.parse(JSON.stringify(opened))); } }, "编辑")),
+                    error ? h("p", { role: "alert", className: "dsh-tavern-dock-error" }, error) : null,
+                    h("div", { className: "dsh-tavern-resource-body dsh-tavern-skill-content" },
+                        h("article", { className: "dsh-skill-document" },
+                            skillDraft && !skillPreview ? editor("Skill 正文", document.skill.content, content => setSkillDraft({ ...skillDraft, skill: { ...skillDraft.skill, content } })) : markdown(document.skill.content.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, ""))),
+                        (document.references || []).map(ref => h("details", { key: ref.path, className: "dsh-skill-reference" },
+                            h("summary", null, ref.path),
+                            h("div", { className: "dsh-skill-document" }, skillDraft && !skillPreview ? editor(ref.path, ref.content, content => setSkillDraft({ ...skillDraft, references: skillDraft.references.map(item => item.path === ref.path ? { ...item, content } : item) })) : markdown(ref.content))))));
+            }
 			return h("div", { className: "dsh-tavern-resources dsh-tavern-skills" },
 				h("div", { className: "dsh-tavern-status-head" }, h("div", { className: "dsh-tavern-status-title" }, "Skill 库"), h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: () => run(refresh) }, "刷新")),
 				h("p", { className: "dsh-tavern-question-sub" }, "拖动 Skill 调整用途，不需要的 Skill 可直接删除。"),
@@ -9496,7 +9509,7 @@ window.__ModuleLoader__.load({
 				const supplement = draft + (taskSupplement ? "\n\n" + taskSupplement : "");
 				const targetSection = targetPath ? "\n\n【目标人物卡】\n@\"" + targetPath + "\"" : "";
 				const resourceSection = hasInitialResources ? (task === "worldbook" || task === "preset" || task === "script" ? "\n\n【编辑目标】\n" : "\n\n【初始剧本】\n") : "";
-				const taskText = "【卡片任务：" + label + "】" + targetSection + "\n\n" + String(result && result.text || "").trim() + resourceSection;
+				const taskText = task === "debug-play" ? "/debug-card" + targetSection + "\n\n请结合已引用的游玩记录，检查这张人物卡的异常表现，按需读取相关日志和状态，说明原因并给出修改建议。\n\n" : "【卡片任务：" + label + "】" + targetSection + "\n\n" + String(result && result.text || "").trim() + resourceSection;
 				input.setDraft(taskText + supplement);
 			}
 			playControlsFeature.register({ ctx: ctx, slots: slots });

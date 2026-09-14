@@ -845,3 +845,16 @@ body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
   .dsh-local-section > label:not(.dsh-tavern-background-task), .dsh-local-field label { grid-template-columns: minmax(100px, 1fr) minmax(220px, 1.6fr); align-items: center; }
   .dsh-local-profile { grid-template-columns: minmax(100px, 1fr) minmax(220px, 1.6fr); align-items: start; }
 }
+
+/* Skill document reader and editor */
+.dsh-skill-toolbar { flex-wrap: wrap; gap: 10px; }
+.dsh-skill-toolbar .dsh-tavern-status-title { min-width: 0; overflow-wrap: anywhere; }
+.dsh-tavern-skill-content { padding: clamp(16px, 3vw, 32px); }
+.dsh-skill-document { max-width: 880px; margin: 0 auto; line-height: 1.8; overflow-wrap: anywhere; }
+.dsh-skill-document table { display: block; max-width: 100%; overflow-x: auto; }
+.dsh-skill-document pre { max-width: 100%; overflow-x: auto; }
+.dsh-skill-reference { max-width: 880px; margin: 24px auto 0; border: 1px solid color-mix(in srgb, currentColor 16%, transparent); border-radius: 12px; }
+.dsh-skill-reference > summary { padding: 14px 18px; cursor: pointer; font-weight: 600; overflow-wrap: anywhere; }
+.dsh-skill-reference > .dsh-skill-document { padding: 8px 20px 20px; }
+.dsh-skill-editor { box-sizing: border-box; width: 100%; min-height: 55vh; padding: 20px; border: 1px solid color-mix(in srgb, currentColor 22%, transparent); border-radius: 12px; background: var(--background, Canvas); color: inherit; font: 14px/1.7 ui-monospace, monospace; resize: vertical; tab-size: 2; }
+.dsh-skill-editor:focus-visible { outline: 2px solid #a76c36; outline-offset: 2px; }

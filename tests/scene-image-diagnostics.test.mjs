@@ -1,3 +1,4 @@
+import { zipText } from './fixtures/zip-text.mjs'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createSceneImageDiagnostics, redactSceneDiagnostic } from '../tavern-plugin/lib/domain/scene-image-diagnostics.js'
@@ -93,7 +94,7 @@ test('same log ZIP contains scene attempts and their native subagent without rea
     persistence: { async readRaw(id) { read.push(id); return { content: JSON.stringify({ type: 'session', id }) } } },
     attachments: { readImage() { assert.fail('scene image bytes must not be included') } } })
   assert.deepEqual(read, ['parent', 'image-child'])
-  const text = result.buffer.toString('utf8')
+  const text = zipText(result.buffer)
   assert.match(text, /scene-images\/diagnostics.json/)
   assert.match(text, /subagents\/image-child\/session.jsonl/)
   assert.match(text, /雨中车站/)

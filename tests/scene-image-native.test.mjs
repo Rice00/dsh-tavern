@@ -1,3 +1,4 @@
+import { zipText } from './fixtures/zip-text.mjs'
 import { sessionEvents } from '../tavern-plugin/lib/domain/session-events.js'
 import assert from 'node:assert/strict'
 import test from 'node:test'
@@ -84,7 +85,7 @@ test('显式单人参考跨轮与重启传给 Gemini，取消后不再发送，�
   assert.equal(second.versions[0].referenceImages[0].source.versionId, first.versions[0].id)
   assert.equal(second.versions[0].referenceImages[0].person.name, '林岚')
   assert.equal(JSON.stringify(runtime.requests).includes(image.data.slice(0, 100)), false)
-  assert.equal((await runtime.exportLogs()).buffer.toString('utf8').includes(image.data.slice(0, 100)), false)
+  assert.equal(zipText((await runtime.exportLogs()).buffer).includes(image.data.slice(0, 100)), false)
   await runtime.service.configure({ provider: 'openai' })
   await runtime.service.configure({ enabled: true })
   assert.match((await runtime.service.status('scene-parent', 2)).reference.warning, /仅使用文字/)
@@ -162,7 +163,7 @@ test('日志 ZIP 连接真实生图子 Session 与成功失败诊断，不导出
   await runtime.service.start('scene-parent', 1, target.key, { confirmNewRequestId: failed.requestId })
   assert.equal((await finish()).status, 'succeeded')
   const exported = await runtime.exportLogs()
-  const zip = exported.buffer.toString('utf8')
+  const zip = zipText(exported.buffer)
   assert.match(zip, /scene-images\/diagnostics.json/)
   assert.match(zip, /subagents\/[^/]+\/session.jsonl/)
   assert.match(zip, /submit_scene_plan/)

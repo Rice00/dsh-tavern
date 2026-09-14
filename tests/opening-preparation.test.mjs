@@ -99,7 +99,7 @@ test('准备页加载真实模板引擎，运行时变量和插件设置均隔�
   assert.match(draft.runtime.scripts[0].assetUrl, /vendor\/magvarupdate\/bundle.js$/)
   const result = await service.callRuntime(draft.id, 'updateTavernHelperVariables', { option: { type: 'message', message_id: 0 }, variables: { stat_data: { hp: 10 }, schema: {} } })
   assert.equal(result.context.messages[0].variables.stat_data.hp, 10)
-  assert.equal(service.resolve(draft.id, "card", "alternate:0").messageVariables.stat_data.hp, 10)
+  assert.equal(service.resolve(draft.id, "card", "primary").messageVariables.stat_data.hp, 10)
   assert.equal(service.resolve(draft.id, "card", "alternate:0").openingVariables.primary.stat_data.hp, 10)
   const settings = { ...draft.runtime.context.extensionSettings, mvu: { enabled: true } }
   const saved = await service.callRuntime(draft.id, 'saveTavernExtensionSettings', { settings, expectedSettings: draft.runtime.context.extensionSettings })
@@ -169,6 +169,7 @@ test('empty greetings are excluded from script swipe indices and variable mappin
   assert.deepEqual(draft.openings.map(item => item.id), ['alternate:0', 'alternate:2'])
   await service.callRuntime(draft.id, 'updateTavernHelperMessages', { messages: [{ message_id: 0, swipes_data: [{ slot: 0 }, { slot: 1 }] }] })
   assert.deepEqual(service.resolve(draft.id, 'card', 'alternate:2').openingVariables['alternate:2'], { slot: 1 })
+  assert.deepEqual(service.resolve(draft.id, 'card', 'alternate:2').messageVariables, { slot: 1 })
 })
 
 test('native swipe.to selects a preview and rejects historical message targets', async () => {
@@ -195,4 +196,19 @@ test('开场准备复用已读取的卡片和扩展，不重复加载资源', as
     readRuntimeExtensions: async () => { throw new Error('重复准备扩展') }, worldBooks: { bound: async () => null } })
   const draft = await service.create('card', { card, extensions: { helperScripts: [] } })
   assert.ok(draft.id)
+})
+
+test('所选开场使用自己的 MVU 初值，切换后默认变量写入也落在所选槽位', async () => {
+  const service = createOpeningPreparation({ readCard: async () => structuredClone(card), worldBooks: { bound: async () => null }, readRuntimeExtensions: async () => ({ helperScripts: [{ id: 'chooser', type: 'script', content: 'void 0' }] }) })
+  const draft = await service.create('card', { runtime: true })
+  const first = { stat_data: { time: '早晨', location: '学校' } }
+  const second = { stat_data: { time: '夜晚', location: '车站' } }
+  await service.callRuntime(draft.id, 'updateTavernHelperMessages', { messages: [{ message_id: 0, swipes_data: [first, second] }] })
+  assert.deepEqual(service.resolve(draft.id, 'card', 'alternate:0').messageVariables, second)
+  service.select(draft.id, 'alternate:0')
+  const updated = { stat_data: { time: '午夜', location: '车站' } }
+  await service.callRuntime(draft.id, 'updateTavernHelperVariables', { option: { type: 'message', message_id: 0 }, variables: updated })
+  const result = service.resolve(draft.id, 'card', 'alternate:0')
+  assert.deepEqual(result.messageVariables, updated)
+  assert.deepEqual(result.openingVariables.primary, first)
 })

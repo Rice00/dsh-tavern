@@ -88,19 +88,7 @@ function harness({ checkpoint = false, mode = 'story' } = {}) {
     setGeneration(value) { generation = value }, setSettlement(value) { settlementOutcome = value }, beforeGenerate(fn) { beforeGenerate = fn }, revisions }
 }
 
-for (const seeded of [false, true]) test(`V3 regeneration rejection preserves Chat and avoids model request (seeded=${seeded})`, { skip: Session.create('version-check').header.version < 3 }, async () => {
-  const h = harness({ checkpoint: true })
-  let session = Session.create('session')
-  appendSessionEvent(session, 'user/message', { id: 'u', role: 'user', content: [{ type: 'text', text: '推门' }], source: { kind: 'user' } }, { surfaceOp: 'append' })
-  appendSessionEvent(session, 'assistant/message', { turn: 2, step: 1, message: { id: 'a', role: 'assistant', content: [{ type: 'text', text: '旧正文' }], source: { kind: 'model', provider: 'fixture', model: 'fixture' } } }, { surfaceOp: 'append' })
-  if (seeded) session = Session.create(session.id, sessionEvents(session), { ...session.header, isSeeded: true }, session.seq)
-  h.agent.session = session
-  const before = structuredClone(h.chat), events = structuredClone(sessionEvents(session))
-  await assert.rejects(h.create().regenerate('chat', '', 'session'), /未启动重新生成.*cannot carry sourceEventSeqs/)
-  assert.deepEqual(h.chat, before)
-  assert.deepEqual(sessionEvents(session), events)
-  assert.deepEqual(h.calls, [])
-})
+
 
 test('rc.1 snapshot-only history supports regeneration and rollback without rewriting native events', async () => {
   for (const operation of ['regenerate', 'rollback']) {

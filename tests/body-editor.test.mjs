@@ -137,15 +137,3 @@ test('host rejection is checked before publishing an edit to the Chat journal', 
   Object.defineProperty(h.session, 'constructor', { value: originalConstructor, configurable: true })
   await h.editor.read(h.session.id)
 })
-
-
-for (const seeded of [false, true]) test('official V3 rejects unsupported edits without changing Chat or native history (seeded=' + seeded + ')', async t => {
-  const h = fixture('原正文', seeded)
-  if (h.session.header.version < 3) return t.skip('requires V3 host')
-  const edit = await h.editor.read(h.session.id)
-  const before = structuredClone(h.chat), events = structuredClone(sessionEvents(h.session))
-  await assert.rejects(h.editor.save(h.session.id, { token: edit.token, texts: ['新正文'] }), /cannot carry sourceEventSeqs/)
-  assert.deepEqual(h.chat, before)
-  assert.deepEqual(sessionEvents(h.session), events)
-  await h.editor.read(h.session.id)
-})

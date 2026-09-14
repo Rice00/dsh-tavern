@@ -608,20 +608,21 @@ test('游玩不提供 Swipe 分支切换，只保留整轮正文重新生成', (
 	assert.doesNotMatch(serverSource, /case 'switchTavernSwipe'/)
 })
 
-test('酒馆状态页注册到 Better Sidebar，不再接管 DSH details', () => {
+test('游玩默认打开对话设置，酒馆状态仍保留为独立侧栏', () => {
   const sidebar = between(clientSource, 'function TavernSidebar', 'function CardFieldsPanel')
 
   assert.match(sidebar, /readyTavernSession/)
   assert.match(sidebar, /summaries\[current\]\.blank === false/)
   assert.match(sidebar, /history\.some\(function \(entry\) \{ return entry\.sessionId === current && isPlayMode\(entry\.mode\); \}\)/)
-  assert.match(sidebar, /props\.openStatusTab\(readyTavernSession\)/)
-  assert.match(sidebar, /props\.openStatusTab\(pending\.sessionId\)/)
+  assert.match(clientSource, /openConversationSettingsTab: function \(sessionId\) \{ ctx\.betterSidebar\.openTab\(\{ type: "dsh-tavern:conversation-settings" \}/)
+  assert.match(sidebar, /props\.openConversationSettingsTab\(readyTavernSession\)/)
+  assert.match(sidebar, /props\.openConversationSettingsTab\(pending\.sessionId\)/)
   assert.match(clientSource, /ctx\.betterSidebar\.registerTab\(\{/)
   assert.match(clientSource, /id: "dsh-tavern:status"/)
   assert.match(clientSource, /patch: \{ panelOpen: true \}/)
   assert.doesNotMatch(clientSource, /className: "dsh-tavern-status-presentation"/)
   assert.doesNotMatch(clientSource, /buildOpeningPreviewDocument\(view\.presentation\.html\)/)
-  assert.match(clientSource, /ctx\.betterSidebar\.openTab\(\{ type: "dsh-tavern:status" \}/)
+  assert.match(clientSource, /ctx\.betterSidebar\.openTab\(\{ type: "dsh-tavern:conversation-settings" \}/)
   assert.doesNotMatch(clientSource, /slots\.inject\("details"|openDetails|ensureDetailsOpen/)
 })
 

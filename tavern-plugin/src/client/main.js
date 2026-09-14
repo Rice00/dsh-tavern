@@ -5465,8 +5465,8 @@ window.__ModuleLoader__.load({
 				return function () { stopped = true; window.clearTimeout(timer); };
 			}, [openingPicker && openingPicker.card && openingPicker.card.path, openingPicker && openingPicker.userName, openingPicker && openingPicker.preparing, requestMode, compatibilityAvailable]);
 			React.useEffect(function () {
-				if (!readyTavernSession || typeof props.openStatusTab !== "function") return;
-				props.openStatusTab(readyTavernSession);
+				if (!readyTavernSession || typeof props.openConversationSettingsTab !== "function") return;
+				props.openConversationSettingsTab(readyTavernSession);
 			}, [readyTavernSession]);
 			React.useEffect(function () {
 				if (!readyCardSession) return;
@@ -5581,7 +5581,7 @@ window.__ModuleLoader__.load({
 					if (typeof props.openResourcesTab === "function") props.openResourcesTab(pending.sessionId);
 					if (pending.task) await props.injectTaskPrompt(pending.sessionId, pending.task, pending.label, pending.card, (pending.selectedResources || []).length > 0, pending.taskSupplement);
 					(pending.selectedResources || []).forEach(function (resource) { props.appendMention(pending.sessionId, resource.kind, resource.path, resource.title); });
-				} else if (typeof props.openStatusTab === "function") props.openStatusTab(pending.sessionId);
+				} else if (typeof props.openConversationSettingsTab === "function") props.openConversationSettingsTab(pending.sessionId);
 				setOpeningPicker(null); setPicking(false); setCardEntry("");
 			}
 			const conversationLifecycle = createConversationLifecycleModule({
@@ -6151,7 +6151,7 @@ window.__ModuleLoader__.load({
 					},
 					archiveSession: function (sessionId) { return ctx.workspaces.archiveSession(sessionId); },
 					toggleSidebar: function () { if (props.wide) ctx.layout.toggleSidebar(); else props.expandSidebar(); },
-					openStatusTab: function (sessionId) { ctx.betterSidebar.openTab({ type: "dsh-tavern:status" }, { sessionId: sessionId }); },
+					openConversationSettingsTab: function (sessionId) { ctx.betterSidebar.openTab({ type: "dsh-tavern:conversation-settings" }, { sessionId: sessionId }); },
 					openCardLibraryTab: function (sessionId) { ctx.betterSidebar.openTab({ type: "dsh-tavern:cards" }, { sessionId: sessionId }); ctx.betterSidebar.updateTab("dsh-tavern:cards", { meta: null }); },
 					openPresetLibraryTab: function (sessionId) { ctx.betterSidebar.openTab({ type: "dsh-tavern:presets" }, { sessionId: sessionId }); },
 					openWorldBookLibraryTab: function (sessionId) { ctx.betterSidebar.openTab({ type: "dsh-tavern:worldbooks" }, { sessionId: sessionId }); },

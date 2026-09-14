@@ -31,30 +31,13 @@ test('转换 Skill 可由 Tavern 内置目录读取，引用资源齐全且默�
   }
 })
 
-test('转换 Skill 清理副本内重复的候选项生成机制并保留无关内容', async () => {
+test('转换 Skill 保留候选项清理和迁移后直接删除要求', async () => {
   const skills = createTavernSkillModule({ directory: new URL('../data/skills/', import.meta.url).pathname, builtInDirectory: root.pathname })
   const skill = await skills.read('tavern-card-to-mvu')
-  assert.match(skill.content, /候选项生成提示、按钮、正则、HTML 与 Helper 脚本/)
-  assert.match(skill.content, /只清理[^\n]*候选项生成[^\n]*保留[^\n]*无关/)
-  assert.match(skill.content, /DSH Tavern 内置候选项/)
-  assert.match(skill.content, /不存在第二套候选项生成机制/)
-})
-
-test('转换 Skill 直接移除旧协议，不向前台追加迁移说明或新行文规则', async () => {
-  const skills = createTavernSkillModule({ directory: new URL('../data/skills/', import.meta.url).pathname, builtInDirectory: root.pathname })
-  const skill = await skills.read('tavern-card-to-mvu')
-  assert.match(skill.content, /直接删除旧状态与候选项协议/)
-  assert.match(skill.content, /不写一段“只写剧情正文”或“不再输出[^”]+”作为替代说明/)
-  assert.match(skill.content, /新人物登场[^\n]*原卡已有[^\n]*原样保留[^\n]*转换过程不新增/)
-})
-
-test('转换 Skill 将随机人物迁移为当前对话专属人物库', async () => {
-  const skills = createTavernSkillModule({ directory: new URL('../data/skills/', import.meta.url).pathname, builtInDirectory: root.pathname })
-  const skill = await skills.read('tavern-card-to-mvu')
-  assert.match(skill.content, /当前对话[^\n]*人物库/)
-  assert.match(skill.content, /同一张卡[^\n]*新对话/)
-  assert.match(skill.content, /tavern-character-design/)
-  assert.match(skill.content, /在场[^\n]*false[^\n]*不展示/)
+  assert.match(skill.content, /删除副本中重复的生成要求/)
+  assert.match(skill.content, /保留剧情中的选择、分支条件与实际游戏交互/)
+  assert.match(skill.content, /从原位置直接删除已迁移内容及其空标题、空容器/)
+  assert.match(skill.content, /不留下.*替代说明、注释或占位文字/)
 })
 
 test('人物设计是现有后台 Agent 按需加载的内置 Skill', async () => {
@@ -104,9 +87,9 @@ test('Skill 配方可构造可导入卡，规则分流、状态显示及模型�
   assert.equal(constantWorldBookContext({ worldBook }).context, '')
   assert.deepEqual(mvuUpdateRulesFromWorldBook(worldBook), [entries[1].content])
   const initial = JSON.parse(entries[0].content)
-  assert.equal(initial.人物库.$meta.extensible, true)
-  assert.equal(initial.人物库.$meta.template.状态.在场, false)
-  assert.equal(initial.人物库.$meta.template.设计.性格, '')
+  assert.equal(initial.人物.$meta.extensible, true)
+  assert.equal(initial.人物.$meta.template.在场, true)
+  assert.equal(initial.人物.$meta.template.位置, '未明确')
   assert.equal(initial.玩家.位置, '门口')
   const layers = projectReplyLayers(card.data.first_mes, { regexScripts: extensions.regexScripts, placement: 2, depth: 0 })
   assert.equal(layers.sessionText.trim(), '你站在门口。')
@@ -145,6 +128,7 @@ test('通用状态模板重新读取变量并刷新 DOM，支持新增与恢复�
   handlers.get('update')()
   assert.deepEqual(nodes.values.children.map(item => item.textContent), [
     '玩家 · 位置', '大厅', '人物 · 新人物 · 姓名', '<img src=x onerror=alert(1)>',
+    '人物库 · 预备人物 · 姓名', '暂不展示', '人物库 · 预备人物 · 状态 · 在场', 'false',
     '人物库 · 登场人物 · 姓名', '林晴', '人物库 · 登场人物 · 状态 · 在场', 'true'
   ])
   data = { 玩家: { 位置: '门口' } }

@@ -643,6 +643,7 @@ test('超过十五分钟的更新自动标记为中断并持久化', async () =>
       dataRoot,
       sourceRoot: '/app/dsh-tavern',
       dshHome: root,
+      runtimeHost: 'desktop',
       now: () => 1000 + (15 * 60 * 1000),
     })
 
@@ -668,6 +669,7 @@ test('更新进程已经退出时立即恢复按钮', async () => {
       dataRoot,
       sourceRoot: '/app/dsh-tavern',
       dshHome: root,
+      runtimeHost: 'desktop',
       now: () => 2000,
       isProcessAlive: () => false,
     })
@@ -691,6 +693,7 @@ test('更新进程仍存活时保持运行状态', async () => {
       dataRoot,
       sourceRoot: '/app/dsh-tavern',
       dshHome: root,
+      runtimeHost: 'desktop',
       now: () => 2000,
       isProcessAlive: () => true,
     })
@@ -755,7 +758,7 @@ test('旧版未确认完成的 Desktop 更新恢复为可重试失败状态', as
     await writeFile(statusFile, JSON.stringify({ phase: 'installed-restart-required', host: 'desktop', targetCommit: 'f'.repeat(40) }))
     const updater = createApplicationUpdater({ dataRoot, sourceRoot: root, runtimeHost: 'cli', now: () => 2345 })
     assert.deepEqual(await updater.status(), {
-      phase: 'failed', repairRequired: true, host: 'desktop', failedAt: 2345, targetCommit: 'f'.repeat(40),
+      phase: 'failed', repairRequired: true, host: 'cli', failedAt: 2345, targetCommit: 'f'.repeat(40),
       error: '上次更新未确认安装完成，请重新检查并重试更新。',
       currentVersion: 'unknown', currentCommit: '',
     })
@@ -852,4 +855,18 @@ test('安装失败但已是目标提交时，检查后仍能重新运行安装�
   assert.equal((await updater.check()).phase, 'update-available')
   assert.equal((await updater.start()).phase, 'running')
   assert.equal(spawned, true)
+})
+
+
+test('历史更新记录的宿主不覆盖当前运行环境', async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'tavern-runtime-host-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  await writeFile(path.join(root, 'package.json'), JSON.stringify({ version: '1.7.0' }))
+  for (const [runtimeHost, cachedHost] of [['cli', 'desktop'], ['desktop', 'cli']]) {
+    await writeFile(path.join(root, 'update-status.json'), JSON.stringify({ phase: 'up-to-date', host: cachedHost }))
+    const updater = createApplicationUpdater({ dataRoot: root, sourceRoot: root, runtimeHost })
+    const status = await updater.status()
+    assert.equal(status.host, runtimeHost)
+    assert.equal(status.phase, 'up-to-date')
+  }
 })

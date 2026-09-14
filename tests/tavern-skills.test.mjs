@@ -118,3 +118,16 @@ test('只修改正文保留原有调用策略', async t => {
   await skills.assign('image-style', ['image', 'foreground'])
   assert.deepEqual((await skills.read('image-style')).agents, ['image', 'foreground'])
 })
+
+test('内置 Skill 删除在重启和包更新后仍生效', async t => {
+  const { skills, builtin, user } = await harness(t)
+  const entry = path.join(builtin, 'built-in', 'SKILL.md')
+  await mkdir(path.dirname(entry), { recursive: true })
+  await writeFile(entry, '---\nname: built-in\ndescription: test\n---\n内容')
+  assert.ok(await skills.read('built-in'))
+  await skills.remove('built-in')
+  await writeFile(entry, '---\nname: built-in\ndescription: updated\n---\n更新内容')
+  const restarted = createTavernSkillModule({ directory: user, builtInDirectory: builtin })
+  assert.equal(await restarted.read('built-in'), null)
+  assert.equal((await restarted.list()).length, 0)
+})

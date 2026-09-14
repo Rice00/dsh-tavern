@@ -1,12 +1,12 @@
 // The native registry retains its catalog, scope cache, watchers and skill loader.
 // This provider narrows filesystem candidates to the calling Tavern Agent's role.
-export function createTavernSkillProvider({ providers, library, roleFor }) {
+export function createTavernSkillProvider({ providers, library, roleFor, enabledFor = async () => true }) {
   const name = 'tavern'
   async function allowed(candidate, lookup) {
     const role = await roleFor(lookup.scope)
     if (!role) return false
     const skill = await library.read(candidate.name)
-    return skill?.path === candidate.path && skill.agents.includes(role)
+    return skill?.path === candidate.path && skill.agents.includes(role) && await enabledFor(skill, lookup.scope)
   }
   return {
     name,

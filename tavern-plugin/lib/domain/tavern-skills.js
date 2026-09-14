@@ -82,6 +82,7 @@ export function createTavernSkillModule(options = {}) {
         const purpose = meta.metadata?.tavern?.purpose || root.role
         const configuration = await assignments()
         const assigned = Object.hasOwn(configuration, normalized) ? configuration[normalized] : undefined
+        if (assigned === null) return null
         const agents = assigned === undefined ? [purpose === 'writing' ? 'foreground' : purpose === 'background' ? 'background' : purpose === 'image' ? 'image' : root.role] : normalizeSkillAgents(assigned)
         return { name: normalized, source: source.kind, content, path: source.path, description: meta.description || '', purpose, agents, modelInvocable: meta['disable-model-invocation'] !== true, userInvocable: meta['user-invocable'] !== false }
       } catch (error) {
@@ -182,7 +183,10 @@ export function createTavernSkillModule(options = {}) {
   async function remove(name) {
     const skill = await read(name)
     if (!skill) throw new Error('Skill 不存在')
-    if (skill.source !== 'user') throw new Error('内置 Skill 不可删除，可取消其用途分配')
+    if (skill.source === 'builtin') {
+      await files.update(configPath, raw => JSON.stringify({ ...(raw ? JSON.parse(raw) : {}), [skill.name]: null }))
+      return
+    }
     await rm(path.dirname(skill.path), { recursive: true })
     await files.update(configPath, raw => { const data = raw ? JSON.parse(raw) : {}; delete data[skill.name]; return JSON.stringify(data) })
   }

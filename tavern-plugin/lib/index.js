@@ -283,9 +283,16 @@ export async function apply(ctx) {
     const chat = await chatForSession(sessionId)
     return chat ? (chat.mode === 'card' ? 'card' : 'foreground') : null
   }
+  async function skillEnabledFor(skill, agent) {
+    if (await skillRoleFor(agent) !== 'foreground') return true
+    const chat = await chatForSession(agent?.session?.id)
+    return !(chat?.disabledWritingSkills || []).includes(skill.name)
+  }
+  let invalidateTavernSkills = () => {}
   const skillRegistry = ctx.get('skills')
   if (!skillRegistry) throw new Error('dsh-tavern: 缺少原生 Skills 服务')
   skillRegistry.registerProvider(control => {
+    invalidateTavernSkills = () => control.invalidate()
     const providers = [
       new FileSystemSkillProvider(ctx, control, { providerName: 'tavern-interactive-files', includeDefaultRoots: false, customSkillDirs: [dataRoot + '/skills'], bundledSkillDir: sourceRoot + '/presets/tavern/skills' }),
       new FileSystemSkillProvider(ctx, control, { providerName: 'tavern-background-files', includeDefaultRoots: false, bundledSkillDir: sourceRoot + '/presets/tavern-background/skills' })
@@ -295,7 +302,7 @@ export async function apply(ctx) {
     ctx.on('fs/observed', (target, _observation, actor) => {
       if (actor?.name === 'write' || actor?.name === 'edit') providers.forEach(provider => provider.observeHostMutation(target.displayPath))
     })
-    return createTavernSkillProvider({ providers, library: tavernSkills, roleFor: skillRoleFor })
+    return createTavernSkillProvider({ providers, library: tavernSkills, roleFor: skillRoleFor, enabledFor: skillEnabledFor })
   })
 
   // ---------- profile 私有 preset ----------
@@ -2674,6 +2681,20 @@ export async function apply(ctx) {
       case 'renameResource': return { resource: await renameResource(args && args.path, args && args.name) }
       case 'deleteResource': return await deleteResource(args && args.path)
       case 'deletePreset': return await deletePreset(args && args.path)
+      case 'getConversationWritingSkills': {
+        const chat = await chatForSession(str(args?.sessionId))
+        if (!chat || groupOfMode(chat.mode) !== 'play') throw new Error('请先打开游玩会话')
+        return { skills: (await tavernSkills.list()).filter(skill => skill.agents.includes('foreground')).map(skill => ({ name: skill.name, description: skill.description, enabled: !(chat.disabledWritingSkills || []).includes(skill.name) })) }
+      }
+      case 'setConversationWritingSkill': {
+        const chat = await chatForSession(str(args?.sessionId))
+        if (!chat || groupOfMode(chat.mode) !== 'play') throw new Error('请先打开游玩会话')
+        const skill = await tavernSkills.read(args.name)
+        if (!skill?.agents.includes('foreground') || typeof args.enabled !== 'boolean') throw new Error('无效的写作 Skill 配置')
+        await updateChat(chat.id, current => ({ ...current, disabledWritingSkills: args.enabled ? (current.disabledWritingSkills || []).filter(name => name !== skill.name) : [...new Set([...(current.disabledWritingSkills || []), skill.name])] }), { source: 'writing-skill.switch' })
+        invalidateTavernSkills()
+        return { saved: true }
+      }
       case 'listSkills': return { skills: (await tavernSkills.list()).map(({ content, path, ...summary }) => summary) }
       case 'getSkill': return { skill: await tavernSkills.read(args.name), references: await tavernSkills.referenceFiles(args.name) }
       case 'assignSkill': return { skill: await tavernSkills.assign(args.name, args.agents) }
@@ -3833,7 +3854,7 @@ export async function apply(ctx) {
       async execute(args, exec) {
         const role = await skillRoleFor(exec.agent)
         const skill = await tavernSkills.read(args.name)
-        if (!role || !skill?.modelInvocable || !skill.agents.includes(role)) throw new Error('此 Skill 未分配给当前 Agent')
+        if (!role || !skill?.modelInvocable || !skill.agents.includes(role) || !await skillEnabledFor(skill, exec.agent)) throw new Error('此 Skill 未分配给当前 Agent')
         return { content: await tavernSkills.readReference(args.name, args.path) }
       }
     }))

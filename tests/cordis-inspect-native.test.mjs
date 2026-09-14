@@ -41,11 +41,14 @@ test('真实 preset 共存及重新挂载：检查服务唯一，工具和 Taver
   ctx.baseUrl = bootUrl.href
   const { FileSystemSkillProvider } = await import(new URL('../../dsh-skill-filesystem/lib/index.js', bootUrl))
   const library = createTavernSkillModule({ directory: path.join(root, 'user-skills'), builtInDirectory: path.join(presetDir, 'skills') })
+  const disabledByScope = new Map()
+  let invalidateSkills
   ctx.skills.registerProvider(control => {
+    invalidateSkills = control.invalidate
     const provider = new FileSystemSkillProvider(ctx, control, { includeDefaultRoots: false, customSkillDirs: [path.join(root, 'user-skills')], bundledSkillDir: path.join(presetDir, 'skills'), watch: false })
     t.after(() => provider.dispose())
     t.after(library.subscribe(control.invalidate))
-    return createTavernSkillProvider({ providers: [provider], library, roleFor: key => key?.id?.startsWith('tavern') ? (key.id.includes('play') ? 'foreground' : key.id.includes('background') ? 'background' : 'card') : null })
+    return createTavernSkillProvider({ providers: [provider], library, enabledFor: (skill, scope) => !(disabledByScope.get(scope.id) || []).includes(skill.name), roleFor: key => key?.id?.startsWith('tavern') ? (key.id.includes('play') ? 'foreground' : key.id.includes('background') ? 'background' : 'card') : null })
   })
   const scopes = []
   const mount = async (id, file) => {
@@ -93,6 +96,15 @@ test('真实 preset 共存及重新挂载：检查服务唯一，工具和 Taver
   const loaded = await loader.execute({ name: 'dialogue-lesson' }, { agent: play.key, signal: new AbortController().signal })
   assert.match(loaded.content, /教学正文/)
   await assert.rejects(loader.execute({ name: 'tavern-create-skill' }, { agent: play.key, signal: new AbortController().signal }))
+  disabledByScope.set(play.key.id, ['dialogue-lesson'])
+  invalidateSkills()
+  assert.deepEqual(await ctx.skills.list(lookup), [])
+  await assert.rejects(loader.execute({ name: 'dialogue-lesson' }, { agent: play.key, signal: new AbortController().signal }))
+  const anotherPlay = await mount('tavern-play-other', presetPath)
+  assert.ok(await ctx.skills.get('dialogue-lesson', { cwd: root, scope: anotherPlay.key }))
+  disabledByScope.set(play.key.id, [])
+  invalidateSkills()
+  assert.ok(await ctx.skills.get('dialogue-lesson', lookup))
   await library.assign('dialogue-lesson', ['card'])
   assert.deepEqual(await ctx.skills.list(lookup), [])
   assert.ok(await ctx.skills.get('dialogue-lesson', { scope: first.key }))
@@ -106,6 +118,7 @@ test('真实 preset 共存及重新挂载：检查服务唯一，工具和 Taver
   assert.equal(await ctx.skills.get('dialogue-lesson', { scope: background.key }), undefined)
   await background.dispose()
   await play.dispose()
+  await anotherPlay.dispose()
 
   await official.dispose()
   await first.dispose()

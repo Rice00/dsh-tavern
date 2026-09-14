@@ -157,14 +157,16 @@ test('会话种子任一消息写入中断后可恢复，且不重放已经追�
   }
 })
 
-test('新游戏固化创建时的联网搜索设置，之后不随设置变化', async () => {
+test('新游戏功能默认关闭，不继承旧全局开关', async () => {
   const h = initializationFixture()
   h.state.settings.webSearchEnabled = true
   const created = await h.make().start(h.input)
-  assert.equal(created.webSearchEnabled, true)
+  assert.equal(created.webSearchEnabled, false)
+  assert.equal(created.sceneImagesEnabled, false)
+  assert.equal(created.conversationFeaturesVersion, 1)
 
   h.state.settings.webSearchEnabled = false
-  assert.equal((await h.make().start(h.input)).webSearchEnabled, true)
+  assert.equal((await h.make().start(h.input)).webSearchEnabled, false)
 
   const fresh = initializationFixture()
   assert.equal((await fresh.make().start(fresh.input)).webSearchEnabled, false)

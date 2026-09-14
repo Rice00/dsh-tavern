@@ -18,5 +18,16 @@ export function patchConversationBackground(chat, patch) {
   if (Object.hasOwn(patch, 'backgroundTasks')) {
     next.backgroundTasks = normalizeBackgroundTasks({ ...normalizeBackgroundTasks(chat.backgroundTasks), ...patch.backgroundTasks })
   }
+  for (const name of ['webSearchEnabled', 'sceneImagesEnabled']) {
+    if (Object.hasOwn(patch, name)) {
+      if (typeof patch[name] !== 'boolean') throw new Error('开关配置必须为布尔值')
+      next[name] = patch[name]
+    }
+  }
   return next
+}
+
+export function adoptConversationFeatures(chat, legacy = {}, legacyImageEnabled = false) {
+  if (chat.conversationFeaturesVersion === 1) return chat
+  return { ...chat, conversationFeaturesVersion: 1, webSearchEnabled: legacy?.webSearchEnabled === true, sceneImagesEnabled: legacyImageEnabled === true }
 }

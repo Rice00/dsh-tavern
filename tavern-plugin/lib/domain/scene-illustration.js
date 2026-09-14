@@ -172,7 +172,7 @@ export function createSceneIllustrations(deps) {
     const current = await config()
     const last = [...chat.messages].reverse().find(item => item.role === 'assistant')
     const reference = await imageReferences.select({ chatId: chat.id, lineage: turns => sceneLineage(chat, { turn: Number(last.turn || 1) }, turns), config: current })
-    return { ...present(target, await readRecord(path)), enabled: current.enabled, profile: imageExpressionProfile(current),
+    return { ...present(target, await readRecord(path)), enabled: typeof chat.sceneImagesEnabled === 'boolean' ? chat.sceneImagesEnabled : current.enabled, profile: imageExpressionProfile(current),
       reference: { ...reference.capability, warning: reference.warning,
         bindings: reference.active.filter(record => record.source.key === target.key).map(record => ({ versionId: record.source.versionId, personId: record.person.id, name: record.person.name })),
         versions: reference.active.filter(record => record.source.key === target.key).map(record => record.source.versionId) } }
@@ -181,7 +181,7 @@ export function createSceneIllustrations(deps) {
     const { chat, target, path } = await resolve(sessionId, turn)
     if (key !== target.key) throw new Error('正文版本已变化，请刷新后选择参考图')
     const active = await config()
-    if (enabled && !active.enabled) throw new Error('请先启用场景生图')
+    if (enabled && !(typeof chat.sceneImagesEnabled === 'boolean' ? chat.sceneImagesEnabled : active.enabled)) throw new Error('请先启用场景生图')
     const version = versionsOf(await readRecord(path)).find(item => item.id === versionId)
     if (!version?.attachment) throw new Error('参考图片不存在或已删除')
     const latest = [...chat.messages].reverse().find(item => item.role === 'assistant')
@@ -256,7 +256,7 @@ export function createSceneIllustrations(deps) {
       const existing = await readRecord(path)
       if (existing?.recovery === 'save') throw new Error('图片已生成，请先重试保存；不会再次请求图片渠道')
       const { active, apiKey } = await capture()
-      if (!active.enabled) throw new Error('请先在设置 → DSH Tavern → 场景生图中手动启用')
+      if (!(typeof chat.sceneImagesEnabled === 'boolean' ? chat.sceneImagesEnabled : active.enabled)) throw new Error('请先在本局设置中开启场景生图')
       if (await deps.isRunning?.(sessionId)) throw new Error('请等待当前正文生成完成后再生图')
       if (Object.hasOwn(existing?.requests || {}, requestId) || (kind === 'generate' && existing?.status === 'succeeded') || existing?.status === 'running' && (jobs.has(path) || ownerIsLive(existing, path))) return present(target, existing)
       checkPurchaseConfirmation(existing, options)

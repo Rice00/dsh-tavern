@@ -4,14 +4,15 @@ import vm from 'node:vm'
 import { readFile } from 'node:fs/promises'
 const source = await readFile(new URL('../tavern-plugin/src/client/main.js', import.meta.url), 'utf8')
 
-test('对话设置保存本局模型与开关，切换模型丢弃旧档位响应', async () => {
+test('本局设置保存本局模型与开关，切换模型丢弃旧档位响应', async () => {
   const states = [], effects = [], calls = [], pending = []
   let cursor = 0
   const render = vm.runInNewContext('(' + source.slice(source.indexOf('function TavernConversationBackgroundModel(props)'), source.indexOf('function TavernMoreActions(props)')).trim() + ')', {
+    window: { dispatchEvent() {} }, CustomEvent: class {},
     React: { useState: initial => { const i = cursor++; if (!(i in states)) states[i] = initial; return [states[i], value => { states[i] = value }] }, useEffect: fn => effects.push(fn), createElement: (type, props, ...children) => ({ type, props, children }) },
     rpc: async (method, args, sessionId) => {
       calls.push({ method, args, sessionId })
-      if (method === 'getConversationBackgroundConfig') return { modelCatalog: [], backgroundModel: null, backgroundTasks: { variables: true, posture: true, characterDesign: false } }
+      if (method === 'getConversationBackgroundConfig') return { modelCatalog: [], backgroundModel: null, sceneImagesAvailable: true, webSearchEnabled: false, sceneImagesEnabled: false, backgroundTasks: { variables: true, posture: true, characterDesign: false } }
       if (method === 'getBackgroundModelReasoning') return new Promise(resolve => pending.push(resolve))
       return args
     }, liveTavernView: { invalidate() {} }, backgroundModelLabel: () => ''
@@ -35,10 +36,14 @@ test('对话设置保存本局模型与开关，切换模型丢弃旧档位响�
   assert.match(JSON.stringify(effort), /new-level/); assert.doesNotMatch(JSON.stringify(effort), /old-level/)
   effort.props.onChange({ target: { value: 'new-level' } })
   nodes = tree(); nodes.find(n => n.props?.['aria-label'] === '变量结算').props.onChange({ target: { checked: false } })
+  tree().find(n => n.props?.['aria-label'] === '联网搜索').props.onChange({ target: { checked: true } })
+  tree().find(n => n.props?.['aria-label'] === '开启场景生图').props.onChange({ target: { checked: true } })
   await tree().find(n => n.type === 'button' && n.children.includes('保存本局配置')).props.onClick()
   const call = calls.at(-1)
   assert.equal(call.method, 'setConversationBackgroundConfig'); assert.equal(call.sessionId, 'game-a')
   assert.equal(call.args.sessionId, 'game-a'); assert.equal(call.args.backgroundTasks.variables, false)
   assert.equal(call.args.backgroundModel.reasoningEffort, 'new-level')
+  assert.equal(call.args.webSearchEnabled, true)
+  assert.equal(call.args.sceneImagesEnabled, true)
   assert.equal(calls.some(c => c.method === 'updateTavernSettings'), false)
 })

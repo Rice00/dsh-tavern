@@ -1,4 +1,4 @@
-import { adoptConversationBackground, patchConversationBackground } from './domain/conversation-background.js'
+import { adoptConversationFeatures, adoptConversationBackground, patchConversationBackground } from './domain/conversation-background.js'
 import { clearLegacyTavernDefault } from './domain/legacy-agent-default.js'
 import { conversationStateAtTurn, conversationForkBoundary } from './domain/conversation-fork-point.js'
 import { createCardResponseTest } from './domain/card-response-test.js'
@@ -224,7 +224,7 @@ export async function apply(ctx) {
     return presentTavernSettings(tavernSettingsDocument, promptDefaults())
   }
   async function updateTavernSettings(patch) {
-    if (patch && (Object.hasOwn(patch, 'backgroundModel') || Object.hasOwn(patch, 'backgroundTasks'))) throw new Error('后台配置已移至顶栏的对话设置')
+    if (patch && (Object.hasOwn(patch, 'backgroundModel') || Object.hasOwn(patch, 'backgroundTasks') || Object.hasOwn(patch, 'webSearchEnabled'))) throw new Error('后台配置已移至顶栏的本局设置')
     tavernSettingsDocument = await profileData.updateJson(settingsPath, function (current) {
       return applyTavernSettingsPatch(current, patch)
     })
@@ -659,10 +659,6 @@ export async function apply(ctx) {
   const chatPersistence = createChatPersistence({ store: chatJournalStore, normalize: normalizeChat, now: Date.now })
   async function readChat(chatId) {
     const chat = await chatPersistence.read(chatId)
-    if (chat && chat.mode !== 'card') {
-      // Runtime preference: ignore legacy opening snapshots without rewriting history.
-      chat.webSearchEnabled = (await readTavernSettings()).webSearchEnabled === true
-    }
     return chat
   }
   async function readChatRevision(chatId, revision) { return await chatPersistence.readRevision(chatId, revision) }
@@ -713,8 +709,9 @@ export async function apply(ctx) {
   async function readSessionMap() { return await conversationRegistry.links() }
   async function chatForSession(sessionId) {
     const chat = await conversationRegistry.resolve(sessionId)
-    if (!chat || groupOfMode(chat.mode) !== 'play' || chat.backgroundConfigVersion === 1) return chat
-    return await updateChat(chat.id, current => adoptConversationBackground(current, tavernSettingsDocument), { source: 'background-config.adopt' })
+    if (!chat || groupOfMode(chat.mode) !== 'play' || chat.backgroundConfigVersion === 1 && chat.conversationFeaturesVersion === 1) return chat
+    const legacyImageEnabled = sceneIllustrations ? (await sceneIllustrations.settings()).enabled === true : false
+    return await updateChat(chat.id, current => adoptConversationFeatures(adoptConversationBackground(current, tavernSettingsDocument), tavernSettingsDocument, legacyImageEnabled), { source: 'background-config.adopt' })
   }
   const historyRecall = createHistoryRecall()
   async function recallHistoryForSession(sessionId, args) {
@@ -1567,7 +1564,7 @@ export async function apply(ctx) {
   const backgroundAgentRunner = createBackgroundAgentRunner({
     systemAppend: () => runtimePrompt('system-append'),
     resolveModelSelection: async input => backgroundModelSelection(await chatForSession(input.sessionId)) || input.selection,
-    resolveWebSearch: async () => (await readTavernSettings()).webSearchEnabled === true,
+    resolveWebSearch: async input => (await chatForSession(input.sessionId))?.webSearchEnabled === true,
     resolveBackgroundTasks: async input => input.backgroundTasks || normalizeBackgroundTasks((await chatForSession(input.sessionId))?.backgroundTasks),
     backgroundTools: [POSTURE_SUBMIT_TOOL, CHARACTER_DESIGN_READ_TOOL, CHARACTER_DESIGN_SAVE_TOOL, MVU_SUBMIT_UPDATE_TOOL, CANDIDATE_SUBMIT_TOOL, SCRIPT_READ_TOOL, SCRIPT_POINT_TOOL],
     sharedTools: [{
@@ -2697,7 +2694,7 @@ export async function apply(ctx) {
       case 'getConversationBackgroundConfig': {
         const chat = await chatForSession(str(args?.sessionId))
         if (!chat || groupOfMode(chat.mode) !== 'play') throw new Error('请先打开游玩会话')
-        return { backgroundModel: chat.backgroundModelSelection || null, backgroundTasks: normalizeBackgroundTasks(chat.backgroundTasks), modelCatalog: await tavernModelCatalog() }
+        return { backgroundModel: chat.backgroundModelSelection || null, backgroundTasks: normalizeBackgroundTasks(chat.backgroundTasks), webSearchEnabled: chat.webSearchEnabled === true, sceneImagesEnabled: chat.sceneImagesEnabled === true, sceneImagesAvailable: TAVERN_RELEASE_CAPABILITIES.sceneImages, modelCatalog: await tavernModelCatalog() }
       }
       case 'setConversationBackgroundModel':
       case 'setConversationBackgroundConfig': {
@@ -2713,12 +2710,22 @@ export async function apply(ctx) {
           if (selection.reasoningEffort && !reasoning?.efforts?.some(effort => effort.id === selection.reasoningEffort)) throw new Error('所选推理强度不可用')
         }
         const saved = await updateChat(chat.id, current => patchConversationBackground(current, args), { source: 'background-model.switch-conversation' })
-        return { backgroundModel: saved.backgroundModelSelection || null, backgroundTasks: normalizeBackgroundTasks(saved.backgroundTasks) }
+        return { backgroundModel: saved.backgroundModelSelection || null, backgroundTasks: normalizeBackgroundTasks(saved.backgroundTasks), webSearchEnabled: saved.webSearchEnabled === true, sceneImagesEnabled: saved.sceneImagesEnabled === true }
       }
       case 'getBackgroundModelReasoning': return { reasoning: await readBackgroundModelReasoning(llm, args) }
       case 'getTavernSettings': return { settings: await readTavernSettings(), modelCatalog: await tavernModelCatalog(), releaseCapabilities: TAVERN_RELEASE_CAPABILITIES }
-      case 'getSceneImageSettings': return { settings: await enabledSceneIllustrations().settings(args?.provider) }
-      case 'saveSceneImageSettings': return { settings: await enabledSceneIllustrations().configure(args) }
+      case 'getSceneImageSettings': {
+        const settings = await enabledSceneIllustrations().settings(args?.provider)
+        if (args?.conversation === true) {
+          const chat = await chatForSession(str(args.sessionId))
+          return { settings: { ...settings, enabled: chat?.sceneImagesEnabled === true } }
+        }
+        return { settings }
+      }
+      case 'saveSceneImageSettings': {
+        if (Object.hasOwn(args || {}, 'enabled')) throw new Error('请在本局设置中开启或关闭场景生图')
+        return { settings: await enabledSceneIllustrations().configure(args) }
+      }
       case 'testSceneImageConnection': return await enabledSceneIllustrations().testConnection(args)
       case 'listSceneImageModels': return await enabledSceneIllustrations().listModels(args)
       case 'sceneImageStatus': return { illustration: await enabledSceneIllustrations().status(args.sessionId, args.turn) }

@@ -54,6 +54,7 @@ test('后台联网搜索按游戏快照统一开放，并在后台各任务间�
     let names = []
     const runner = createBackgroundAgentRunner({
       id: () => 'background-web-' + enabled,
+      resolveWebSearch: input => { assert.equal(input.sessionId, 'parent'); return enabled },
       agents: {
         get: () => ({ id: 'parent', session: { header: {} } }),
         async create(options) {
@@ -74,7 +75,7 @@ test('后台联网搜索按游戏快照统一开放，并在后台各任务间�
         }
       }
     })
-    await runner.run({ sessionId: 'parent', persistent: true, task: 'candidate', webSearchEnabled: enabled,
+    await runner.run({ sessionId: 'parent', persistent: true, task: 'candidate', webSearchEnabled: !enabled,
       selection: { provider: 'test', model: 'test' }, messages: [], tools: [], acceptWithoutText: () => true })
     await runner.dispose()
     return { allowed, names }

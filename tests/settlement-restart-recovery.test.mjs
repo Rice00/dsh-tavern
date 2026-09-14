@@ -324,7 +324,7 @@ test('non-MVU settlement binds session before first response so interruption can
 });
 
 
-test('已有游戏联网随设置变化，覆盖旧开场值且不写入存档', async () => {
+test('已有游戏读取本局联网开关，忽略全局变化', async () => {
   const stored = { id: 'chat', mode: 'story', webSearchEnabled: false }
   let enabled = false
   const sandbox = vm.createContext({
@@ -334,7 +334,7 @@ test('已有游戏联网随设置变化，覆盖旧开场值且不写入存档',
   vm.runInContext(section('  async function readChat(chatId)', '  async function readChatRevision'), sandbox)
   assert.equal((await sandbox.readChat('chat')).webSearchEnabled, false)
   enabled = true
-  assert.equal((await sandbox.readChat('chat')).webSearchEnabled, true)
+  assert.equal((await sandbox.readChat('chat')).webSearchEnabled, false)
   enabled = false
   assert.equal((await sandbox.readChat('chat')).webSearchEnabled, false)
   assert.equal(stored.webSearchEnabled, false)

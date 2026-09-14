@@ -109,31 +109,16 @@ test('设置界面提供分色与现有设置，不恢复旧兼容样式选项',
   visit(root)
   assert.ok(nodes.some(node => node.type === context.TavernTextColorSettings))
   const inputs = nodes.filter(node => node.type === 'input')
-  assert.deepEqual(inputs.map(input => input.props['aria-label']), ['默认玩家称呼', '开启联网搜索'])
+  assert.deepEqual(inputs.map(input => input.props['aria-label']), [])
   const select = nodes.find(node => node.type === 'select' && node.props['aria-label'] === '后台模型')
   assert.equal(select, undefined)
   assert.equal(nodes.some(node => node.type === 'textarea' || node.type === 'details'), false)
   assert.doesNotMatch(JSON.stringify(root), /兼容模式|受信任人物卡模式|SillyTavern 样式环境|Custom CSS/)
 })
 
-test('联网搜索开关保存为以后新游戏的默认值', async t => {
+test('全局接口拒绝修改本局联网搜索开关', async t => {
   const harness = await settingsHarness(t)
-  let state = { webSearchEnabled: false }
-  const events = []
-  const context = {
-    setState: updater => { state = updater(state) },
-    rpc: async (_method, args) => ({ settings: await harness.update(args.patch) }),
-    window: { dispatchEvent: event => events.push(event.type) },
-    CustomEvent: class { constructor(type) { this.type = type } }
-  }
-  const start = clientSource.indexOf('async function setWebSearchEnabled(enabled)')
-  assert.ok(start >= 0)
-  vm.runInNewContext(clientSource.slice(start, clientSource.indexOf('\n\t\t\treturn React.createElement', start)) +
-    '; this.toggle = setWebSearchEnabled;', context)
-  await context.toggle(true)
-  assert.equal(state.webSearchEnabled, true)
-  assert.equal((await harness.read()).webSearchEnabled, true)
-  assert.deepEqual(events, ['dsh-tavern-settings-changed', 'dsh-tavern-data-changed'])
+  await assert.rejects(harness.update({ webSearchEnabled: true }), /本局设置/)
 })
 
 test('后台对话框以只读标签显示实际模型，不替换前台模型选择器', () => {
@@ -253,8 +238,8 @@ test('单项系统提示词保存和恢复不会影响其他项', function () {
 
 test('全局 API 拒绝修改后台配置，防止旧客户端改变所有对话', async t => {
   const run = await settingsHarness(t)
-  await assert.rejects(run.update({ backgroundTasks: { variables: false } }), /对话设置/)
-  await assert.rejects(run.update({ backgroundModel: null }), /对话设置/)
+  await assert.rejects(run.update({ backgroundTasks: { variables: false } }), /本局设置/)
+  await assert.rejects(run.update({ backgroundModel: null }), /本局设置/)
 })
 
 test('全局设置不再显示后台模型和结算开关', () => {

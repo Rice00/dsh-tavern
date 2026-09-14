@@ -135,7 +135,7 @@ test('游玩中可修改玩家称呼，Tavern 不接管正文发送状态', () =
   assert.doesNotMatch(clientSource, /dsh-tavern-signal-timeout/)
 })
 
-test('对话设置显示本局预设并通过已有接口切换', () => {
+test('本局设置显示本局预设并通过已有接口切换', () => {
   const player = between(clientSource, 'function TavernConversationPreset', 'function TavernConversationSettingsTab')
   const view = between(serverSource, 'async function view(chat, card)', 'function replyProjectionsOf')
 
@@ -608,7 +608,7 @@ test('游玩不提供 Swipe 分支切换，只保留整轮正文重新生成', (
 	assert.doesNotMatch(serverSource, /case 'switchTavernSwipe'/)
 })
 
-test('游玩默认打开对话设置，酒馆状态仍保留为独立侧栏', () => {
+test('游玩默认打开本局设置，酒馆状态仍保留为独立侧栏', () => {
   const sidebar = between(clientSource, 'function TavernSidebar', 'function CardFieldsPanel')
 
   assert.match(sidebar, /readyTavernSession/)

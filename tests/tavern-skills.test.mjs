@@ -110,3 +110,11 @@ test('只修改正文保留原有调用策略', async t => {
   assert.equal(skill.modelInvocable, false)
   assert.equal(skill.userInvocable, false)
 })
+
+ test('文生图 Skill 可默认分配并独立调整用途', async t => {
+  const { skills } = await harness(t)
+  await skills.write({ name: 'image-style', description: '绘图风格', body: '组织绘图描述', purpose: 'image' })
+  assert.deepEqual((await skills.read('image-style')).agents, ['image'])
+  await skills.assign('image-style', ['image', 'foreground'])
+  assert.deepEqual((await skills.read('image-style')).agents, ['image', 'foreground'])
+})

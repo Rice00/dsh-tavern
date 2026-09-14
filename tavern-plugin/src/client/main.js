@@ -6842,7 +6842,7 @@ window.__ModuleLoader__.load({
             const [dropGroup, setDropGroup] = React.useState(null);
 			const [busy, setBusy] = React.useState(false);
 			const [error, setError] = usePersistentError("Skill 库");
-			const roles = [["card", "卡片 Agent"], ["foreground", "前台"], ["background", "后台"]];
+			const roles = [["card", "卡片 Agent"], ["foreground", "前台"], ["background", "后台"], ["image", "文生图"]];
 			async function refresh() {
 				const result = await rpc("listSkills", {}, props.sessionId);
 				setSkills(result.skills || []);

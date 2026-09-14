@@ -170,7 +170,7 @@ export function createBackgroundAgentTask(options) {
           }
         })
       }
-      childCtx.tools.restrict({ allow: state.input.task === 'image' || state.input.task === 'phone' ? [] : ['skill', 'tavern_read_skill_reference', 'web_search'] })
+      childCtx.tools.restrict({ allow: state.input.task === 'phone' ? [] : state.input.task === 'image' ? ['skill', 'tavern_read_skill_reference'] : ['skill', 'tavern_read_skill_reference', 'web_search'] })
       childCtx.on('system-prompt/assemble', async function (_assembly, _context, next) {
         const assembly = await next()
         const sections = [...(assembly.sections || []), ...sessionStablePrefixSections(_context?.agent?.session)]

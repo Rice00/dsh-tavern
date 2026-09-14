@@ -279,7 +279,7 @@ export async function apply(ctx) {
   async function skillRoleFor(agent) {
     const sessionId = agent?.session?.id
     if (!sessionId) return null
-    if (backgroundAgentRunner.owns(sessionId)) return 'background'
+    if (backgroundAgentRunner.owns(sessionId)) return backgroundAgentRunner.requestContext(sessionId)?.task === 'image' ? 'image' : 'background'
     const chat = await chatForSession(sessionId)
     return chat ? (chat.mode === 'card' ? 'card' : 'foreground') : null
   }
@@ -3843,8 +3843,8 @@ export async function apply(ctx) {
         name: { type: 'string', required: true, description: 'kebab-case Skill 名称' },
         description: { type: 'string', required: true, description: '用于 Skill 自动发现的一句话简介，说明做什么以及何时使用' },
         body: { type: 'string', required: true, description: '不含 YAML frontmatter 的完整 Markdown 指令正文' },
-        purpose: { type: 'string', enum: ['card', 'writing', 'background'], description: '用途：卡片制作、前台写作、后台任务；默认卡片制作' },
-        agents: { type: 'array', items: { type: 'string', enum: ['card', 'foreground', 'background'] }, description: '分配给哪些 Agent；省略时按用途默认分配' },
+        purpose: { type: 'string', enum: ['card', 'writing', 'background', 'image'], description: '用途：卡片制作、前台写作、后台任务、文生图；默认卡片制作' },
+        agents: { type: 'array', items: { type: 'string', enum: ['card', 'foreground', 'background', 'image'] }, description: '分配给哪些 Agent；省略时按用途默认分配' },
         references: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { path: { type: 'string', required: true }, content: { type: 'string', required: true } } }, description: 'Skill 自带的参考资料副本，路径为 references/名称.md；省略保留旧文件，传数组替换整套文件' },
         modelInvocable: { type: 'boolean', description: '是否允许 Agent 自动发现，默认 true' },
         userInvocable: { type: 'boolean', description: '是否允许用户显式调用，默认 true' },

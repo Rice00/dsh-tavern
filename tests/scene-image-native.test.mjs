@@ -394,7 +394,7 @@ test('真实 DSH 子 Agent 调用生图工具，HTTP 返回图经宿主校验落
   assert.equal(runtime.imageRequests.length, 1)
   assert.match(runtime.imageRequests[0].prompt, /window/)
   assert.equal(runtime.requests.length, 2)
-  assert.deepEqual(runtime.requests[0].tools.map(tool => tool.name), ['character_design_read', 'submit_scene_character', 'submit_scene_layout', 'submit_scene_plan'])
+  assert.deepEqual(runtime.requests[0].tools.map(tool => tool.name), ['character_design_read', 'skill', 'submit_scene_character', 'submit_scene_layout', 'submit_scene_plan', 'tavern_read_skill_reference'])
   const receipt = confirmationReceipt(runtime, status.traceSessionId)
   assert.equal(receipt.ok, true)
   assert.equal(receipt.status, 'succeeded')

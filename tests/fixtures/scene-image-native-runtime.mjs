@@ -116,7 +116,7 @@ export async function createSceneImageNativeRuntime(bootPath, { unifiedPlugin = 
     }
   }
   ctx.llm.registerAdapter(['scene-fixture', 'scene-fixture-other', 'deepseek-official'], new FixtureModel())
-  if (systemAppend) for (const name of ['skill', 'tavern_read_skill_reference', 'web_search']) ctx.tools.register({
+  for (const name of ['skill', 'tavern_read_skill_reference', 'web_search']) ctx.tools.register({
     name, description: 'Fixture tool', parameters: { type: 'object', properties: {} },
     output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
     async execute() { return 'fixture' }

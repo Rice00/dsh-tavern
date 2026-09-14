@@ -48,7 +48,7 @@ description: "创建或改进 Tavern Skill：把可复用工作方法组织为�
 用户已要求创建或修改时执行保存；仅讨论或审阅方案时展示草稿。
 
 - 提交 `name`、`description` 和完整 `body`。`body` 只含 Markdown 正文，YAML frontmatter 由保存接口生成。
-- 按用途设置 `purpose`：`card` 为卡片制作、`writing` 为前台写作、`background` 为后台任务。省略 `agents` 时按用途分配；只有用户要求其他分配时才指定。
+- 按用途设置 `purpose`：`card` 为卡片制作、`writing` 为前台写作、`background` 为后台任务、`image` 为文生图。省略 `agents` 时按用途分配；只有用户要求其他分配时才指定。
 - 参考文件以 `references` 数组提交，每项为相对 `path` 和完整 `content`。修改时省略数组会保留旧参考；传入数组会替换整套参考，先读取并保留仍需要的文件。空数组表示清空参考。
 - 修改同名用户 Skill 时设置 `overwrite: true`。内置 Skill 不能由该接口覆盖；需要派生版本时使用新名称并说明关系。
 - 保存到 Tavern，不使用 Codex 的个人目录、初始化脚本或 UI 元数据机制代替此接口。

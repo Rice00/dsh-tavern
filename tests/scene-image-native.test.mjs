@@ -424,7 +424,7 @@ test('真实 DSH 子 Agent 调用生图工具，HTTP 返回图经宿主校验落
   const adjusted = await finish({ kind: 'adjust', versionId: originalVersion, instruction: '改成雨夜近景' })
   assert.equal(runtime.requests.length, 3)
   assert.equal(runtime.imageRequests.length, 3)
-  assert.deepEqual(runtime.requests[2].tools.map(tool => tool.name), ['character_design_read', 'submit_image_adjustment'])
+  assert.deepEqual(runtime.requests[2].tools.map(tool => tool.name), ['character_design_read', 'skill', 'submit_image_adjustment', 'tavern_read_skill_reference'])
   assert.equal(adjusted.traceSessionId, status.traceSessionId, 'adjustment resumes the original child after runner disposal')
   assert.match(JSON.stringify(runtime.requests[2].messages), /左手轻轻搭着窗框/, 'original planning history remains in the child')
   assert.doesNotMatch(JSON.stringify(runtime.requests[2].messages.at(-1)), /左手轻轻搭着窗框/, 'new adjustment input does not resend the source text')

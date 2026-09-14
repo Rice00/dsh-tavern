@@ -7554,7 +7554,7 @@ window.__ModuleLoader__.load({
 							React.createElement("span", { className: "dsh-tavern-settings-title" }, "默认玩家称呼"),
 							React.createElement("span", { className: "dsh-tavern-settings-desc" }, "只影响新开游戏和进入准备界面时的默认值；已有游戏请在对话顶栏单独修改。留空表示使用“你”。")
 						),
-						React.createElement("input", { key: defaultPlayerName, className: "dsh-tavern-settings-text", type: "text", defaultValue: defaultPlayerName, maxLength: 80, placeholder: "你", disabled: state.loading, "aria-label": "默认玩家称呼", onBlur: function (event) { saveDefaultPlayerName(event.target.value); }, onKeyDown: function (event) { if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); } } })
+						React.createElement("input", { key: defaultPlayerName, className: "dsh-tavern-settings-text", type: "text", defaultValue: defaultPlayerName, maxLength: 80, placeholder: "你", disabled: state.loading, "aria-label": "默认玩家称呼", onBlur: function (event) { saveDefaultPlayerName(event.target.value); }, onKeyDown: function (event) { if (event.key === "Enter" && !(event.nativeEvent && event.nativeEvent.isComposing)) { event.preventDefault(); event.currentTarget.blur(); } } })
 					)
 				),
 				React.createElement("div", { className: "dsh-tavern-settings-group" },

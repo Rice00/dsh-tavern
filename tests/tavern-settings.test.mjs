@@ -109,7 +109,7 @@ test('设置界面提供分色与现有设置，不恢复旧兼容样式选项',
   visit(root)
   assert.ok(nodes.some(node => node.type === context.TavernTextColorSettings))
   const inputs = nodes.filter(node => node.type === 'input')
-  assert.deepEqual(inputs.map(input => input.props['aria-label']), ['开启联网搜索'])
+  assert.deepEqual(inputs.map(input => input.props['aria-label']), ['默认玩家称呼', '开启联网搜索'])
   const select = nodes.find(node => node.type === 'select' && node.props['aria-label'] === '后台模型')
   assert.ok(select)
   assert.match(JSON.stringify(select), /跟随前台（随切换生效）/)

@@ -21,7 +21,7 @@ function section(start, end) {
 }
 
 async function harness({ beginRunning = true, mvu = true } = {}) {
-  let current = { id: 'chat', sessionId: 'session', mode: 'story', messages: [], mvu: { enabled: mvu, owner: mvu ? 'official' : null } }
+  let current = { backgroundTasks: { posture: true, characterDesign: true, variables: true }, id: 'chat', sessionId: 'session', mode: 'story', messages: [], mvu: { enabled: mvu, owner: mvu ? 'official' : null } }
   let sequence = 0
   const timeline = createStoryTimeline({ id: prefix => prefix + ++sequence, now: () => 1000 + sequence })
   const store = {
@@ -259,7 +259,7 @@ test('MVU 执行超时保留已提交正文 checkpoint，仍能重试结算', as
 
 test('普通卡全部自动任务关闭时不请求模型，仍完成原生结算', async () => {
   const run = await harness({ beginRunning: false, mvu: false })
-  run.sandbox.readTavernSettings = async () => ({ backgroundTasks: { posture: false, characterDesign: false } })
+  await run.store.updateChat('chat', chat => ({ ...chat, backgroundTasks: { posture: false, characterDesign: false } }))
   run.sandbox.backgroundModelSelection = () => { throw new Error('关闭后不应选择模型') }
   await run.sandbox.queueSettlement('chat')
   assert.equal(run.get().settleStatus, 'done')
@@ -268,7 +268,7 @@ test('普通卡全部自动任务关闭时不请求模型，仍完成原生结�
 
 test('普通卡只开人物设计无需提交姿势', async () => {
   const run = await harness({ beginRunning: false, mvu: false })
-  run.sandbox.readTavernSettings = async () => ({ backgroundTasks: { posture: false, characterDesign: true } })
+  await run.store.updateChat('chat', chat => ({ ...chat, backgroundTasks: { posture: false, characterDesign: true } }))
   run.sandbox.backgroundAgentRunner.run = async input => {
     assert.deepEqual(Array.from(input.tools, tool => tool.name), ['character_design_read', 'character_design_save'])
     assert.doesNotMatch(input.system, /posture_submit/)
@@ -280,7 +280,7 @@ test('普通卡只开人物设计无需提交姿势', async () => {
 
 test('MVU 变量关闭后跳过本轮且不留待重放，姿势仍可独立结算', async () => {
   const run = await harness({ beginRunning: false, mvu: true })
-  run.sandbox.readTavernSettings = async () => ({ backgroundTasks: { posture: true, characterDesign: false, variables: false } })
+  await run.store.updateChat('chat', chat => ({ ...chat, backgroundTasks: { posture: true, characterDesign: false, variables: false } }))
   run.sandbox.mvuSettlement.settleVariables = async () => { throw new Error('不应派发变量结算') }
   let calls = 0
   run.sandbox.backgroundAgentRunner.run = async input => {
@@ -300,7 +300,7 @@ test('MVU 变量关闭后跳过本轮且不留待重放，姿势仍可独立结�
 
 test('MVU 三项全关不会发起任何后台模型请求', async () => {
   const run = await harness({ beginRunning: false, mvu: true })
-  run.sandbox.readTavernSettings = async () => ({ backgroundTasks: { posture: false, characterDesign: false, variables: false } })
+  await run.store.updateChat('chat', chat => ({ ...chat, backgroundTasks: { posture: false, characterDesign: false, variables: false } }))
   run.sandbox.mvuSettlement.settleVariables = async () => { throw new Error('不应派发变量结算') }
   run.sandbox.backgroundModelSelection = () => { throw new Error('不应选择模型') }
   await run.sandbox.queueSettlement('chat')

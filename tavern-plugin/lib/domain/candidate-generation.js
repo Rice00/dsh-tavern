@@ -335,7 +335,8 @@ export function createCandidateGenerator(options) {
       if (script === undefined || !Array.isArray(script.chunks) || script.chunks.length === 0) throw new Error('剧本文件不存在，请重新为人物卡导入剧本')
       scriptWindow = scripts.inspect({ script, state: chat.scriptState, request: { kind: 'choice' } })
     }
-    const designEnabled = (await options.backgroundTasks?.(chat))?.characterDesign !== false
+    const backgroundTasks = await options.backgroundTasks?.(chat)
+    const designEnabled = backgroundTasks?.characterDesign !== false
     const task = prompt(scriptMode ? 'candidate-script' : 'candidate-story')
     const constantWorldBookContext = typeof options.stableWorldBookContext === 'function'
       ? await options.stableWorldBookContext(chat, card) : ''
@@ -393,6 +394,7 @@ export function createCandidateGenerator(options) {
       onPersistentSessionReady: id => taskRun.bindSession(id),
       sessionId: input.sessionId,
       task: 'candidate',
+      backgroundTasks,
       selection,
       temperature: 0.8,
       system: [

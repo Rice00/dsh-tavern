@@ -547,7 +547,7 @@ export function createMvuSettlementModule(options = {}) {
     let run = {}
     try {
       run = await options.model.run({
-        task: 'settlement', persistent: true, persistentSessionId: traceSessionId, rewindTo: -1,
+        task: 'settlement', backgroundTasks: tasks, persistent: true, persistentSessionId: traceSessionId, rewindTo: -1,
         onPersistentSessionReady: input.onPersistentSessionReady,
         selection: input.selection, messages: request.messages, turnContext: request.turnContext,
         system: [str(input.system).trim(), request.system].filter(Boolean).join('\n\n'),

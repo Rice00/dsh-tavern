@@ -172,7 +172,7 @@ test('新游戏固化创建时的联网搜索设置，之后不随设置变化',
   assert.equal((await fresh.make().start({ ...fresh.input, cardPath: '', mode: 'card' })).webSearchEnabled, false)
 })
 
-test('新游戏默认动态跟随前台，显式后台配置才固化；重入不改写选择', async () => {
+test('新游戏后台默认跟随前台且结算开关独立，不继承旧全局模型', async () => {
   const following = initializationFixture()
   const first = await following.make().start(following.input)
   assert.equal(first.backgroundModelSelection, null)
@@ -181,9 +181,12 @@ test('新游戏默认动态跟随前台，显式后台配置才固化；重入�
 
   const fixed = initializationFixture()
   fixed.state.settings.backgroundModel = { provider: 'siliconflow', model: 'deepseek-v4', reasoningEffort: 'high' }
-  assert.deepEqual((await fixed.make().start(fixed.input)).backgroundModelSelection, { provider: 'siliconflow', model: 'deepseek-v4', reasoningEffort: 'high' })
+  const created = await fixed.make().start(fixed.input)
+  assert.equal(created.backgroundModelSelection, null)
+  assert.equal(created.backgroundConfigVersion, 1)
+  assert.deepEqual(created.backgroundTasks, { variables: true, posture: true, characterDesign: false, ledger: false })
   fixed.state.settings.backgroundModel.reasoningEffort = 'low'
-  assert.equal((await fixed.make().start(fixed.input)).backgroundModelSelection.reasoningEffort, 'high')
+  assert.equal((await fixed.make().start(fixed.input)).backgroundModelSelection, null)
   assert.equal((await fixed.make().start({ ...fixed.input, cardPath: '', mode: 'card' })).backgroundModelSelection, null)
 })
 

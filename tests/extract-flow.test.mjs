@@ -130,20 +130,21 @@ test('游玩中可修改玩家称呼，Tavern 不接管正文发送状态', () =
   assert.match(serverSource, /case 'setPlayerName'/)
   assert.match(player, /rpc\("setPlayerName", \{ userName: next \}, props\.sessionId\)/)
   assert.match(player, /仅影响之后生成的内容/)
-  assert.match(clientSource, /id: "dsh-tavern-player-name"/)
+  assert.match(clientSource, /id: "dsh-tavern-conversation-settings"/)
   assert.doesNotMatch(clientSource, /TavernSignalTimeoutNotice/)
   assert.doesNotMatch(clientSource, /dsh-tavern-signal-timeout/)
 })
 
-test('Tavern 游玩对话顶栏显示创建时固化的整份预设', () => {
-  const player = between(clientSource, 'function TavernPlayerNameAction', 'function TavernStatusPanel')
+test('对话设置显示本局预设并通过已有接口切换', () => {
+  const player = between(clientSource, 'function TavernConversationPreset', 'function TavernConversationSettingsTab')
   const view = between(serverSource, 'async function view(chat, card)', 'function replyProjectionsOf')
 
   assert.match(view, /groupOfMode\(chat\.mode\) === 'play' && chat\.runtimePresetSnapshot/)
   assert.match(view, /runtimePreset: activePresetSnapshot === null \? null : \{ id: activePresetSnapshot\.presetPath, name: activePresetSnapshot\.presetName \}/)
-  assert.match(player, /const presetName = view\.runtimePreset && view\.runtimePreset\.name \? view\.runtimePreset\.name : "无"/)
-  assert.match(player, /"当前预设：" \+ presetName/)
-  assert.match(clientSource, /dsh-tavern-preset-status/)
+  assert.match(player, /session.view\?\.runtimePreset/)
+  assert.match(player, /"本局预设"/)
+  assert.match(player, /rpc\("applyConversationPreset"/)
+
 })
 
 test('手机宽度隐藏顶栏长预设条目标签，避免挤压会话标题', () => {
@@ -306,7 +307,7 @@ test('自由行动只聚焦输入框并保留已生成候选项', () => {
 })
 
 test('后台结算期间禁用候选项按钮，完成后自动恢复', () => {
-  const action = between(clientSource, 'function CandidateAction', 'function CandidateDockActions')
+  const action = between(clientSource, 'function CandidateAction', 'function TavernRollbackAction')
   const coordination = between(clientSource, 'const tavernCoordination', 'function describeTavernActivity')
   const submit = between(clientSource, 'async function submitCandidateTask', 'const regenPanel')
   const guide = between(clientSource, 'function CandidateGuidePanel', 'function RegenPanel')
@@ -361,7 +362,7 @@ test('失败的最新后台结算可以按原任务类型原地重试', () => {
 })
 
 test('正文重新生成合并为一个入口，空意见和有意见复用同一替换流程', () => {
-	const action = between(clientSource, 'function CandidateAction', 'function CandidateDockActions')
+	const action = between(clientSource, 'function CandidateAction', 'function TavernRollbackAction')
 	const shared = between(clientSource, 'async function submitBodyRegeneration', 'function CandidateAction')
 	const panel = between(clientSource, 'function RegenPanel', 'function register')
 
@@ -1214,7 +1215,7 @@ test('剧本预览只显示当前召回和后续块', () => {
 test('实验分支开放兼容入口并保留普通游玩与资源能力', () => {
 	const player = between(clientSource, 'function TavernPlayerNameAction', 'function TavernStatusPanel')
 	const shell = between(clientSource, 'function TavernSidebar', 'function register(input)')
-	const action = between(clientSource, 'function CandidateAction', 'function CandidateDockActions')
+	const action = between(clientSource, 'function CandidateAction', 'function TavernRollbackAction')
 	const coordination = between(clientSource, 'function coordinationView', 'function createTavernCoordinationEventModule')
 	const preStep = between(serverSource, "ctx.on('agent/pre-step'", "ctx.on('llm/stream'")
 	const llmStream = between(serverSource, "ctx.on('llm/stream'", "ctx.on('agent/turn-stopping'")

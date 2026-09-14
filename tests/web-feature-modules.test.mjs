@@ -173,9 +173,9 @@ test('游玩控制 Feature module 统一注册状态栏与对话控制面板', f
   feature.register({ ctx, slots })
 
   assert.deepEqual(Object.keys(feature), ['register'])
-  assert.equal(tabs[0].id, 'dsh-tavern:status')
+  assert.deepEqual(tabs.map(tab => tab.id), ['dsh-tavern:conversation-settings', 'dsh-tavern:status'])
   assert.deepEqual(injectedSlots, [
-    'conversation.session.header.actions',
+    'conversation.session.header.utilities',
     'conversation.session.header.utilities',
     'conversation.input.dock',
     'conversation.input.dock',

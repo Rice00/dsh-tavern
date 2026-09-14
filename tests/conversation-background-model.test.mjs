@@ -1,3 +1,5 @@
+import { patchConversationBackground } from '../tavern-plugin/lib/domain/conversation-background.js'
+import { normalizeBackgroundTasks } from '../tavern-plugin/lib/domain/tavern-settings.js'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFile } from 'node:fs/promises'
@@ -8,7 +10,7 @@ const cases = source.slice(source.indexOf("      case 'getConversationBackground
 
 test('本局模型保存保留并发更新的剧情，只修改所选游戏，允许恢复跟随前台', async () => {
   const chats = new Map([['one', { id: 'one', mode: 'story', messages: ['old'] }], ['two', { id: 'two', mode: 'story' }]])
-  const invoke = new Function('chatForSession', 'str', 'groupOfMode', 'normalizeBackgroundModel', 'readBackgroundModelReasoning', 'llm', 'tavernModelCatalog', 'updateChat', 'tavernSettingsDocument', 'configuredChatBackgroundModel',
+  const invoke = new Function('chatForSession', 'str', 'groupOfMode', 'normalizeBackgroundModel', 'readBackgroundModelReasoning', 'llm', 'tavernModelCatalog', 'updateChat', 'tavernSettingsDocument', 'configuredChatBackgroundModel', 'patchConversationBackground', 'normalizeBackgroundTasks',
     'return async (method, args) => { switch(method) {' + cases + '} }')(
     async id => structuredClone(chats.get(id)), String, mode => mode === 'story' ? 'play' : 'card',
     normalizeBackgroundModel, readBackgroundModelReasoning,
@@ -17,13 +19,13 @@ test('本局模型保存保留并发更新的剧情，只修改所选游戏，�
     async (id, mutation) => {
       const current = { ...chats.get(id), messages: ['old', 'concurrent update'] }
       const saved = mutation(current); chats.set(id, saved); return saved
-    }, { backgroundModelRevision: 3 }, configuredChatBackgroundModel)
+    }, { backgroundModelRevision: 3 }, configuredChatBackgroundModel, patchConversationBackground, normalizeBackgroundTasks)
   const call = backgroundModel => invoke('setConversationBackgroundModel', { sessionId: 'one', backgroundModel })
   await call({ provider: 'test', model: 'new', reasoningEffort: 'high' })
   assert.deepEqual(chats.get('one').backgroundModelSelection, { provider: 'test', model: 'new', reasoningEffort: 'high' })
   assert.deepEqual(chats.get('one').messages, ['old', 'concurrent update'])
   assert.equal(chats.get('two').backgroundModelSelection, undefined)
-  assert.equal(chats.get('one').backgroundModelRevision, 3)
+  assert.equal(chats.get('one').backgroundConfigVersion, 1)
   await assert.rejects(call({ provider: 'test', model: 'new', reasoningEffort: 'invalid' }), /推理强度不可用/)
   assert.equal(chats.get('one').backgroundModelSelection.reasoningEffort, 'high')
   await call(null)

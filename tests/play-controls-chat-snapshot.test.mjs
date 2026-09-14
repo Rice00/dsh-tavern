@@ -7,12 +7,12 @@ const source = await readFile(new URL('../tavern-plugin/lib/client.js', import.m
 function functionSource(name, next) {
   return source.slice(source.indexOf('function ' + name + '('), source.indexOf('function ' + next + '('))
 }
-function dockWith(nodes, mode = 'story', releaseCapabilities = { sceneImages: true }) {
+function dockWith(nodes, mode = 'story', releaseCapabilities = { sceneImages: true }, canClearIncompleteReply = false) {
   const selections = []
   const context = {
     React: { createElement: (type, props, ...children) => ({ type, props, children }) },
     useTavernSessionMode: () => mode,
-    useLiveTavernView: () => ({ view: { releaseCapabilities, latestAssistantTurn: nodes.some(node => node.kind === 'assistant') ? 2 : 0, replyProjections: nodes.some(node => node.kind === 'assistant') ? [{ turn: 1 }, { turn: 2 }] : [] } }),
+    useLiveTavernView: () => ({ view: { canClearIncompleteReply, releaseCapabilities, latestAssistantTurn: nodes.some(node => node.kind === 'assistant') ? 2 : 0, replyProjections: nodes.some(node => node.kind === 'assistant') ? [{ turn: 1 }, { turn: 2 }] : [] } }),
     isPlayMode: value => ['story', 'free', 'script'].includes(value),
     CandidateAction: 'actions', TavernCompactionAction: 'compact', TavernMoreActions: 'more', SceneImageAction: 'scene-image',
     props: {
@@ -82,4 +82,13 @@ test('all dependent panels read messages from Chat, never from Session lifecycle
     assert.doesNotMatch(component, /snapshot\.nodes/, name)
   }
   assert.match(functionSource('TavernStatusTab', 'setCandidatePanel'), /resolveConversationChatBinding\(props\.uiConversation, binding\)/)
+})
+
+test('停止后的半截回复不能继承上一轮生图操作和错误', () => {
+  const nodes = [{ kind: 'assistant', messageId: 'partial-reply' }]
+  const pending = dockWith(nodes, 'story', { sceneImages: true }, true).rendered
+  assert.equal(pending.children[1], null)
+  assert.equal(pending.children[2].type, 'more')
+  const cleared = dockWith(nodes, 'story', { sceneImages: true }, false).rendered
+  assert.equal(cleared.children[1].type, 'scene-image')
 })

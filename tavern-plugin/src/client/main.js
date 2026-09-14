@@ -7960,14 +7960,15 @@ window.__ModuleLoader__.load({
 			if (!view || !view.tavernHelper || !ids.length) return null;
 			const h = React.createElement;
 			return h("section", { className: "dsh-tavern-status-runtime" },
-				h("div", { className: "dsh-tavern-panel-tabs", role: "tablist", "aria-label": "人物卡面板" },
+				h("div", { className: "dsh-tavern-panel-toolbar" }, h("div", { className: "dsh-tavern-panel-tabs", role: "tablist", "aria-label": "人物卡面板" },
 					statuses.concat(manual.map(function (entry) { return { viewId: entry.id, title: entry.title }; })).map(function (panel) {
 						return h("button", { key: panel.viewId, role: "tab", type: "button", "aria-selected": active === panel.viewId,
-							className: "dsh-tavern-btn", onClick: function () { setSelected(panel.viewId); } }, panel.title || "角色状态");
+							className: "dsh-tavern-panel-tab", onClick: function () { setSelected(panel.viewId); } }, panel.title || "角色状态");
 					})),
+                    statuses.some(panel => panel.viewId === active) ? h("button", { type: "button", className: "dsh-tavern-panel-refresh", title: "重新加载此面板，未保存的输入会清空", onClick: function () { setRefreshes(function (previous) { return Object.assign({}, previous, { [active]: (previous[active] || 0) + 1 }); }); } }, "↻ 刷新") : null),
 				statuses.map(function (statusView) { return h("div", { key: props.sessionId + statusView.viewId, role: "tabpanel", hidden: active !== statusView.viewId,
 					"data-status-view-id": statusView.viewId, "data-template-revision": statusView.templateRevision },
-					h("button", { type: "button", className: "dsh-tavern-btn", title: "重新加载此面板，未保存的输入会清空", onClick: function () { setRefreshes(function (previous) { return Object.assign({}, previous, { [statusView.viewId]: (previous[statusView.viewId] || 0) + 1 }); }); } }, "刷新当前面板"), h(TavernMessageFrame, {
+					h(TavernMessageFrame, {
 					key: props.sessionId + statusView.viewId + (refreshes[statusView.viewId] || 0), preserveInstance: true,
 					content: String(statusView.content), sessionId: props.sessionId,
 					turn: Math.max(1, Number(statusView.targetTurn) || 1), partIndex: Math.max(0, Number(statusView.sourcePartIndex) || 0),

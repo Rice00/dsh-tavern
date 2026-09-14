@@ -229,7 +229,7 @@ body.dsh-tavern-shell-active [data-ref-chip="file"] { max-width: calc(100% - 4px
 .dsh-tavern-timeout-banner button { flex: none; border: 1px solid rgba(166,107,53,.55); border-radius: 7px; padding: 4px 8px; background: transparent; color: #a66b35; cursor: pointer; }
 .dsh-tavern-choice-error { padding: 5px; color: #c45f5f; font-size: 12px; }
 .dsh-tavern-question { width: 100%; max-width: var(--dsh-composer-card-max-width, 780px); box-sizing: border-box; margin: 0 auto; padding: 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 14px; background: var(--dsw-specific-tip, var(--dsw-specific-sidebar-fill)); box-shadow: var(--dsw-shadow-lv1); }
-.dsh-tavern-candidate-question { max-width: 680px; }
+.dsh-tavern-question.dsh-tavern-candidate-question { width: calc(100% - 32px); max-width: min(680px, var(--dsh-composer-card-max-width, 780px)); }
 .dsh-tavern-question.collapsed { padding: 9px 12px; box-shadow: none; }
 .dsh-tavern-question-head { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; font-weight: 750; cursor: pointer; }
 .dsh-tavern-question.collapsed .dsh-tavern-question-head { margin-bottom: 0; }
@@ -626,8 +626,14 @@ body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
 .dsh-ledger-form input:not([type="checkbox"]) { box-sizing: border-box; width: 100%; min-width: 0; padding: 6px; border: 1px solid #555; border-radius: 4px; color: inherit; background: transparent; font: inherit; }
 .dsh-ledger button:disabled { opacity: .45; cursor: default; }
 
-.dsh-tavern-panel-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; }
-.dsh-tavern-panel-tabs [aria-selected="true"] { outline: 2px solid var(--dsw-alias-label-secondary, #ae793f); outline-offset: -2px; font-weight: 700; }
+.dsh-tavern-panel-toolbar { display: flex; align-items: center; gap: 12px; padding: 10px 12px; margin-bottom: 8px; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+.dsh-tavern-panel-tabs { display: flex; flex: 1; min-width: 0; flex-wrap: wrap; gap: 6px; }
+.dsh-tavern-panel-tab, .dsh-tavern-panel-refresh { border: 0; border-radius: 7px; background: transparent; color: var(--dsw-alias-label-secondary); font: inherit; font-size: 12px; padding: 6px 9px; cursor: pointer; }
+.dsh-tavern-panel-tab { text-align: left; overflow-wrap: anywhere; }
+.dsh-tavern-panel-tabs [aria-selected="true"] { background: rgba(166,107,53,.10); color: var(--dsw-alias-label-primary); font-weight: 650; }
+.dsh-tavern-panel-refresh { flex-shrink: 0; }
+.dsh-tavern-panel-tab:hover, .dsh-tavern-panel-refresh:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.dsh-tavern-panel-tab:focus-visible, .dsh-tavern-panel-refresh:focus-visible { outline: 2px solid #a66b35; outline-offset: 2px; }
 .dsh-tavern-status-runtime > [role="tabpanel"] { min-width: 0; width: 100%; }
 .dsh-tavern-status-runtime > [role="tabpanel"][hidden] { display: none; }
 

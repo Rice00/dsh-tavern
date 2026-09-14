@@ -2,7 +2,7 @@ import { rewindBackgroundSurface } from './background-surface.js'
 import { sessionEvents, appendSessionEvent } from './session-events.js'
 import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
-import { clearRegenerationAttemptSurface, locateRegenerationSurface, locateRollbackSurface, planRegenerationSurface, regenerationAttemptTurns } from './rollback-surface.js'
+import { pendingFailedSurfaceTurns, clearRegenerationAttemptSurface, locateRegenerationSurface, locateRollbackSurface, planRegenerationSurface, regenerationAttemptTurns } from './rollback-surface.js'
 import { assertRegenerationSourceCurrent, replaceLastRound } from './last-round-replacement.js'
 import { diagnosticIdentity, regenerationTargetDiagnostic } from './regeneration-diagnostics.js'
 
@@ -289,6 +289,17 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
     const session = agent.session
     const events = sessionEvents(session)
     const nodes = session.surface !== undefined && Array.isArray(session.surface.nodes) ? session.surface.nodes : []
+    const failedTurns = pendingFailedSurfaceTurns({ events, nodes, suppressed: chat.suppressedDshTurns || [] })
+    if (failedTurns.length) {
+      chat = await updateChat(chat.id, current => {
+        assertRollbackSnapshot(rollbackBodyMessages(current), rollbackBodyMessages(originalChat))
+        assertRollbackSnapshot(current.timeline, originalChat.timeline)
+        return { ...current, suppressedDshTurns: [...new Set([...(current.suppressedDshTurns || []), ...failedTurns])].sort((a, b) => a - b), updatedAt: Date.now() }
+      }, { source: 'rollback.interrupted' })
+      const result = await view(chat, card)
+      result.clearedIncompleteTurns = failedTurns
+      return result
+    }
     const rollbackSurface = locateRollbackSurface({ events, nodes })
     if (rollbackSurface === null) throw new Error('原生消息流中找不到可回退的用户输入与正文组合')
     const hiddenTurn = rollbackSurface.turn

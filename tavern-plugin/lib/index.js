@@ -86,7 +86,7 @@ import { resolveRuntimePresetMacros } from './domain/runtime-presets.js'
 import { compileSillyTavernRequest, createCleanCompatibilityPreset } from './domain/sillytavern-compatibility.js'
 import { applySillyTavernStrictTools } from './domain/sillytavern-strict-tools.js'
 import { createForegroundOrchestrationStrategies } from './domain/foreground-orchestration-strategies.js'
-import { foregroundSuppressedTurns, clearFailedTurnSurface, hasRollbackMessages, supersededRegenerationErrorTurns } from './domain/rollback-surface.js'
+import { pendingFailedSurfaceTurns, foregroundSuppressedTurns, clearFailedTurnSurface, hasRollbackMessages, supersededRegenerationErrorTurns } from './domain/rollback-surface.js'
 import { assistantResultForTurn } from './domain/session-turn-result.js'
 import { createTavernRetryLimiter } from './domain/tavern-retry-limiter.js'
 import { lastTavernHelperVariables, projectTavernHelperContext } from './domain/tavern-helper-context.js'
@@ -1285,6 +1285,7 @@ export async function apply(ctx) {
     }
     const projectionEvents = sessionDebugEvidence(chat.sessionId).events
     const suppressedDshTurns = foregroundSuppressedTurns(chat, projectionEvents)
+    const canClearIncompleteReply = pendingFailedSurfaceTurns({ events: projectionEvents, nodes: agentRegistry.get(chat.sessionId)?.session?.surface?.nodes || [], suppressed: suppressedDshTurns }).length > 0
     return {
       chatId: chat.id,
       contextCompaction: chat.contextCompaction || null,
@@ -1309,7 +1310,8 @@ export async function apply(ctx) {
       forkTurnsByMessageId,
       latestAssistantTurn: latestStoryTurn,
       inputSources,
-      canRollback: hasRollbackMessages(chat.messages),
+      canClearIncompleteReply,
+      canRollback: hasRollbackMessages(chat.messages) || canClearIncompleteReply,
       presentation: null,
       replyProjections: replyDisplay.projections,
       tavernStatusView: replyDisplay.statusView || null,

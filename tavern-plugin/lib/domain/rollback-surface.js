@@ -149,6 +149,22 @@ export function locateRegenerationSurface(input) {
   return null
 }
 
+// Failed turns have already left the model surface, but remain visible until
+// the user explicitly clears them. Never consume a committed story to do that.
+export function pendingFailedSurfaceTurns({ events = [], nodes = [], suppressed = [] }) {
+  const hidden = new Set(suppressed.map(Number))
+  const turns = new Set()
+  for (let index = nodes.length - 1; index >= 0; index--) {
+    const event = eventAt(events, nodes[index])
+    if (!isRollbackUserTombstone(event)) break
+    if (event.data.source.plugin !== 'dsh-tavern-failed-turn-cleanup') continue
+    for (const turn of modelTurns(events, event.sourceEventSeqs || [])) {
+      if (!hidden.has(turn)) turns.add(turn)
+    }
+  }
+  return [...turns].sort((a, b) => a - b)
+}
+
 export function locateRollbackSurface(input) {
   const events = Array.isArray(input && input.events) ? input.events : []
   const nodes = Array.isArray(input && input.nodes) ? input.nodes : []

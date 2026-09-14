@@ -8741,6 +8741,7 @@ window.__ModuleLoader__.load({
 			const activity = describeTavernActivity(activityState.view && activityState.view.activity);
 			const settlementActive = activity.role === "settlement" && (activity.phase === "pending" || activity.phase === "running");
 			const canRollback = rollbackViewState.view && rollbackViewState.view.canRollback === true;
+            const clearIncomplete = rollbackViewState.view && rollbackViewState.view.canClearIncompleteReply === true;
 			const candidateTask = activityState.view && activityState.view.task;
 			const taskForMessage = candidateTask && candidateTask.kind === "candidate" && candidateTask.input && String(candidateTask.input.messageId || "") === String(props.messageId || "") ? candidateTask : null;
 			const taskBusy = !!(taskForMessage && taskForMessage.busy);
@@ -8821,11 +8822,12 @@ window.__ModuleLoader__.load({
 			const activity = describeTavernActivity(activityState.view && activityState.view.activity);
 			const settlementActive = activity.role === "settlement" && (activity.phase === "pending" || activity.phase === "running");
 			const canRollback = rollbackViewState.view && rollbackViewState.view.canRollback === true;
+            const clearIncomplete = rollbackViewState.view && rollbackViewState.view.canClearIncompleteReply === true;
 			const regenBusy = regenPanelState !== null && regenPanelState.sessionId === props.sessionId && regenPanelState.phase === "loading";
 			const blocked = rolling || frontRunning || regenBusy || activity.busy || settlementActive;
 			async function rollback() {
 				if (!canRollback || blocked) return;
-				if (!window.confirm("回退本轮？\n将删除你最近一次输入和这段 LLM 输出，并同步回退故事状态与剧本游标。")) return;
+				if (!window.confirm(clearIncomplete ? "清除未完成回复？\n仅清除末尾失败或停止的回复，保留上一轮完整剧情和状态。" : "回退本轮？\n将删除你最近一次输入和这段 LLM 输出，并同步回退故事状态与剧本游标。")) return;
 				setRolling(true);
 				try {
 					const result = await rpc("rollbackTurn", {}, props.sessionId);
@@ -8840,7 +8842,7 @@ window.__ModuleLoader__.load({
 				} finally { setRolling(false); liveTavernView.invalidate(props.sessionId); tavernCoordination.invalidate(props.sessionId); }
 			}
 			if (!canRollback) return null;
-			return React.createElement("button", { className: "danger", role: "menuitem", disabled: blocked, title: blocked ? "请等待当前生成或后台处理完成后再回退" : "删除最近一次用户输入和这段 LLM 输出", onClick: rollback }, rolling ? "回退中…" : "回退本轮");
+			return React.createElement("button", { className: "danger", role: "menuitem", disabled: blocked, title: blocked ? "请等待当前生成或后台处理完成后再回退" : clearIncomplete ? "清除未完成回复，保留已完成剧情" : "删除最近一次用户输入和这段 LLM 输出", onClick: rollback }, rolling ? "处理中…" : clearIncomplete ? "清除未完成回复" : "回退本轮");
 		}
 
 		const bodyEditPanel = { value: null, listeners: new Set() };

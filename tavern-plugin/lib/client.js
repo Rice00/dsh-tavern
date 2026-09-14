@@ -10705,20 +10705,20 @@ window.__ModuleLoader__.load({
 				const targetPath = card && card.path ? String(card.path).replace(/\\/g, "/").replace(/["\r\n]/g, "") : "";
 				if (task === "gentle") {
 					if (!targetPath) throw new Error("温和改写缺少目标人物卡");
-					input.setDraft("/tavern-gentle-rewrite\n\n@\"" + targetPath + "\"\n\n将这张人物卡改写为温和副本，减少模型拒绝输出的情况；改完后配置试玩案例，实测验证效果。");
+					input.setDraft("/gentle-rewrite\n\n@\"" + targetPath + "\"\n\n将这张人物卡改写为温和副本，减少模型拒绝输出的情况；改完后配置试玩案例，实测验证效果。");
 					return;
 				}
 				if (task === "mvu") {
 					if (!targetPath) throw new Error("MVU 转换缺少目标人物卡");
 					input.setDraft(
-						"/tavern-card-to-mvu\n\n【目标人物卡】\n@\"" + targetPath + "\"\n\n" +
+						"/card-to-mvu\n\n【目标人物卡】\n@\"" + targetPath + "\"\n\n" +
 						"把这张人物卡转换为独立的 MVU 版本；保留剧情设定与状态栏视觉风格，同时移除原卡自带的候选项生成提示、按钮、正则和专用脚本，统一使用 DSH Tavern 内置候选项。"
 					);
 					return;
 				}
 				if (task === "user-profile") {
 					input.setDraft(
-						"/tavern-user-profile\n\n通过分批提问了解我的长期游玩与写作偏好。可以提供差异明确的参考选项，也允许我自由回答或跳过；信息足够后形成画像草案让我核对，只有我明确确认后才保存。"
+						"/user-profile\n\n通过分批提问了解我的长期游玩与写作偏好。可以提供差异明确的参考选项，也允许我自由回答或跳过；信息足够后形成画像草案让我核对，只有我明确确认后才保存。"
 					);
 					return;
 				}

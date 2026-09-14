@@ -74,7 +74,7 @@ test('普通卡由当前后台 Agent 按需加载 Skill 并使用人物设计工
   const run = await harness({ beginRunning: false, mvu: false })
   run.sandbox.backgroundAgentRunner.run = async input => {
     assert.deepEqual(Array.from(input.tools, tool => tool.name), [POSTURE_SUBMIT_TOOL_NAME, 'character_design_read', 'character_design_save'])
-    assert.match(input.system, /skill 加载 tavern-character-design/)
+    assert.match(input.system, /skill 加载 character-design/)
     assert.match(input.system, /不得创建另一个 Agent/)
     await input.onToolCall({ name: POSTURE_SUBMIT_TOOL_NAME, arguments: { posture: '站在门边' } })
     return { text: '', traceSessionId: 'background-settlement', traceBoundary: 4 }

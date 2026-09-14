@@ -474,7 +474,7 @@ test('人物卡转 MVU 起始任务写入 Skill、目标卡与简短转换要求
   assert.match(sidebar, /newCardConversation\(card, "mvu", "把人物卡转成 MVU 版"\)/)
   assert.match(sidebar, /转换为 MVU 后，状态栏绝对不会掉格式/)
   assert.match(injectTaskPrompt, /if \(task === "mvu"\)/)
-  assert.match(injectTaskPrompt, /\/tavern-card-to-mvu\\n\\n【目标人物卡】\\n@/)
+  assert.match(injectTaskPrompt, /\/card-to-mvu\\n\\n【目标人物卡】\\n@/)
   assert.match(injectTaskPrompt, /把这张人物卡转换为独立的 MVU 版本/)
   assert.match(injectTaskPrompt, /移除原卡自带的候选项生成提示、按钮、正则和专用脚本/)
   assert.match(injectTaskPrompt, /统一使用 DSH Tavern 内置候选项/)
@@ -490,7 +490,7 @@ test('用户画像只从右侧栏进入，开场准备和起始任务不展示�
   assert.doesNotMatch(opening, /用户画像|userProfile|长期偏好/)
   assert.doesNotMatch(taskPicker, /用户画像|user-profile/)
   assert.match(injectTaskPrompt, /if \(task === "user-profile"\)/)
-  assert.match(injectTaskPrompt, /\/tavern-user-profile/)
+  assert.match(injectTaskPrompt, /\/user-profile/)
   assert.doesNotMatch(sidebar, /userProfileEnabled|response\.userProfile/)
 })
 

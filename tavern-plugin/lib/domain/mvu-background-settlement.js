@@ -373,12 +373,12 @@ export function projectMvuBackgroundRequest(frame) {
       JSON.stringify(state.variableSchema || {}),
       ...(updateRules.length === 0 ? [] : ['【人物卡变量更新规则】', updateRules.join('\n\n')]),
       ...(tasks.characterDesign ? ['【人物设计（按需）】',
-      '若本轮出现值得长期保留的重要人物，可先调用 skill 加载 tavern-character-design，再按 Skill 读取或保存人物档案。人物设计独立保存，不属于 MVU operations。'] : [])
+      '若本轮出现值得长期保留的重要人物，可先调用 skill 加载 character-design，再按 Skill 读取或保存人物档案。人物设计独立保存，不属于 MVU operations。'] : [])
     ].join('\n'),
     system: [
       '只根据【正文】中已经确认发生的事实结算变量，不得读取或推断玩家意图。',
       '不得根据旧轮剧情、隐藏思考、候选项或未发生事件更新变量。',
-      ...(tasks.characterDesign ? ['若确实需要人物设计，在当前后台 Agent 内先加载 tavern-character-design 并调用人物档案工具；无需也不得创建另一个 Agent。完成后继续本轮结算。'] : ['本轮人物设计已关闭，不调用人物设计 Skill 或生成档案。']),
+      ...(tasks.characterDesign ? ['若确实需要人物设计，在当前后台 Agent 内先加载 character-design 并调用人物档案工具；无需也不得创建另一个 Agent。完成后继续本轮结算。'] : ['本轮人物设计已关闭，不调用人物设计 Skill 或生成档案。']),
       tasks.posture ? '在同一次回复中同时调用 posture_submit 和 mvu_submit_update，分别提交本轮结束时可见的人物姿势与变量变化；两者互不依赖，无需等待前一个工具返回。不得在回复正文输出 JSON。' : '本轮姿势结算已关闭，直接提交变量，不生成姿势。',
       '本轮必须调用 mvu_submit_update；姿势和变量分别以各自工具返回结果为准，只补交未完成项。',
       '数值不确定时，合理即可，不要求必须精确。'

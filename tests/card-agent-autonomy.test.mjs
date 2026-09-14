@@ -9,8 +9,8 @@ const extractTask = await read('tavern-plugin/prompts/card-task-extract.md')
 const worldBookTask = await read('tavern-plugin/prompts/card-task-worldbook.md')
 const presetTask = await read('tavern-plugin/prompts/card-task-preset.md')
 const scriptTask = await read('tavern-plugin/prompts/card-task-script.md')
-const advancedSkill = await read('presets/tavern/skills/tavern-advanced-capabilities/SKILL.md')
-const mvuSkill = await read('presets/tavern/skills/tavern-card-to-mvu/SKILL.md')
+const advancedSkill = await read('presets/tavern/skills/advanced-capabilities/SKILL.md')
+const mvuSkill = await read('presets/tavern/skills/card-to-mvu/SKILL.md')
 
 test('卡片 system 默认空白，任务与技能独立保留', () => {
   assert.equal(typeof cardMode, 'string')

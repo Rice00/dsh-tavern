@@ -19,7 +19,7 @@ const tavernPresetSource = await readFile(new URL('../presets/tavern/agent.cordi
 const backgroundPresetSource = await readFile(new URL('../presets/tavern-background/agent.cordis.yml', import.meta.url), 'utf8').catch(() => '')
 const profileSource = await readFile(new URL('../package.json', import.meta.url), 'utf8')
 const profilePatchSource = await readFile(new URL('../tavern-plugin/cordis.patch.yml', import.meta.url), 'utf8')
-const advancedSkillSource = await readFile(new URL('../presets/tavern/skills/tavern-advanced-capabilities/SKILL.md', import.meta.url), 'utf8')
+const advancedSkillSource = await readFile(new URL('../presets/tavern/skills/advanced-capabilities/SKILL.md', import.meta.url), 'utf8')
 
 function between(source, start, end) {
   const from = source.indexOf(start)
@@ -181,7 +181,7 @@ test('姿势结算通过短工具参数提交', () => {
   assert.match(systemPrompt, /位置、姿势、动作/)
   assert.doesNotMatch(flow, /maxTokens:/)
   assert.match(flow, /backgroundTasksSettings\.posture \? \[POSTURE_SUBMIT_TOOL\]/)
-  assert.match(flow, /skill 加载 tavern-character-design/)
+  assert.match(flow, /skill 加载 character-design/)
   assert.match(flow, /characterDesignDocuments\.execute/)
   assert.match(flow, /normalizePostureSubmission/)
   assert.match(flow, /未调用 posture_submit/)

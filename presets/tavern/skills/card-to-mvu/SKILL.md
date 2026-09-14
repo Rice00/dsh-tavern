@@ -1,5 +1,5 @@
 ---
-name: tavern-card-to-mvu
+name: card-to-mvu
 description: "把正文内输出状态栏的 SillyTavern 人物卡转换为 DSH Tavern 的 MVU 卡：拆出变量初值、后台更新规则与只读状态栏，验证后台结算和右侧自动刷新。用户要求普通卡转 MVU、将状态生成移到后台，或迁移已有状态字段时使用。"
 ---
 

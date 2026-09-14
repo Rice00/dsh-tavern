@@ -137,7 +137,7 @@ test('普通和剧本候选都分离固定背景、逐轮指令与动态状态',
     assert.equal(run.plannerCalls[0].constantWorldBookContext, '常驻世界设定')
     assert.equal(request.backgroundContext, '稳定候选上下文')
     assert.match(request.system, /^候选格式规则/)
-    assert.match(request.system, /skill 加载 tavern-character-design/)
+    assert.match(request.system, /skill 加载 character-design/)
     assert.equal(request.turnContext, '本轮游标、Guide 与姿势')
     assert.equal(request.systemPromptText, '本轮系统提示')
     assert.equal(request.postHistoryText, '本轮历史后指令')

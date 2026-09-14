@@ -131,3 +131,23 @@ test('内置 Skill 删除在重启和包更新后仍生效', async t => {
   assert.equal(await restarted.read('built-in'), null)
   assert.equal((await restarted.list()).length, 0)
 })
+
+test('去掉内置前缀后继承旧用途与删除记录，新配置优先', async t => {
+  const { skills, builtin, user } = await harness(t)
+  const entry = path.join(builtin, 'create-skill', 'SKILL.md')
+  await mkdir(path.dirname(entry), { recursive: true })
+  await mkdir(user, { recursive: true })
+  await writeFile(entry, '---\nname: create-skill\ndescription: test\n---\n内容')
+  await writeFile(path.join(user, '.assignments.json'), JSON.stringify({ 'tavern-create-skill': ['foreground'] }))
+  assert.deepEqual((await skills.read('create-skill')).agents, ['foreground'])
+  assert.equal((await skills.read('tavern-create-skill')).name, 'create-skill')
+  await skills.assign('create-skill', ['card'])
+  assert.deepEqual((await skills.read('create-skill')).agents, ['card'])
+  await writeFile(path.join(user, '.assignments.json'), JSON.stringify({ 'tavern-create-skill': null }))
+  assert.equal(await skills.read('create-skill'), null)
+})
+
+test('旧本局开关名称映射只针对已重命名的内置 Skill', async () => {
+  const { canonicalTavernSkillName } = await import('../tavern-plugin/lib/domain/tavern-skills.js')
+  assert.deepEqual(['tavern-create-skill', 'tavern-custom'].map(canonicalTavernSkillName), ['create-skill', 'tavern-custom'])
+})

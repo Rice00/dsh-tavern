@@ -1,5 +1,5 @@
 ---
-name: tavern-create-writing-skill
+name: create-writing-skill
 description: "用户明确要求引用教学材料创建或修改场景写作 Skill 时使用。仅导入、阅读素材或讨论剧情时不启动。"
 ---
 

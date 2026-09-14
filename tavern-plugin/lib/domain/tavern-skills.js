@@ -4,6 +4,11 @@ import { randomUUID } from 'node:crypto'
 import { parse } from 'yaml'
 import { createDurableFilePromotion } from '../durable-file-promotion.js'
 
+const RENAMED_BUILTIN_SKILLS = new Set(['character-design', 'user-profile', 'create-skill', 'create-writing-skill', 'advanced-capabilities', 'card-to-mvu', 'gentle-rewrite'])
+export function canonicalTavernSkillName(name) {
+  return typeof name === 'string' && name.startsWith('tavern-') && RENAMED_BUILTIN_SKILLS.has(name.slice(7)) ? name.slice(7) : name
+}
+
 export const SKILL_AGENTS = ['card', 'foreground', 'background', 'image']
 export function normalizeSkillAgents(value) {
   if (!Array.isArray(value) || value.some(role => !SKILL_AGENTS.includes(role))) throw new Error('Skill 用途必须是卡片、前台、后台或文生图 Agent')
@@ -63,7 +68,14 @@ export function createTavernSkillModule(options = {}) {
     return result.then(value => { for (const listener of listeners) listener(); return value })
   }
   async function assignments() {
-    try { return JSON.parse(await readFile(configPath, 'utf8')) } catch (error) { if (error.code === 'ENOENT') return {}; throw error }
+    try {
+      const current = JSON.parse(await readFile(configPath, 'utf8'))
+      for (const [name, value] of Object.entries(current)) {
+        const canonical = canonicalTavernSkillName(name)
+        if (canonical !== name && !Object.hasOwn(current, canonical)) current[canonical] = value
+      }
+      return current
+    } catch (error) { if (error.code === 'ENOENT') return {}; throw error }
   }
 
   function target(root, name) {
@@ -71,7 +83,7 @@ export function createTavernSkillModule(options = {}) {
   }
 
   async function read(name) {
-    const normalized = normalizeTavernSkillName(name)
+    const normalized = normalizeTavernSkillName(canonicalTavernSkillName(name))
     for (const root of roots) {
       const source = { kind: root.kind, path: target(root.path, normalized) }
       try {
@@ -93,7 +105,7 @@ export function createTavernSkillModule(options = {}) {
   }
 
   async function write(input = {}) {
-    const name = normalizeTavernSkillName(input.name)
+    const name = normalizeTavernSkillName(canonicalTavernSkillName(input.name))
     if (await Promise.all(roots.filter(root => root.kind === 'builtin').map(root => exists(target(root.path, name)))).then(values => values.some(Boolean))) throw new Error('内置 Skill 不可覆盖: ' + name)
     const destination = target(directory, name)
     const present = await exists(destination)
@@ -174,7 +186,7 @@ export function createTavernSkillModule(options = {}) {
     return result
   }
   async function assign(name, agents) {
-    const normalized = normalizeTavernSkillName(name)
+    const normalized = normalizeTavernSkillName(canonicalTavernSkillName(name))
     const roles = normalizeSkillAgents(agents)
     if (!await read(normalized)) throw new Error('Skill 不存在')
     await files.update(configPath, raw => JSON.stringify({ ...(raw ? JSON.parse(raw) : {}), [normalized]: roles }))

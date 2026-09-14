@@ -1,5 +1,5 @@
 ---
-name: tavern-advanced-capabilities
+name: advanced-capabilities
 description: "在 Tavern 卡片工作台中创建或修改 Skill、通用工具、Cordis 插件及其他需要原生文件能力的高级扩展；普通人物卡、世界书、预设、剧本和游玩记录编辑不使用。"
 ---
 

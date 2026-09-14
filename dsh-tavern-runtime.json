@@ -140,7 +140,7 @@
       "size": 945
     },
     {
-      "path": "presets/tavern-background/skills/tavern-character-design/SKILL.md",
+      "path": "presets/tavern-background/skills/character-design/SKILL.md",
       "sha256": "1c6cfddadbc43f73d549d8502411a0a2c67e58937ea7a3f11af89a950258e6c2",
       "size": 2793
     },
@@ -160,37 +160,37 @@
       "size": 1
     },
     {
-      "path": "presets/tavern/skills/tavern-advanced-capabilities/SKILL.md",
+      "path": "presets/tavern/skills/advanced-capabilities/SKILL.md",
       "sha256": "2e39826396fbc00ab829f28469d30bd7af6804d59684bc7c00f2e8824a1daaa3",
       "size": 2307
     },
     {
-      "path": "presets/tavern/skills/tavern-card-to-mvu/assets/status.html",
+      "path": "presets/tavern/skills/card-to-mvu/assets/status.html",
       "sha256": "ed2c6958e0a60a196d47c10130560d4eaca4731c0533814ce6e51d7413d1225e",
       "size": 2401
     },
     {
-      "path": "presets/tavern/skills/tavern-card-to-mvu/references/mvu-recipe.md",
+      "path": "presets/tavern/skills/card-to-mvu/references/mvu-recipe.md",
       "sha256": "a9415b1b48f6ec48617a7d20e717d4efe14afe37d2afb555fd5197bee95b44b5",
       "size": 7077
     },
     {
-      "path": "presets/tavern/skills/tavern-card-to-mvu/SKILL.md",
+      "path": "presets/tavern/skills/card-to-mvu/SKILL.md",
       "sha256": "556c4b604d0b7c5330ea72cc3301e12d8146ec5841c2ec6344afea86c4ecff14",
       "size": 11520
     },
     {
-      "path": "presets/tavern/skills/tavern-create-skill/SKILL.md",
+      "path": "presets/tavern/skills/create-skill/SKILL.md",
       "sha256": "8c886649e252d5f8b8913689fd3741b1abaa8d2b074028be7aedac5d60665e93",
       "size": 1851
     },
     {
-      "path": "presets/tavern/skills/tavern-gentle-rewrite/SKILL.md",
+      "path": "presets/tavern/skills/gentle-rewrite/SKILL.md",
       "sha256": "6f37d1d75743ecb3f04fe518c8408f7063ae57aac6338027a143e867140a75f6",
       "size": 4325
     },
     {
-      "path": "presets/tavern/skills/tavern-user-profile/SKILL.md",
+      "path": "presets/tavern/skills/user-profile/SKILL.md",
       "sha256": "751e0db27635aa95f33f2293c4f2028f2093c6f567a55c4054837bb783856a8f",
       "size": 3807
     },

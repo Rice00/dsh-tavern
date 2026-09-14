@@ -1,5 +1,5 @@
 ---
-name: tavern-gentle-rewrite
+name: gentle-rewrite
 description: 把现有人物卡改写为独立副本，仅隐去年龄相关表述，其余内容原样保留。用户要求快速去年龄化时使用。
 ---
 

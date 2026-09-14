@@ -62,7 +62,7 @@ test('资源变化只刷新相关资料库，并忽略来源资料库自己的�
   assert.equal(affects({}, ['cards'], 'cards'), true)
 })
 
-test('剧本库 Feature module 只向宿主暴露注册 interface', function () {
+test('剧本与素材库 Feature module 只向宿主暴露注册 interface', function () {
   const feature = browser.createResourcesLibraryFeatureModule()
   let registration
   const effects = []
@@ -78,7 +78,7 @@ test('剧本库 Feature module 只向宿主暴露注册 interface', function () 
 
   assert.deepEqual(Object.keys(feature), ['register'])
   assert.equal(registration.id, 'dsh-tavern:resources')
-  assert.equal(registration.title, '剧本库')
+  assert.equal(registration.title, '剧本与素材库')
   assert.equal(typeof registration.component, 'function')
   assert.deepEqual(effects, ['dsh-tavern: Better Sidebar resources tab'])
 })

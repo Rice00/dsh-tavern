@@ -19,7 +19,7 @@ function fixture(t) {
   mkdirSync(path.dirname(bootstrap), { recursive: true })
   writeFileSync(bootstrap, '')
   const packages = {}
-  for (const [name, exportName] of [['dsh-agent', 'agentEvents'], ['dsh-tools', 'defineTool'], ['dsh-subagent', 'snapshotSubagentDescriptor'], ['dsh-typert-protocol', 'TypertRemoteService']]) {
+  for (const [name, exportName] of [['dsh-agent', 'agentEvents'], ['dsh-tools', 'defineTool'], ['dsh-skill-filesystem', 'FileSystemSkillProvider'], ['dsh-subagent', 'snapshotSubagentDescriptor'], ['dsh-typert-protocol', 'TypertRemoteService']]) {
     const directory = path.resolve(path.dirname(bootstrap), '../node_modules/@deepseek-ai', name)
     mkdirSync(directory, { recursive: true })
     writeFileSync(path.join(directory, 'package.json'), JSON.stringify({ name: `@deepseek-ai/${name}`, version: '0.1.2-alpha.1', type: 'module', exports: './index.js' }))
@@ -197,6 +197,6 @@ test('旧插件缺少新增 agent 链接时从已有宿主链接找到完整依�
     symlinkSync(directory, path.join(scope, name.split('/')[1]), 'junction')
   }
   const deps = resolveHostDependencies({ host: 'desktop', env: { DSH_TAVERN_HOST_DEPENDENCY_ANCHOR: anchor } })
-  assert.equal(deps.length, 4)
+  assert.equal(deps.length, 5)
   for (const dep of deps) assert.equal(dep.directory, realpathSync(f.packages[dep.name]))
 })

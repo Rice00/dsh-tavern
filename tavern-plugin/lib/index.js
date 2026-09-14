@@ -118,6 +118,8 @@ import { filterSkillMessages } from './domain/skill-visibility.js'
 import { createStoryTimeline } from './domain/story-timeline.js'
 import { createStoryCompactionRequest, usesStoryCompaction } from './domain/story-compaction.js'
 import { resolveTavernDataRoot } from './domain/tavern-data.js'
+import { FileSystemSkillProvider } from '@deepseek-ai/dsh-skill-filesystem'
+import { createTavernSkillProvider } from './domain/tavern-skill-provider.js'
 import { createTavernSkillModule } from './domain/tavern-skills.js'
 import { createTavernConversationRegistry } from './domain/tavern-conversation-registry.js'
 import { applyTavernRegexText } from './domain/tavern-regex-display.js'
@@ -268,7 +270,30 @@ export async function apply(ctx) {
   })
   const tavernSkills = createTavernSkillModule({
     directory: dataRoot + '/skills',
-    builtInDirectory: sourceRoot + '/presets/tavern/skills'
+    builtInDirectory: sourceRoot + '/presets/tavern/skills',
+    backgroundDirectory: sourceRoot + '/presets/tavern-background/skills'
+  })
+
+  async function skillRoleFor(agent) {
+    const sessionId = agent?.session?.id
+    if (!sessionId) return null
+    if (backgroundAgentRunner.owns(sessionId)) return 'background'
+    const chat = await chatForSession(sessionId)
+    return chat ? (chat.mode === 'card' ? 'card' : 'foreground') : null
+  }
+  const skillRegistry = ctx.get('skills')
+  if (!skillRegistry) throw new Error('dsh-tavern: 缺少原生 Skills 服务')
+  skillRegistry.registerProvider(control => {
+    const providers = [
+      new FileSystemSkillProvider(ctx, control, { providerName: 'tavern-interactive-files', includeDefaultRoots: false, customSkillDirs: [dataRoot + '/skills'], bundledSkillDir: sourceRoot + '/presets/tavern/skills' }),
+      new FileSystemSkillProvider(ctx, control, { providerName: 'tavern-background-files', includeDefaultRoots: false, bundledSkillDir: sourceRoot + '/presets/tavern-background/skills' })
+    ]
+    ctx.effect(() => tavernSkills.subscribe(control.invalidate))
+    ctx.effect(() => () => Promise.all(providers.map(provider => provider.dispose())))
+    ctx.on('fs/observed', (target, _observation, actor) => {
+      if (actor?.name === 'write' || actor?.name === 'edit') providers.forEach(provider => provider.observeHostMutation(target.displayPath))
+    })
+    return createTavernSkillProvider({ providers, library: tavernSkills, roleFor: skillRoleFor })
   })
 
   // ---------- profile 私有 preset ----------
@@ -2642,6 +2667,10 @@ export async function apply(ctx) {
       case 'renameResource': return { resource: await renameResource(args && args.path, args && args.name) }
       case 'deleteResource': return await deleteResource(args && args.path)
       case 'deletePreset': return await deletePreset(args && args.path)
+      case 'listSkills': return { skills: (await tavernSkills.list()).map(({ content, path, ...summary }) => summary) }
+      case 'getSkill': return { skill: await tavernSkills.read(args.name), references: await tavernSkills.referenceFiles(args.name) }
+      case 'assignSkill': return { skill: await tavernSkills.assign(args.name, args.agents) }
+      case 'deleteSkill': await tavernSkills.remove(args.name); return { deleted: true }
       case 'getScriptInfo': {
         const script = await readScript(args && args.path)
         const info = scriptContinuity.inspect({ script: script, state: null, request: { kind: 'info' } })
@@ -3367,7 +3396,7 @@ export async function apply(ctx) {
     })
   }
 
-  const controlledToolNames = new Set(['bash', 'pwsh', ...dshFileToolNames, 'skill', 'web_search', 'tavern_save_skill', ...cordisToolNames, 'tavern_user_profile_read', 'tavern_user_profile_save_draft', 'tavern_user_profile_confirm', 'tavern_read_card', 'tavern_read_card_raw', 'tavern_read_play_chat', 'tavern_read_script', 'tavern_recall_history', 'tavern_read_worldbook', 'tavern_update_worldbook', 'tavern_read_preset', 'tavern_update_preset', 'tavern_update_card', 'tavern_restore_card', 'tavern_validate_card', 'tavern_test_response'])
+  const controlledToolNames = new Set(['bash', 'pwsh', ...dshFileToolNames, 'skill', 'tavern_read_skill_reference', 'web_search', 'tavern_save_skill', ...cordisToolNames, 'tavern_user_profile_read', 'tavern_user_profile_save_draft', 'tavern_user_profile_confirm', 'tavern_read_card', 'tavern_read_card_raw', 'tavern_read_play_chat', 'tavern_read_script', 'tavern_recall_history', 'tavern_read_worldbook', 'tavern_update_worldbook', 'tavern_read_preset', 'tavern_update_preset', 'tavern_update_card', 'tavern_restore_card', 'tavern_validate_card', 'tavern_test_response'])
   const foregroundStrategies = createForegroundOrchestrationStrategies({
     compatibility: {
       beforeTurn: async function (input) {
@@ -3757,12 +3786,29 @@ export async function apply(ctx) {
     }))
 
     tools.register(defineTool({
+      name: 'tavern_read_skill_reference',
+      description: '按需读取当前 Agent 可用 Skill 内的 references/*.md。先用原生 skill 工具读取入口，再按入口指引读取相关参考文件。',
+      parameters: { name: { type: 'string', required: true }, path: { type: 'string', required: true, description: 'Skill 内的相对路径，例如 references/dialogue.md' } },
+      output: { schema: { type: 'object', additionalProperties: false, properties: { content: { type: 'string', required: true } } }, render: (_args, value) => [{ type: 'text', text: value.content }] },
+      isConcurrencySafe: () => true,
+      async execute(args, exec) {
+        const role = await skillRoleFor(exec.agent)
+        const skill = await tavernSkills.read(args.name)
+        if (!role || !skill?.modelInvocable || !skill.agents.includes(role)) throw new Error('此 Skill 未分配给当前 Agent')
+        return { content: await tavernSkills.readReference(args.name, args.path) }
+      }
+    }))
+
+    tools.register(defineTool({
       name: 'tavern_save_skill',
       description: '仅当用户明确要求创建或修改 Tavern Skill 时，把结构化内容安全保存到用户 Skill 目录。不能覆盖内置 Skill；修改同名用户 Skill 必须明确 overwrite=true。',
       parameters: {
         name: { type: 'string', required: true, description: 'kebab-case Skill 名称' },
         description: { type: 'string', required: true, description: '用于 Skill 自动发现的一句话简介，说明做什么以及何时使用' },
         body: { type: 'string', required: true, description: '不含 YAML frontmatter 的完整 Markdown 指令正文' },
+        purpose: { type: 'string', enum: ['card', 'writing', 'background'], description: '用途：卡片制作、前台写作、后台任务；默认卡片制作' },
+        agents: { type: 'array', items: { type: 'string', enum: ['card', 'foreground', 'background'] }, description: '分配给哪些 Agent；省略时按用途默认分配' },
+        references: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { path: { type: 'string', required: true }, content: { type: 'string', required: true } } }, description: 'Skill 自带的参考资料副本，路径为 references/名称.md；省略保留旧文件，传数组替换整套文件' },
         modelInvocable: { type: 'boolean', description: '是否允许 Agent 自动发现，默认 true' },
         userInvocable: { type: 'boolean', description: '是否允许用户显式调用，默认 true' },
         overwrite: { type: 'boolean', description: '同名用户 Skill 已存在且用户明确要求修改时设为 true' }

@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import test from 'node:test'
+import { createTavernSkillModule } from '../tavern-plugin/lib/domain/tavern-skills.js'
+import { createTavernSkillProvider } from '../tavern-plugin/lib/domain/tavern-skill-provider.js'
 
 test('真实 preset 共存及重新挂载：检查服务唯一，工具和 Tavern Skill 保留', { skip: !process.env.DSH_BOOT_MODULE }, async (t) => {
   const bootUrl = pathToFileURL(path.resolve(process.env.DSH_BOOT_MODULE))
@@ -37,9 +39,17 @@ test('真实 preset 共存及重新挂载：检查服务唯一，工具和 Taver
   const ctx = await boot('tavern-cordis-test', config)
   t.after(() => ctx.fiber.dispose())
   ctx.baseUrl = bootUrl.href
+  const { FileSystemSkillProvider } = await import(new URL('../../dsh-skill-filesystem/lib/index.js', bootUrl))
+  const library = createTavernSkillModule({ directory: path.join(root, 'user-skills'), builtInDirectory: path.join(presetDir, 'skills') })
+  ctx.skills.registerProvider(control => {
+    const provider = new FileSystemSkillProvider(ctx, control, { includeDefaultRoots: false, customSkillDirs: [path.join(root, 'user-skills')], bundledSkillDir: path.join(presetDir, 'skills'), watch: false })
+    t.after(() => provider.dispose())
+    t.after(library.subscribe(control.invalidate))
+    return createTavernSkillProvider({ providers: [provider], library, roleFor: key => key?.id?.startsWith('tavern') ? (key.id.includes('play') ? 'foreground' : key.id.includes('background') ? 'background' : 'card') : null })
+  })
   const scopes = []
   const mount = async (id, file) => {
-    const key = { id }
+    const key = { id, session: { id, header: { cwd: root } } }
     const scope = createScope(ctx, key)
     scopes.push(scope)
     await mountPreset(scope.ctx, { id, path: file })
@@ -72,6 +82,31 @@ test('真实 preset 共存及重新挂载：检查服务唯一，工具和 Taver
     assert.ok(skills.some(skill => skill.name === 'tavern-create-skill'))
   }
   await verify(first)
+  const play = await mount('tavern-play', presetPath)
+  await library.write({ name: 'dialogue-lesson', purpose: 'writing', description: '争执场景', body: '教学正文只在加载后出现', references: [{ path: 'references/lesson.md', content: '独立教学资料' }] })
+  const lookup = { cwd: root, scope: play.key }
+  assert.deepEqual((await ctx.skills.list(lookup)).map(skill => skill.name), ['dialogue-lesson'])
+  assert.equal((await ctx.skills.list(lookup))[0].content, undefined)
+  assert.equal(await ctx.skills.get('tavern-create-skill', lookup), undefined)
+  assert.equal(await ctx.skills.get('dialogue-lesson', { scope: first.key }), undefined)
+  const loader = ctx.tools.get('skill', play.key)
+  const loaded = await loader.execute({ name: 'dialogue-lesson' }, { agent: play.key, signal: new AbortController().signal })
+  assert.match(loaded.content, /教学正文/)
+  await assert.rejects(loader.execute({ name: 'tavern-create-skill' }, { agent: play.key, signal: new AbortController().signal }))
+  await library.assign('dialogue-lesson', ['card'])
+  assert.deepEqual(await ctx.skills.list(lookup), [])
+  assert.ok(await ctx.skills.get('dialogue-lesson', { scope: first.key }))
+  const background = await mount('tavern-background', presetPath)
+  await library.assign('dialogue-lesson', ['foreground', 'background'])
+  assert.ok(await ctx.skills.get('dialogue-lesson', { scope: background.key }))
+  assert.equal(await ctx.skills.get('tavern-create-skill', { scope: background.key }), undefined)
+  await library.write({ name: 'manual-lesson', purpose: 'writing', description: '手动', body: '仅手动', modelInvocable: false })
+  await assert.rejects(loader.execute({ name: 'manual-lesson' }, { agent: play.key, signal: new AbortController().signal }), /not available for model invocation/)
+  await library.assign('dialogue-lesson', [])
+  assert.equal(await ctx.skills.get('dialogue-lesson', { scope: background.key }), undefined)
+  await background.dispose()
+  await play.dispose()
+
   await official.dispose()
   await first.dispose()
   await verify(second)

@@ -7,6 +7,8 @@ description: "为 Tavern 卡片工作台创建或修改可复用 Skill；用户�
 
 把用户反复需要的工作方法整理为简短、可执行、可发现的 Tavern Skill，并通过 `tavern_save_skill` 保存。
 
+用户引用写作教学材料要求制作场景写作 Skill 时，先加载 `tavern-create-writing-skill`。
+
 ## 工作方式
 
 1. 判断需求是否值得成为 Skill：它应是一套可复用的方法，而不是一次性内容、人物卡字段或单份资料。
@@ -14,7 +16,8 @@ description: "为 Tavern 卡片工作台创建或修改可复用 Skill；用户�
 3. 使用 kebab-case 名称。`description` 只承担发现职责，准确写出“做什么、何时使用”。
 4. 正文只保留会改变 Agent 决策的步骤、约束和完成标准。环境中可直接查到的路径、工具说明和通用常识无需重复。
 5. 默认允许模型与用户调用。只有用户明确要求手动调用时，才关闭模型调用。
-6. 用户已经明确要求创建或保存时，调用 `tavern_save_skill`；只讨论方案或审阅草稿时，先展示草稿，不写文件。
+6. 按用途设置 `purpose`：卡片制作使用 `card`，前台写作使用 `writing`，后台任务使用 `background`。默认按用途分配；用户指定时用 `agents`。配套教导写入 Skill 自己的 `references`，使成品独立于原素材。
+7. 用户已经明确要求创建或保存时，调用 `tavern_save_skill`；只讨论方案或审阅草稿时，先展示草稿，不写文件。
 
 ## 写作要求
 
@@ -26,4 +29,4 @@ description: "为 Tavern 卡片工作台创建或修改可复用 Skill；用户�
 
 ## 完成标准
 
-保存后报告 Skill 名称、用途和是否覆盖旧版本。新 Skill 应立即进入当前卡片 Agent 的目录；无需重启，也不自动执行。
+保存后报告 Skill 名称、用途和是否覆盖旧版本。新 Skill 进入已分配 Agent 的目录，正文与参考资料由各 Agent 按需加载。

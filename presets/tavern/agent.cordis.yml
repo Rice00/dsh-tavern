@@ -26,17 +26,7 @@
       config:
         maxOutputChars: 16000
 
-# 卡片工作台复用 DSH 原生 Skill 目录和按需加载工具。
-# 只扫描 Tavern 自己的内置目录与用户数据目录，不暴露全局 DSH Skills；
-# 是否对模型可见，仍由 Tavern 按当前会话模式过滤。
-- id: skill-filesystem
-  name: '@deepseek-ai/dsh-skill-filesystem'
-  config:
-    includeDefaultRoots: false
-    customSkillDirs:
-      - !!js "process.getBuiltinModule('node:path').resolve(process.env.DSH_HOME || process.getBuiltinModule('node:path').join(process.getBuiltinModule('node:os').homedir(), '.dsh'), 'profile-data', 'tavern', 'data', 'skills')"
-    bundledSkillDir: !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"
-
+# Skill 来源由 Tavern 按 Agent 用途分配，调用仍使用原生工具。
 - id: tool-skill
   name: '@deepseek-ai/dsh-tool-skill'
 

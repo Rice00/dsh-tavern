@@ -42,6 +42,7 @@
         - llm
         - webServer
         - tools
+        - skills
         - agentDefaultModel
         - sandboxPolicy
         - shell

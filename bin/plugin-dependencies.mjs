@@ -8,6 +8,7 @@ import { parseDocument } from 'yaml'
 const REQUIRED_HOST_EXPORTS = {
   '@deepseek-ai/dsh-agent': 'agentEvents',
   '@deepseek-ai/dsh-tools': 'defineTool',
+  '@deepseek-ai/dsh-skill-filesystem': 'FileSystemSkillProvider',
   '@deepseek-ai/dsh-subagent': 'snapshotSubagentDescriptor',
   '@deepseek-ai/dsh-typert-protocol': 'TypertRemoteService',
 }

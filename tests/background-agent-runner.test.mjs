@@ -80,8 +80,8 @@ test('后台联网搜索按游戏快照统一开放，并在后台各任务间�
     return { allowed, names }
   }
 
-  assert.deepEqual(await visible(false), { allowed: ['skill', 'web_search'], names: ['skill'] })
-  assert.deepEqual(await visible(true), { allowed: ['skill', 'web_search'], names: ['skill', 'web_search'] })
+  assert.deepEqual(await visible(false), { allowed: ['skill', 'tavern_read_skill_reference', 'web_search'], names: ['skill'] })
+  assert.deepEqual(await visible(true), { allowed: ['skill', 'tavern_read_skill_reference', 'web_search'], names: ['skill', 'web_search'] })
 })
 
 test('手机私聊后台任务不暴露 Skill、搜索或文件工具', async () => {
@@ -625,7 +625,7 @@ test('后台 Runner 执行候选任务，查询超限后提示开始推理而不
   assert.equal(stagedSnapshots[0].scope, 'background')
   assert.equal(stagedSnapshots[0].snapshot.front.entries[0].content, '通用破限身份')
   assert.equal(stagedSnapshots[0].snapshot.back.entries[0].content, '通用破限预填充')
-  assert.deepEqual(restrictions, [{ allow: ['skill', 'web_search'] }])
+  assert.deepEqual(restrictions, [{ allow: ['skill', 'tavern_read_skill_reference', 'web_search'] }])
   assert.equal(registered[0].name, 'tavern_read_script')
   assert.equal(registered[1].name, 'tavern_point_script')
   const requestListener = listeners.find(function (entry) { return entry.name === 'agent/request' })

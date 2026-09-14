@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "87b9dc384f1a877d30c93ce24133cd0520cb70c3",
-  "releaseSequence": 201,
+  "revision": "ce2734cb167fd326c8e8dc2d80183198fe7b023d",
+  "releaseSequence": 202,
   "version": "1.7.0",
   "files": [
     {
@@ -256,8 +256,8 @@
     },
     {
       "path": "tavern-plugin/lib/client.js",
-      "sha256": "1c0e8a154d82f405a8103e740cb1913b1ba68b8d6bec6e1d2bb509156824a9dd",
-      "size": 867058
+      "sha256": "7d219e1b9c0951e48d0536772cf3df1881a79725c2f9d2672e84343f72f723fd",
+      "size": 868102
     },
     {
       "path": "tavern-plugin/lib/cordis-inspect.js",
@@ -691,8 +691,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/rollback-surface.js",
-      "sha256": "ff81a632c64a0e131fb344f67ff1387cb7954452a00063cc4c42f239de28bbe5",
-      "size": 15424
+      "sha256": "e2c4ebb82a83a999cded00e9d96de3210817ff2f0fffe7b866b4cac86e0ef305",
+      "size": 16179
     },
     {
       "path": "tavern-plugin/lib/domain/round-history.js",
@@ -3421,8 +3421,8 @@
     },
     {
       "path": "tavern-plugin/src/client/main.js",
-      "sha256": "f0e7fcfe09bbc990a3e043655d8d5867fcd1cafe91971f5ed8e4211dcd1e8775",
-      "size": 692175
+      "sha256": "f3f64ef8149140d0f944661d2f4b7bc25ce140083d97b2acb96348e1e5d7fceb",
+      "size": 693219
     },
     {
       "path": "tavern-plugin/src/client/modules/frame-activation.js",

@@ -1,3 +1,4 @@
+import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import { prependSystemInstruction } from './domain/system-append.js'
 import { rewindBackgroundSurface } from './domain/background-surface.js'
 import { sessionEvents } from './domain/session-events.js'
@@ -125,6 +126,8 @@ export function createBackgroundAgentTask(options) {
     return async function (childCtx) {
       if (setupAgent !== null) await setupAgent(childCtx)
       state.ctx = childCtx
+      state.modelSelection = { current: { ...state.input.selection }, assembled: undefined }
+      installModelSelection(childCtx, state.modelSelection)
       childCtx.on('agent/pre-step', async function ({ agent, turn, step }, next) {
         const decision = await next()
         if (!descriptorAppended && decision.kind === 'enter') {
@@ -221,7 +224,10 @@ export function createBackgroundAgentTask(options) {
       state.refreshConfiguredTools()
       childCtx.on('agent/request', async function (_payload, next) {
         const input = state.input || {}
-        const request = await next()
+        const inherited = await next()
+        const { maxTokens: _oldLimit, ...request } = inherited
+        const limit = Number.isSafeInteger(input.maxTokens) && input.maxTokens > 0 ? input.maxTokens : maximumBackgroundTokens(input.selection)
+        if (limit !== undefined) request.maxTokens = limit
         const temperature = state.characterDesignStage
           ? state.characterDesignStage.temperature(input.temperature)
           : input.temperature

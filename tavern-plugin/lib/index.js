@@ -46,7 +46,7 @@ import { projectCardOpeningPreviews } from './domain/card-opening-previews.js'
 import { READABLE_CARD_FIELDS, readCardField } from './domain/card-reading.js'
 import { createConversationInitialization } from './domain/conversation-initialization.js'
 import { assertConversationForkable, conversationForkReceipt, forkConversationChat } from './domain/conversation-fork.js'
-import { resolveChatBackgroundModel, readBackgroundModelReasoning } from './domain/background-model-selection.js'
+import { normalizeBackgroundModel, resolveChatBackgroundModel, readBackgroundModelReasoning } from './domain/background-model-selection.js'
 import { createPlayCardSnapshots, cardContentDigest } from './domain/play-card-snapshots.js'
 import { createUserPreferenceProfile } from './domain/user-preference-profile.js'
 import { createContextPlanner } from './domain/context-planner.js'
@@ -1560,6 +1560,7 @@ export async function apply(ctx) {
   const runtimePresetSnapshots = new Map()
   const backgroundAgentRunner = createBackgroundAgentRunner({
     systemAppend: () => runtimePrompt('system-append'),
+    resolveModelSelection: async input => backgroundModelSelection(await chatForSession(input.sessionId)) || input.selection,
     resolveWebSearch: async () => (await readTavernSettings()).webSearchEnabled === true,
     resolveBackgroundTasks: async () => normalizeBackgroundTasks((await readTavernSettings()).backgroundTasks),
     backgroundTools: [POSTURE_SUBMIT_TOOL, CHARACTER_DESIGN_READ_TOOL, CHARACTER_DESIGN_SAVE_TOOL, MVU_SUBMIT_UPDATE_TOOL, CANDIDATE_SUBMIT_TOOL, SCRIPT_READ_TOOL, SCRIPT_POINT_TOOL],
@@ -2684,6 +2685,26 @@ export async function apply(ctx) {
       case 'updateCard': {
         const change = await updateCard(args && args.path, args && args.patch)
         return { card: change.card, changed: change.changed }
+      }
+      case 'getConversationBackgroundModel': {
+        const chat = await chatForSession(str(args?.sessionId))
+        if (!chat || groupOfMode(chat.mode) !== 'play') throw new Error('请先打开游玩会话')
+        return { backgroundModel: chat.backgroundModelSelection || null, modelCatalog: await tavernModelCatalog() }
+      }
+      case 'setConversationBackgroundModel': {
+        const sessionId = str(args?.sessionId)
+        const chat = await chatForSession(sessionId)
+        if (!chat || groupOfMode(chat.mode) !== 'play') throw new Error('请先打开游玩会话')
+        const selection = normalizeBackgroundModel(args.backgroundModel)
+        if (args.backgroundModel !== null && !selection) throw new Error('后台模型配置无效')
+        if (selection) {
+          const catalog = await tavernModelCatalog()
+          if (!catalog.some(group => group.provider === selection.provider && group.models.some(model => model.id === selection.model))) throw new Error('所选后台模型不可用')
+          const reasoning = await readBackgroundModelReasoning(llm, selection)
+          if (selection.reasoningEffort && !reasoning?.efforts?.some(effort => effort.id === selection.reasoningEffort)) throw new Error('所选推理强度不可用')
+        }
+        const saved = await updateChat(chat.id, current => ({ ...current, backgroundModelSelection: selection }), { source: 'background-model.switch-conversation' })
+        return { backgroundModel: saved.backgroundModelSelection || null }
       }
       case 'getBackgroundModelReasoning': return { reasoning: await readBackgroundModelReasoning(llm, args) }
       case 'getTavernSettings': return { settings: await readTavernSettings(), modelCatalog: await tavernModelCatalog(), releaseCapabilities: TAVERN_RELEASE_CAPABILITIES }

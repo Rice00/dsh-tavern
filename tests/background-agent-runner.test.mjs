@@ -203,8 +203,8 @@ test('人物设计阶段独立提高温度，结束后恢复结算温度', async
           tools: { restrict() {}, register(tool) { registered.set(tool.name, tool) } }
         })
         async function sampleTemperature() {
-          const listener = listeners.find(entry => entry.name === 'agent/request')
-          const request = await listener.listener({}, async () => ({}))
+          const request = await listeners.filter(entry => entry.name === 'agent/request').reduceRight(
+            (next, entry) => () => entry.listener({}, next), async () => ({}))()
           temperatures.push(request.temperature)
         }
         return { agent: {
@@ -630,7 +630,8 @@ test('后台 Runner 执行候选任务，查询超限后提示开始推理而不
   assert.equal(registered[1].name, 'tavern_point_script')
   const requestListener = listeners.find(function (entry) { return entry.name === 'agent/request' })
   assert.ok(requestListener)
-  assert.deepEqual(await requestListener.listener({}, async function () { return { provider: 'test', model: 'scripted' } }), { provider: 'test', model: 'scripted', temperature: 0.8 })
+  assert.deepEqual(await listeners.filter(entry => entry.name === 'agent/request').reduceRight(
+    (next, entry) => () => entry.listener({}, next), async () => ({ provider: 'test', model: 'scripted' }))(), { provider: 'test', model: 'scripted', maxTokens: 4000, temperature: 0.8 })
   assert.deepEqual(appended, [{
     type: 'subagent/descriptor',
     data: { version: 3, mode: 'one-shot', provider: 'dsh-tavern-background', label: '候选研究' }

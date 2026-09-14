@@ -6458,7 +6458,7 @@ window.__ModuleLoader__.load({
 			if (!label) return null;
 			return React.createElement("div", {
 				className: "dsh-tavern-background-model",
-				title: label + "（由 DSH Tavern 在本局开局时固定）",
+				title: label + "（可在前台“更多 → 本局后台模型”中切换）",
 				"aria-label": "后台模型：" + label
 			}, React.createElement("span", null, label));
 		}
@@ -6580,7 +6580,7 @@ window.__ModuleLoader__.load({
                 React.createElement("label", { className: "dsh-tavern-settings-row dsh-tavern-settings-model-row" },
                     React.createElement("span", { className: "dsh-tavern-settings-copy" },
                         React.createElement("span", { className: "dsh-tavern-settings-title" }, "后台推理强度"),
-                        React.createElement("span", { className: "dsh-tavern-settings-desc" }, modelKey ? "与后台模型一起用于新游戏；已有游戏保留原配置。" : "随前台当前模型的推理强度切换。")
+                        React.createElement("span", { className: "dsh-tavern-settings-desc" }, modelKey ? "用于新游戏；已有游戏可在“更多 → 本局后台模型”中单独修改。" : "随前台当前模型的推理强度切换。")
                     ),
                     React.createElement("select", { className: "dsh-tavern-settings-select", "aria-label": "后台推理强度", value: effort,
                         disabled: state.loading || state.busy || !modelKey || modelReasoning.key !== modelKey || efforts.length === 0,
@@ -6745,7 +6745,7 @@ window.__ModuleLoader__.load({
 							h("summary", null, "偏好维度 · " + dimensions.length),
 							dimensionsOpen ? dimensions.map(function (item, index) {
 								return h("div", { key: item.id || index, className: "dsh-tavern-user-profile-dimension" },
-									h("b", null, String(item.label || item.id || "偏好")),
+									h("b", null, String(item.name || item.label || item.id || "偏好")),
 									h("p", null, String(item.conclusion || "")),
 									h("div", { className: "dsh-tavern-user-profile-meta" }, "置信度：" + String(item.confidence || "uncertain") + (item.evidence ? " · 依据：" + String(item.evidence) : ""))
 								);
@@ -9080,7 +9080,58 @@ window.__ModuleLoader__.load({
 			return React.createElement("button", { type: "button", className: "dsh-tavern-choice-trigger", role: props.inMenu ? "menuitem" : undefined, disabled: busy, onClick: stop }, busy ? "正在停止…" : "停止后台");
 		}
 
+        function TavernConversationBackgroundModel(props) {
+            const h = React.createElement;
+            const [catalog, setCatalog] = React.useState([]);
+            const [selection, setSelection] = React.useState(null);
+            const [loaded, setLoaded] = React.useState(false);
+            const [busy, setBusy] = React.useState(false);
+            const [error, setError] = React.useState("");
+            const [reasoning, setReasoning] = React.useState({ key: "", value: null });
+            const key = selection ? JSON.stringify({ provider: selection.provider, model: selection.model }) : "";
+            React.useEffect(() => {
+                let active = true;
+                rpc("getConversationBackgroundModel", { sessionId: props.sessionId }, props.sessionId).then(result => {
+                    if (!active) return;
+                    setCatalog(result.modelCatalog || []); setSelection(result.backgroundModel); setLoaded(true);
+                }, err => { if (active) setError(String(err.message || err)); });
+                return () => { active = false; };
+            }, [props.sessionId]);
+            React.useEffect(() => {
+                let active = true;
+                if (key) rpc("getBackgroundModelReasoning", JSON.parse(key), props.sessionId).then(result => {
+                    if (active) setReasoning({ key, value: result.reasoning });
+                }, err => { if (active) setError(String(err.message || err)); });
+                return () => { active = false; };
+            }, [key]);
+            async function save() {
+                setBusy(true); setError("");
+                try {
+                    await rpc("setConversationBackgroundModel", { sessionId: props.sessionId, backgroundModel: selection }, props.sessionId);
+                    liveTavernView.invalidate(props.sessionId);
+                    props.onClose();
+                } catch (err) { setError(String(err.message || err)); }
+                finally { setBusy(false); }
+            }
+            const efforts = reasoning.key === key ? reasoning.value?.efforts || [] : [];
+            const currentKnown = !selection || catalog.some(group => group.provider === selection.provider && group.models.some(model => model.id === selection.model));
+            return h("div", { className: "dsh-tavern-mobile-import", onKeyDown: event => { if (event.key === "Escape" && !busy) props.onClose(); } },
+                h("section", { className: "dsh-tavern-mobile-import-panel", role: "dialog", "aria-modal": true, "aria-label": "本局后台模型" },
+                    h("div", { className: "dsh-tavern-mobile-import-title" }, "本局后台模型"),
+                    h("p", { className: "dsh-tavern-settings-desc" }, "下一次后台任务生效，正在运行的任务不变。保留原后台会话、历史和游戏数据。"),
+                    h("p", { className: "dsh-tavern-prompt-error" }, "切换后台模型或推理强度会破坏缓存，首次请求可能增加耗时和费用。"),
+                    h("label", null, "后台模型", h("select", { className: "dsh-tavern-settings-select", value: key, disabled: !loaded || busy, onChange: event => { setSelection(event.target.value ? JSON.parse(event.target.value) : null); setError(""); } },
+                        h("option", { value: "" }, "跟随前台"),
+                        !currentKnown ? h("option", { value: key }, backgroundModelLabel(selection, catalog) + "（当前不可用）") : null,
+                        catalog.map(group => h("optgroup", { key: group.provider, label: group.providerName || group.provider }, group.models.map(model => h("option", { key: model.id, value: JSON.stringify({ provider: group.provider, model: model.id }) }, model.name || model.id)))))),
+                    h("label", null, "推理强度", h("select", { className: "dsh-tavern-settings-select", value: selection?.reasoningEffort || "", disabled: !key || !efforts.length || busy, onChange: event => { const next = { ...selection }; if (event.target.value) next.reasoningEffort = event.target.value; else delete next.reasoningEffort; setSelection(next); } },
+                        h("option", { value: "" }, key ? "模型默认" : "跟随前台"), efforts.map(item => h("option", { key: item.id, value: item.id }, item.name || item.label || item.id)))),
+                    error ? h("p", { role: "alert", className: "dsh-tavern-prompt-error" }, error) : null,
+                    h("div", { className: "dsh-tavern-prompt-actions" }, h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: props.onClose }, "取消"), h("button", { className: "dsh-tavern-btn", disabled: !loaded || busy || Boolean(key && reasoning.key !== key), onClick: save }, busy ? "保存中…" : "保存本局设置"))));
+        }
+
 		function TavernMoreActions(props) {
+            const [modelOpen, setModelOpen] = React.useState(false);
 			const [open, setOpen] = React.useState(false);
 			const root = React.useRef(null);
 			React.useEffect(function () {
@@ -9094,10 +9145,12 @@ window.__ModuleLoader__.load({
 			return React.createElement("div", { className: "dsh-tavern-more-actions", ref: root },
 				React.createElement("button", { type: "button", className: "dsh-tavern-choice-trigger", "aria-haspopup": "menu", "aria-expanded": open, onClick: function () { setOpen(function (value) { return !value; }); } }, "更多 ▾"),
 				React.createElement("div", { className: "dsh-tavern-more-menu", role: "menu", hidden: !open, onClick: function (event) { if (event.target && event.target.closest && event.target.closest("button:not(:disabled)")) setOpen(false); } },
-					React.createElement(TavernStopBackgroundAction, Object.assign({}, props, { inMenu: true })),
+					React.createElement("button", { type: "button", role: "menuitem", className: "dsh-tavern-choice-trigger", onClick: () => setModelOpen(true) }, "本局后台模型"),
+                    React.createElement(TavernStopBackgroundAction, Object.assign({}, props, { inMenu: true })),
 					React.createElement(TavernEditBodyAction, props),
 					React.createElement(TavernRollbackAction, props),
-					React.createElement(TavernCompactionAction, Object.assign({}, props, { inMenu: true })))
+					React.createElement(TavernCompactionAction, Object.assign({}, props, { inMenu: true }))),
+                modelOpen ? React.createElement(TavernConversationBackgroundModel, { sessionId: props.sessionId, onClose: () => setModelOpen(false) }) : null
 			);
 		}
 

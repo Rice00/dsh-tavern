@@ -46,7 +46,7 @@ import { projectCardOpeningPreviews } from './domain/card-opening-previews.js'
 import { READABLE_CARD_FIELDS, readCardField } from './domain/card-reading.js'
 import { createConversationInitialization } from './domain/conversation-initialization.js'
 import { assertConversationForkable, conversationForkReceipt, forkConversationChat } from './domain/conversation-fork.js'
-import { resolveChatBackgroundModel } from './domain/background-model-selection.js'
+import { resolveChatBackgroundModel, readBackgroundModelReasoning } from './domain/background-model-selection.js'
 import { createPlayCardSnapshots, cardContentDigest } from './domain/play-card-snapshots.js'
 import { createUserPreferenceProfile } from './domain/user-preference-profile.js'
 import { createContextPlanner } from './domain/context-planner.js'
@@ -360,7 +360,7 @@ export async function apply(ctx) {
       try {
         const sel = agentDefaultModel.currentSelection()
         if (sel !== null && typeof sel === 'object' && typeof sel.provider === 'string' && typeof sel.model === 'string') {
-          return { provider: sel.provider, model: sel.model }
+          return { provider: sel.provider, model: sel.model, ...(sel.reasoningEffort === undefined ? {} : { reasoningEffort: sel.reasoningEffort }) }
         }
       } catch (err) {
         console.error('dsh-tavern: 读取默认模型失败', err)
@@ -2656,6 +2656,7 @@ export async function apply(ctx) {
         const change = await updateCard(args && args.path, args && args.patch)
         return { card: change.card, changed: change.changed }
       }
+      case 'getBackgroundModelReasoning': return { reasoning: await readBackgroundModelReasoning(llm, args) }
       case 'getTavernSettings': return { settings: await readTavernSettings(), modelCatalog: await tavernModelCatalog(), releaseCapabilities: TAVERN_RELEASE_CAPABILITIES }
       case 'getSceneImageSettings': return { settings: await enabledSceneIllustrations().settings(args?.provider) }
       case 'saveSceneImageSettings': return { settings: await enabledSceneIllustrations().configure(args) }

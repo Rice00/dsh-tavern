@@ -180,8 +180,10 @@ test('新游戏默认动态跟随前台，显式后台配置才固化；重入�
   assert.equal((await following.make().start(following.input)).backgroundModelSelection, null)
 
   const fixed = initializationFixture()
-  fixed.state.settings.backgroundModel = { provider: 'siliconflow', model: 'deepseek-v4' }
-  assert.deepEqual((await fixed.make().start(fixed.input)).backgroundModelSelection, { provider: 'siliconflow', model: 'deepseek-v4' })
+  fixed.state.settings.backgroundModel = { provider: 'siliconflow', model: 'deepseek-v4', reasoningEffort: 'high' }
+  assert.deepEqual((await fixed.make().start(fixed.input)).backgroundModelSelection, { provider: 'siliconflow', model: 'deepseek-v4', reasoningEffort: 'high' })
+  fixed.state.settings.backgroundModel.reasoningEffort = 'low'
+  assert.equal((await fixed.make().start(fixed.input)).backgroundModelSelection.reasoningEffort, 'high')
   assert.equal((await fixed.make().start({ ...fixed.input, cardPath: '', mode: 'card' })).backgroundModelSelection, null)
 })
 

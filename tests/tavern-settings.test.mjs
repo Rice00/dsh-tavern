@@ -294,3 +294,83 @@ test('遗留台账开关不能重新启用已移除的后台任务', async t => 
   await run.update({ backgroundTasks: { ledger: false } })
   assert.equal((await run.read()).backgroundTasks.ledger, false)
 })
+
+test('后台推理强度选择持久化，模型下拉仍匹配当前模型，换模型清除旧档位', async t => {
+  const harness = await settingsHarness(t)
+  let state = { loading: false, busy: false, backgroundModel: { provider: 'worker', model: 'm', reasoningEffort: 'high' }, modelCatalog: [{ provider: 'worker', models: [{ id: 'm' }, { id: 'other' }] }], backgroundTasks: {}, error: '' }
+  const key = JSON.stringify({ provider: 'worker', model: 'm' })
+  const info = { key, reasoning: { defaultEffort: 'low', efforts: [{ id: 'low', name: '低' }, { id: 'high', name: '高' }] }, error: '' }
+  let hook = 0, pending
+  const context = { TavernTextColorSettings() {}, ContextCompactionSettings() {}, SceneImageSettings() {},
+    window: { dispatchEvent() {} }, CustomEvent: class {},
+    rpc: (_method, args) => (pending = harness.update(args.patch).then(settings => ({ settings }))),
+    React: {
+      useState(initial) { const index = hook++; return index === 1 ? [state, update => { state = update(state) }] : index === 2 ? [info, () => {}] : [initial, () => {}] },
+      useEffect() {}, createElement: (type, props, ...children) => ({ type, props, children })
+    }
+  }
+  const start = clientSource.indexOf('function TavernSettingsSection()')
+  vm.runInNewContext(clientSource.slice(start, clientSource.indexOf('function SystemPromptSidebarTab()', start)) + ';this.render=TavernSettingsSection;', context)
+  function render() {
+    hook = 0
+    const nodes = []
+    function visit(node) { if (Array.isArray(node)) return node.forEach(visit); if (!node || typeof node !== 'object') return; nodes.push(node); (node.children || []).forEach(visit) }
+    visit(context.render())
+    return label => nodes.find(node => node.props?.['aria-label'] === label)
+  }
+  let get = render()
+  assert.equal(get('后台模型').props.value, key)
+  assert.equal(get('后台推理强度').props.value, 'high')
+  assert.equal(get('后台推理强度').props.disabled, false)
+  get('后台推理强度').props.onChange({ target: { value: 'low' } })
+  await pending
+  assert.equal((await harness.saved()).backgroundModel.reasoningEffort, 'low')
+  assert.equal((await harness.read()).backgroundModel.reasoningEffort, 'low')
+  get = render()
+  get('后台推理强度').props.onChange({ target: { value: '' } })
+  await pending
+  assert.equal((await harness.saved()).backgroundModel.reasoningEffort, undefined)
+  get('后台模型').props.onChange({ target: { value: JSON.stringify({ provider: 'worker', model: 'other' }) } })
+  await pending
+  assert.deepEqual((await harness.read()).backgroundModel, { provider: 'worker', model: 'other' })
+  assert.equal(render()('后台推理强度').props.disabled, true, '另一模型的档位不可复用')
+  get('后台模型').props.onChange({ target: { value: '' } })
+  await pending
+  assert.equal(render()('后台推理强度').props.disabled, true)
+  assert.equal((await harness.read()).backgroundModel, null)
+})
+
+test('切换后台模型后丢弃旧档位响应，查询错误可见', async () => {
+  const start = clientSource.indexOf('function TavernSettingsSection()')
+  const section = clientSource.slice(start, clientSource.indexOf('function SystemPromptSidebarTab()', start))
+  let selection = { provider: 'p', model: 'old' }, info, effects, hook
+  const pending = []
+  const context = { TavernTextColorSettings() {}, ContextCompactionSettings() {}, SceneImageSettings() {},
+    rpc: (method, args) => new Promise((resolve, reject) => pending.push({ method, args, resolve, reject })),
+    React: {
+      useState(initial) {
+        const index = hook++
+        if (index === 1) return [{ modelCatalog: [], backgroundModel: selection, backgroundTasks: {} }, () => {}]
+        if (index === 2) return [info || initial, next => { info = next }]
+        return [initial, () => {}]
+      },
+      useEffect: run => effects.push(run), createElement: (type, props, ...children) => ({ type, props, children })
+    }
+  }
+  vm.runInNewContext(section + ';this.render=TavernSettingsSection;', context)
+  function query() { hook = 0; effects = []; context.render(); return effects[1]() }
+  const cleanup = query()
+  assert.equal(pending[0].method, 'getBackgroundModelReasoning')
+  cleanup()
+  selection = { provider: 'p', model: 'new' }
+  query()
+  pending[1].resolve({ reasoning: { efforts: [{ id: 'new-level' }] } })
+  await Promise.resolve()
+  pending[0].resolve({ reasoning: { efforts: [{ id: 'old-level' }] } })
+  await Promise.resolve()
+  assert.equal(info.reasoning.efforts[0].id, 'new-level')
+  query()
+  pending[2].reject(Error('查询失败'))
+  await Promise.resolve()
+  assert.equal(info.error, '查询失败')
+})

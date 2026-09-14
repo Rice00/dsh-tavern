@@ -109,55 +109,16 @@ test('设置界面提供分色与现有设置，不恢复旧兼容样式选项',
   visit(root)
   assert.ok(nodes.some(node => node.type === context.TavernTextColorSettings))
   const inputs = nodes.filter(node => node.type === 'input')
-  assert.deepEqual(inputs.map(input => input.props['aria-label']), ['默认玩家称呼', '开启联网搜索'])
+  assert.deepEqual(inputs.map(input => input.props['aria-label']), [])
   const select = nodes.find(node => node.type === 'select' && node.props['aria-label'] === '后台模型')
-  assert.ok(select)
-  assert.match(JSON.stringify(select), /跟随前台（随切换生效）/)
+  assert.equal(select, undefined)
   assert.equal(nodes.some(node => node.type === 'textarea' || node.type === 'details'), false)
   assert.doesNotMatch(JSON.stringify(root), /兼容模式|受信任人物卡模式|SillyTavern 样式环境|Custom CSS/)
 })
 
-test('联网搜索开关保存为以后新游戏的默认值', async t => {
+test('全局接口拒绝修改本局联网搜索开关', async t => {
   const harness = await settingsHarness(t)
-  let state = { webSearchEnabled: false }
-  const events = []
-  const context = {
-    setState: updater => { state = updater(state) },
-    rpc: async (_method, args) => ({ settings: await harness.update(args.patch) }),
-    window: { dispatchEvent: event => events.push(event.type) },
-    CustomEvent: class { constructor(type) { this.type = type } }
-  }
-  const start = clientSource.indexOf('async function setWebSearchEnabled(enabled)')
-  assert.ok(start >= 0)
-  vm.runInNewContext(clientSource.slice(start, clientSource.indexOf('\n\t\t\treturn React.createElement', start)) +
-    '; this.toggle = setWebSearchEnabled;', context)
-  await context.toggle(true)
-  assert.equal(state.webSearchEnabled, true)
-  assert.equal((await harness.read()).webSearchEnabled, true)
-  assert.deepEqual(events, ['dsh-tavern-settings-changed', 'dsh-tavern-data-changed'])
-})
-
-test('后台模型选择保存为以后新游戏的默认值', async t => {
-  const harness = await settingsHarness(t)
-  let state = { backgroundModel: null }
-  const events = []
-  const context = {
-    setState: updater => { state = updater(state) },
-    rpc: async (_method, args) => ({ settings: await harness.update(args.patch) }),
-    window: { dispatchEvent: event => events.push(event.type) },
-    CustomEvent: class { constructor(type) { this.type = type } }
-  }
-  const start = clientSource.indexOf('async function setBackgroundModel(value)')
-  assert.ok(start >= 0)
-  vm.runInNewContext(clientSource.slice(start, clientSource.indexOf('\n\t\t\treturn React.createElement', start)) +
-    '; this.choose = setBackgroundModel;', context)
-  await context.choose(JSON.stringify({ provider: 'worker', model: 'stable' }))
-  assert.deepEqual(state.backgroundModel, { provider: 'worker', model: 'stable' })
-  assert.deepEqual((await harness.read()).backgroundModel, { provider: 'worker', model: 'stable' })
-  await context.choose('')
-  assert.equal(state.backgroundModel, null)
-  assert.equal((await harness.read()).backgroundModel, null)
-  assert.deepEqual(events, ['dsh-tavern-settings-changed', 'dsh-tavern-data-changed', 'dsh-tavern-settings-changed', 'dsh-tavern-data-changed'])
+  await assert.rejects(harness.update({ webSearchEnabled: true }), /本局设置/)
 })
 
 test('后台对话框以只读标签显示实际模型，不替换前台模型选择器', () => {
@@ -275,102 +236,14 @@ test('单项系统提示词保存和恢复不会影响其他项', function () {
 })
 
 
-test('后台任务设置默认三项开启，独立修改并持久化，变量默认开启且允许关闭', async t => {
+test('全局 API 拒绝修改后台配置，防止旧客户端改变所有对话', async t => {
   const run = await settingsHarness(t)
-  assert.deepEqual((await run.read()).backgroundTasks, { posture: true, characterDesign: false, variables: true, ledger: false })
-  await run.update({ backgroundTasks: { posture: false, variables: false, ledger: false } })
-  await run.update({ backgroundTasks: { characterDesign: true } })
-  assert.deepEqual((await run.read()).backgroundTasks, { posture: false, characterDesign: true, variables: false, ledger: false })
-  assert.deepEqual((await run.saved()).backgroundTasks, { posture: false, characterDesign: true, variables: false, ledger: false })
+  await assert.rejects(run.update({ backgroundTasks: { variables: false } }), /本局设置/)
+  await assert.rejects(run.update({ backgroundModel: null }), /本局设置/)
 })
 
-
-test('遗留台账开关不能重新启用已移除的后台任务', async t => {
-  const run = await settingsHarness(t)
-  await run.update({ backgroundTasks: { ledger: true } })
-  assert.deepEqual((await run.read()).backgroundTasks, { posture: true, characterDesign: false, variables: true, ledger: false })
-  await run.update({ backgroundTasks: { posture: false } })
-  assert.equal((await run.read()).backgroundTasks.ledger, false)
-  await run.update({ backgroundTasks: { ledger: false } })
-  assert.equal((await run.read()).backgroundTasks.ledger, false)
-})
-
-test('后台推理强度选择持久化，模型下拉仍匹配当前模型，换模型清除旧档位', async t => {
-  const harness = await settingsHarness(t)
-  let state = { loading: false, busy: false, backgroundModel: { provider: 'worker', model: 'm', reasoningEffort: 'high' }, modelCatalog: [{ provider: 'worker', models: [{ id: 'm' }, { id: 'other' }] }], backgroundTasks: {}, error: '' }
-  const key = JSON.stringify({ provider: 'worker', model: 'm' })
-  const info = { key, reasoning: { defaultEffort: 'low', efforts: [{ id: 'low', name: '低' }, { id: 'high', name: '高' }] }, error: '' }
-  let hook = 0, pending
-  const context = { TavernTextColorSettings() {}, ContextCompactionSettings() {}, SceneImageSettings() {},
-    window: { dispatchEvent() {} }, CustomEvent: class {},
-    rpc: (_method, args) => (pending = harness.update(args.patch).then(settings => ({ settings }))),
-    React: {
-      useState(initial) { const index = hook++; return index === 1 ? [state, update => { state = update(state) }] : index === 2 ? [info, () => {}] : [initial, () => {}] },
-      useEffect() {}, createElement: (type, props, ...children) => ({ type, props, children })
-    }
-  }
-  const start = clientSource.indexOf('function TavernSettingsSection()')
-  vm.runInNewContext(clientSource.slice(start, clientSource.indexOf('function SystemPromptSidebarTab()', start)) + ';this.render=TavernSettingsSection;', context)
-  function render() {
-    hook = 0
-    const nodes = []
-    function visit(node) { if (Array.isArray(node)) return node.forEach(visit); if (!node || typeof node !== 'object') return; nodes.push(node); (node.children || []).forEach(visit) }
-    visit(context.render())
-    return label => nodes.find(node => node.props?.['aria-label'] === label)
-  }
-  let get = render()
-  assert.equal(get('后台模型').props.value, key)
-  assert.equal(get('后台推理强度').props.value, 'high')
-  assert.equal(get('后台推理强度').props.disabled, false)
-  get('后台推理强度').props.onChange({ target: { value: 'low' } })
-  await pending
-  assert.equal((await harness.saved()).backgroundModel.reasoningEffort, 'low')
-  assert.equal((await harness.read()).backgroundModel.reasoningEffort, 'low')
-  get = render()
-  get('后台推理强度').props.onChange({ target: { value: '' } })
-  await pending
-  assert.equal((await harness.saved()).backgroundModel.reasoningEffort, undefined)
-  get('后台模型').props.onChange({ target: { value: JSON.stringify({ provider: 'worker', model: 'other' }) } })
-  await pending
-  assert.deepEqual((await harness.read()).backgroundModel, { provider: 'worker', model: 'other' })
-  assert.equal(render()('后台推理强度').props.disabled, true, '另一模型的档位不可复用')
-  get('后台模型').props.onChange({ target: { value: '' } })
-  await pending
-  assert.equal(render()('后台推理强度').props.disabled, true)
-  assert.equal((await harness.read()).backgroundModel, null)
-})
-
-test('切换后台模型后丢弃旧档位响应，查询错误可见', async () => {
+test('全局设置不再显示后台模型和结算开关', () => {
   const start = clientSource.indexOf('function TavernSettingsSection()')
   const section = clientSource.slice(start, clientSource.indexOf('function SystemPromptSidebarTab()', start))
-  let selection = { provider: 'p', model: 'old' }, info, effects, hook
-  const pending = []
-  const context = { TavernTextColorSettings() {}, ContextCompactionSettings() {}, SceneImageSettings() {},
-    rpc: (method, args) => new Promise((resolve, reject) => pending.push({ method, args, resolve, reject })),
-    React: {
-      useState(initial) {
-        const index = hook++
-        if (index === 1) return [{ modelCatalog: [], backgroundModel: selection, backgroundTasks: {} }, () => {}]
-        if (index === 2) return [info || initial, next => { info = next }]
-        return [initial, () => {}]
-      },
-      useEffect: run => effects.push(run), createElement: (type, props, ...children) => ({ type, props, children })
-    }
-  }
-  vm.runInNewContext(section + ';this.render=TavernSettingsSection;', context)
-  function query() { hook = 0; effects = []; context.render(); return effects[1]() }
-  const cleanup = query()
-  assert.equal(pending[0].method, 'getBackgroundModelReasoning')
-  cleanup()
-  selection = { provider: 'p', model: 'new' }
-  query()
-  pending[1].resolve({ reasoning: { efforts: [{ id: 'new-level' }] } })
-  await Promise.resolve()
-  pending[0].resolve({ reasoning: { efforts: [{ id: 'old-level' }] } })
-  await Promise.resolve()
-  assert.equal(info.reasoning.efforts[0].id, 'new-level')
-  query()
-  pending[2].reject(Error('查询失败'))
-  await Promise.resolve()
-  assert.equal(info.error, '查询失败')
+  assert.doesNotMatch(section, /setBackgroundModel|setBackgroundTask|后台推理强度|变量结算/)
 })

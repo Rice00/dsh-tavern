@@ -5,7 +5,7 @@ import { projectAgentContent, projectOpeningCommit } from './runtime-content-pro
 import { OFFICIAL_MVU_VERSION } from './official-mvu-assets.js'
 import { createScriptContinuity } from './script-continuity.js'
 import { bindSceneWorldbook } from './scene-worldbook.js'
-import { snapshotBackgroundModel } from './background-model-selection.js'
+import { normalizeBackgroundTasks } from './tavern-settings.js'
 import { ensureSessionSeedTrajectory } from './session-seed-trajectory.js'
 
 function str(value) { return value === undefined || value === null ? '' : String(value) }
@@ -148,10 +148,12 @@ export function createConversationInitialization(options) {
     }
     chat.userProfileId = profile?.profileId || 'default'
     chat.userProfileEnabled = (groupOfMode(chat.mode) === 'play' || chat.cardEditContext?.version === 1) && profile?.hasConfirmed === true && profile.defaultEnabled === true
-    chat.webSearchEnabled = groupOfMode(chat.mode) === 'play' && currentSettings.webSearchEnabled === true
-    chat.backgroundModelSelection = groupOfMode(chat.mode) === 'play'
-      ? snapshotBackgroundModel(currentSettings.backgroundModel)
-      : null
+    chat.webSearchEnabled = false
+    chat.sceneImagesEnabled = false
+    chat.conversationFeaturesVersion = 1
+    chat.backgroundModelSelection = null
+    chat.backgroundConfigVersion = 1
+    chat.backgroundTasks = normalizeBackgroundTasks({})
     chat.mvu = usesMvu ? {
       enabled: true,
       owner: 'official',

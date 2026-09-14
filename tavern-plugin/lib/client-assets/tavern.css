@@ -756,3 +756,105 @@ body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
 .dsh-tavern-settings-text:focus-visible { outline: 2px solid #a66b35; outline-offset: 1px; }
 
 .dsh-tavern-export-menu .dsh-tavern-more-menu { top: calc(100% + 6px); bottom: auto; }
+
+.dsh-tavern-skill-assignments {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  padding: 12px 0;
+}
+.dsh-tavern-skill-assignments label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.dsh-tavern-skills > .dsh-tavern-question-sub {
+  padding: 0 16px;
+}
+
+.dsh-tavern-skills > .dsh-tavern-status-head { display: flex; align-items: center; justify-content: space-between; }
+.dsh-tavern-skills > .dsh-tavern-resource-body { padding: 12px 16px; }
+.dsh-tavern-skill-group { border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; margin-bottom: 14px; overflow: hidden; }
+.dsh-tavern-skill-group > summary { cursor: pointer; padding: 12px 14px; font-size: 14px; font-weight: 600; background: var(--dsw-specific-input-major); }
+.dsh-tavern-skill-count { margin-left: 8px; font-size: 12px; font-weight: 400; opacity: .6; }
+.dsh-tavern-skill-row { padding: 14px; border-top: 1px solid var(--dsw-alias-border-l2); }
+.dsh-tavern-skill-row .dsh-tavern-resource-group-title { margin: 0; gap: 10px; }
+.dsh-tavern-skill-row .dsh-tavern-resource-name { font-size: 15px; font-weight: 700; color: var(--dsw-alias-label-primary); overflow-wrap: anywhere; text-align: left; }
+.dsh-tavern-skill-row .dsh-tavern-resource-open:hover { color: #a66b35; text-decoration: underline; }
+.dsh-tavern-skill-row .dsh-tavern-resource-open:focus-visible { outline: 2px solid #a66b35; outline-offset: 4px; border-radius: 3px; }
+.dsh-tavern-skill-row > p { font-size: 12px; line-height: 1.6; margin: 7px 0 10px; opacity: .8; }
+.dsh-tavern-skill-options > summary { cursor: pointer; font-size: 12px; opacity: .65; }
+.dsh-tavern-skill-options .dsh-tavern-skill-assignments { padding: 10px 0 0; gap: 10px 16px; font-size: 12px; }
+.dsh-tavern-skill-empty { padding: 16px; font-size: 12px; opacity: .55; }
+.dsh-tavern-skill-row[draggable="true"] { cursor: grab; }
+.dsh-tavern-skill-row.is-dragging { opacity: .4; }
+.dsh-tavern-skill-group.is-drop-target { border-color: #a66b35; box-shadow: inset 0 0 0 1px #a66b35; background: rgba(166, 107, 53, .08); }
+.dsh-tavern-skill-grip { opacity: .4; font-size: 18px; user-select: none; }
+.dsh-tavern-skill-content { overflow: auto; min-height: 0; }
+.dsh-tavern-skill-content h3 { margin: 0 0 12px; font-size: 13px; }
+.dsh-tavern-skill-content pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.7; }
+
+.dsh-tavern-background-config { border: 1px solid var(--border, #ddd); border-radius: 12px; margin-bottom: 16px; overflow: hidden; }
+.dsh-tavern-background-config > summary { padding: 14px 16px; cursor: pointer; }
+.dsh-tavern-background-config > summary > span { display: block; margin-top: 6px; overflow-wrap: anywhere; }
+.dsh-tavern-background-config-body { display: grid; gap: 16px; padding: 0 16px 16px; }
+.dsh-tavern-background-config-body > p { margin: 0; }
+.dsh-tavern-background-config-body > label { display: grid; gap: 8px; min-width: 0; }
+.dsh-tavern-background-config-body select { width: 100%; min-width: 0; }
+.dsh-tavern-background-config-body > .dsh-tavern-background-task { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.dsh-tavern-background-task .dsh-tavern-settings-desc { display: block; margin-top: 5px; }
+.dsh-tavern-background-task input[role="switch"] { appearance: none; -webkit-appearance: none; position: relative; flex: 0 0 36px; width: 36px; height: 20px; margin: 0; padding: 0; border: 0; border-radius: 10px; background: #64748b; cursor: pointer; transition: background .15s ease; }
+.dsh-tavern-background-task input[role="switch"]::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .15s ease; }
+.dsh-tavern-background-task input[role="switch"]:checked { background: #16766b; }
+.dsh-tavern-background-task input[role="switch"]:checked::after { transform: translateX(16px); }
+.dsh-tavern-background-task input[role="switch"]:focus-visible { outline: 2px solid #16766b; outline-offset: 3px; }
+.dsh-tavern-background-task input[role="switch"]:disabled { opacity: .6; cursor: not-allowed; }
+@media (prefers-reduced-motion: reduce) { .dsh-tavern-background-task input[role="switch"], .dsh-tavern-background-task input[role="switch"]::after { transition: none; } }
+.dsh-tavern-conversation-basics { display: grid; gap: 16px; margin-bottom: 24px; }
+.dsh-tavern-conversation-basics h3 { margin: 0; }
+.dsh-tavern-conversation-basics label { display: grid; gap: 8px; }
+.dsh-tavern-conversation-basics select { width: 100%; min-width: 0; }
+
+.dsh-tavern-skill-description { display: block; width: 100%; padding: 0; border: 0; background: transparent; text-align: left; cursor: pointer; font-family: inherit; }
+.dsh-tavern-skill-description:focus-visible { outline: 2px solid #a66b35; outline-offset: 4px; border-radius: 3px; }
+.dsh-tavern-skill-description:disabled { cursor: wait; }
+
+/* Conversation settings share one spacing and control system. */
+.dsh-local-settings { container-type: inline-size; }
+.dsh-local-settings .dsh-tavern-status-body { padding: 16px; }
+.dsh-local-intro { margin: 0 0 18px; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 1.6; }
+.dsh-local-section { display: grid; gap: 16px; padding: 18px; margin-bottom: 16px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px; background: var(--dsw-specific-input-major); }
+.dsh-local-section h3 { margin: 0; font-size: 15px; font-weight: 700; }
+.dsh-local-field, .dsh-local-section > label { display: grid; gap: 6px; min-width: 0; }
+.dsh-local-field label { display: grid; gap: 8px; }
+.dsh-local-settings select, .dsh-local-settings input:not([type="checkbox"]) { box-sizing: border-box; width: 100%; min-width: 0; height: 36px; padding: 6px 10px; font: inherit; font-size: 13px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; color: var(--dsw-alias-label-primary); background: var(--dsw-specific-sidebar-fill); }
+.dsh-local-settings label, .dsh-local-label { font-size: 13px; color: var(--dsw-alias-label-primary); }
+.dsh-local-settings p, .dsh-local-settings .dsh-tavern-settings-desc { margin: 0; font-size: 12px; line-height: 1.6; color: var(--dsw-alias-label-secondary); }
+.dsh-local-settings .dsh-local-warning { color: #ad6726; font-size: 11px; }
+.dsh-local-settings .dsh-local-intro { margin-bottom: 18px; }
+.dsh-local-settings .dsh-tavern-background-task { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 10px 0; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+.dsh-local-profile .dsh-tavern-profile-game { padding: 0; margin: 0; border: 0; background: transparent; }
+.dsh-local-profile details { margin-top: 8px; font-size: 12px; }
+.dsh-local-profile summary { cursor: pointer; color: var(--dsw-alias-label-secondary); }
+.dsh-local-profile .dsh-tavern-user-profile-text { max-height: 240px; overflow: auto; padding: 10px; margin-top: 8px; background: var(--dsw-specific-sidebar-fill); border-radius: 8px; }
+.dsh-local-feedback { display: block; font-size: 11px; color: var(--dsw-alias-label-secondary); }
+@container (min-width: 560px) {
+  .dsh-local-section > label:not(.dsh-tavern-background-task), .dsh-local-field label { grid-template-columns: minmax(100px, 1fr) minmax(220px, 1.6fr); align-items: center; }
+  .dsh-local-profile { grid-template-columns: minmax(100px, 1fr) minmax(220px, 1.6fr); align-items: start; }
+}
+
+/* Skill document reader and editor */
+.dsh-skill-toolbar { flex-wrap: wrap; gap: 10px; }
+.dsh-skill-toolbar .dsh-tavern-status-title { min-width: 0; overflow-wrap: anywhere; }
+.dsh-tavern-skill-content { padding: clamp(16px, 3vw, 32px); }
+.dsh-skill-document { max-width: 880px; margin: 0 auto; line-height: 1.8; overflow-wrap: anywhere; }
+.dsh-skill-document table { display: block; max-width: 100%; overflow-x: auto; }
+.dsh-skill-document pre { max-width: 100%; overflow-x: auto; }
+.dsh-skill-reference { max-width: 880px; margin: 24px auto 0; border: 1px solid color-mix(in srgb, currentColor 16%, transparent); border-radius: 12px; }
+.dsh-skill-reference > summary { padding: 14px 18px; cursor: pointer; font-weight: 600; overflow-wrap: anywhere; }
+.dsh-skill-reference > .dsh-skill-document { padding: 8px 20px 20px; }
+.dsh-skill-editor { box-sizing: border-box; width: 100%; min-height: 55vh; padding: 20px; border: 1px solid color-mix(in srgb, currentColor 22%, transparent); border-radius: 12px; background: var(--background, Canvas); color: inherit; font: 14px/1.7 ui-monospace, monospace; resize: vertical; tab-size: 2; }
+.dsh-skill-editor:focus-visible { outline: 2px solid #a76c36; outline-offset: 2px; }

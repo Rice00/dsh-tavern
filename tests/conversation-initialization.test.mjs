@@ -157,14 +157,16 @@ test('会话种子任一消息写入中断后可恢复，且不重放已经追�
   }
 })
 
-test('新游戏固化创建时的联网搜索设置，之后不随设置变化', async () => {
+test('新游戏功能默认关闭，不继承旧全局开关', async () => {
   const h = initializationFixture()
   h.state.settings.webSearchEnabled = true
   const created = await h.make().start(h.input)
-  assert.equal(created.webSearchEnabled, true)
+  assert.equal(created.webSearchEnabled, false)
+  assert.equal(created.sceneImagesEnabled, false)
+  assert.equal(created.conversationFeaturesVersion, 1)
 
   h.state.settings.webSearchEnabled = false
-  assert.equal((await h.make().start(h.input)).webSearchEnabled, true)
+  assert.equal((await h.make().start(h.input)).webSearchEnabled, false)
 
   const fresh = initializationFixture()
   assert.equal((await fresh.make().start(fresh.input)).webSearchEnabled, false)
@@ -172,7 +174,7 @@ test('新游戏固化创建时的联网搜索设置，之后不随设置变化',
   assert.equal((await fresh.make().start({ ...fresh.input, cardPath: '', mode: 'card' })).webSearchEnabled, false)
 })
 
-test('新游戏默认动态跟随前台，显式后台配置才固化；重入不改写选择', async () => {
+test('新游戏后台默认跟随前台且结算开关独立，不继承旧全局模型', async () => {
   const following = initializationFixture()
   const first = await following.make().start(following.input)
   assert.equal(first.backgroundModelSelection, null)
@@ -181,9 +183,12 @@ test('新游戏默认动态跟随前台，显式后台配置才固化；重入�
 
   const fixed = initializationFixture()
   fixed.state.settings.backgroundModel = { provider: 'siliconflow', model: 'deepseek-v4', reasoningEffort: 'high' }
-  assert.deepEqual((await fixed.make().start(fixed.input)).backgroundModelSelection, { provider: 'siliconflow', model: 'deepseek-v4', reasoningEffort: 'high' })
+  const created = await fixed.make().start(fixed.input)
+  assert.equal(created.backgroundModelSelection, null)
+  assert.equal(created.backgroundConfigVersion, 1)
+  assert.deepEqual(created.backgroundTasks, { variables: true, posture: true, characterDesign: false, ledger: false })
   fixed.state.settings.backgroundModel.reasoningEffort = 'low'
-  assert.equal((await fixed.make().start(fixed.input)).backgroundModelSelection.reasoningEffort, 'high')
+  assert.equal((await fixed.make().start(fixed.input)).backgroundModelSelection, null)
   assert.equal((await fixed.make().start({ ...fixed.input, cardPath: '', mode: 'card' })).backgroundModelSelection, null)
 })
 

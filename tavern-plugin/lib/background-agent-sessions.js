@@ -83,6 +83,11 @@ export function createBackgroundAgentSessions(options, task) {
   }
 
   async function execute(input) {
+    // Resolve after the queue admits this task, then keep that selection fixed
+    // through every step of the task, even if the game setting changes meanwhile.
+    if (options.resolveModelSelection && input.task !== 'image' && input.task !== 'phone') {
+      input = { ...input, selection: await options.resolveModelSelection(input) }
+    }
     const parent = agents.get(input.sessionId)
     if (parent === undefined || parent.session === undefined) throw new Error('无法创建后台 Agent：前台会话不可用')
     const runtimeInput = Object.assign({}, input)
@@ -90,7 +95,7 @@ export function createBackgroundAgentSessions(options, task) {
       runtimeInput.backgroundTasksSnapshot = await options.resolveBackgroundTasks(input)
     }
     if (options.resolveWebSearch && input.task !== 'image' && input.task !== 'phone') {
-      runtimeInput.webSearchEnabled = await options.resolveWebSearch()
+      runtimeInput.webSearchEnabled = await options.resolveWebSearch(input)
     }
     const persistent = input.persistent === true
     const requestedSessionId = str(persistent && typeof input.resolvePersistentSessionId === 'function'
@@ -183,6 +188,7 @@ export function createBackgroundAgentSessions(options, task) {
       }
     }
     state.input = runtimeInput
+    if (state.modelSelection) state.modelSelection.current = { ...input.selection }
     state.refreshConfiguredTools?.()
     activeSessions.add(traceSessionId)
     requestSessions.set(traceSessionId, handle.agent.session)

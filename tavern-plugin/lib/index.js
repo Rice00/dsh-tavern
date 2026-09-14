@@ -1,3 +1,4 @@
+import { adoptConversationFeatures, adoptConversationBackground, patchConversationBackground } from './domain/conversation-background.js'
 import { clearLegacyTavernDefault } from './domain/legacy-agent-default.js'
 import { conversationStateAtTurn, conversationForkBoundary } from './domain/conversation-fork-point.js'
 import { createCardResponseTest } from './domain/card-response-test.js'
@@ -46,7 +47,7 @@ import { projectCardOpeningPreviews } from './domain/card-opening-previews.js'
 import { READABLE_CARD_FIELDS, readCardField } from './domain/card-reading.js'
 import { createConversationInitialization } from './domain/conversation-initialization.js'
 import { assertConversationForkable, conversationForkReceipt, forkConversationChat } from './domain/conversation-fork.js'
-import { resolveChatBackgroundModel, readBackgroundModelReasoning } from './domain/background-model-selection.js'
+import { normalizeBackgroundModel, resolveChatBackgroundModel, readBackgroundModelReasoning } from './domain/background-model-selection.js'
 import { createPlayCardSnapshots, cardContentDigest } from './domain/play-card-snapshots.js'
 import { createUserPreferenceProfile } from './domain/user-preference-profile.js'
 import { createContextPlanner } from './domain/context-planner.js'
@@ -85,7 +86,7 @@ import { resolveRuntimePresetMacros } from './domain/runtime-presets.js'
 import { compileSillyTavernRequest, createCleanCompatibilityPreset } from './domain/sillytavern-compatibility.js'
 import { applySillyTavernStrictTools } from './domain/sillytavern-strict-tools.js'
 import { createForegroundOrchestrationStrategies } from './domain/foreground-orchestration-strategies.js'
-import { foregroundSuppressedTurns, clearFailedTurnSurface, hasRollbackMessages, supersededRegenerationErrorTurns } from './domain/rollback-surface.js'
+import { pendingFailedSurfaceTurns, foregroundSuppressedTurns, clearFailedTurnSurface, hasRollbackMessages, supersededRegenerationErrorTurns } from './domain/rollback-surface.js'
 import { assistantResultForTurn } from './domain/session-turn-result.js'
 import { createTavernRetryLimiter } from './domain/tavern-retry-limiter.js'
 import { lastTavernHelperVariables, projectTavernHelperContext } from './domain/tavern-helper-context.js'
@@ -118,7 +119,9 @@ import { filterSkillMessages } from './domain/skill-visibility.js'
 import { createStoryTimeline } from './domain/story-timeline.js'
 import { createStoryCompactionRequest, usesStoryCompaction } from './domain/story-compaction.js'
 import { resolveTavernDataRoot } from './domain/tavern-data.js'
-import { createTavernSkillModule } from './domain/tavern-skills.js'
+import { FileSystemSkillProvider } from '@deepseek-ai/dsh-skill-filesystem'
+import { createTavernSkillProvider } from './domain/tavern-skill-provider.js'
+import { canonicalTavernSkillName, createTavernSkillModule } from './domain/tavern-skills.js'
 import { createTavernConversationRegistry } from './domain/tavern-conversation-registry.js'
 import { applyTavernRegexText } from './domain/tavern-regex-display.js'
 import { installTavernTokenMeter } from './domain/tavern-token-meter.js'
@@ -221,6 +224,7 @@ export async function apply(ctx) {
     return presentTavernSettings(tavernSettingsDocument, promptDefaults())
   }
   async function updateTavernSettings(patch) {
+    if (patch && (Object.hasOwn(patch, 'backgroundModel') || Object.hasOwn(patch, 'backgroundTasks') || Object.hasOwn(patch, 'webSearchEnabled'))) throw new Error('后台配置已移至顶栏的本局设置')
     tavernSettingsDocument = await profileData.updateJson(settingsPath, function (current) {
       return applyTavernSettingsPatch(current, patch)
     })
@@ -268,7 +272,37 @@ export async function apply(ctx) {
   })
   const tavernSkills = createTavernSkillModule({
     directory: dataRoot + '/skills',
-    builtInDirectory: sourceRoot + '/presets/tavern/skills'
+    builtInDirectory: sourceRoot + '/presets/tavern/skills',
+    backgroundDirectory: sourceRoot + '/presets/tavern-background/skills'
+  })
+
+  async function skillRoleFor(agent) {
+    const sessionId = agent?.session?.id
+    if (!sessionId) return null
+    if (backgroundAgentRunner.owns(sessionId)) return backgroundAgentRunner.requestContext(sessionId)?.task === 'image' ? 'image' : 'background'
+    const chat = await chatForSession(sessionId)
+    return chat ? (chat.mode === 'card' ? 'card' : 'foreground') : null
+  }
+  async function skillEnabledFor(skill, agent) {
+    if (await skillRoleFor(agent) !== 'foreground') return true
+    const chat = await chatForSession(agent?.session?.id)
+    return !(chat?.disabledWritingSkills || []).map(canonicalTavernSkillName).includes(skill.name)
+  }
+  let invalidateTavernSkills = () => {}
+  const skillRegistry = ctx.get('skills')
+  if (!skillRegistry) throw new Error('dsh-tavern: 缺少原生 Skills 服务')
+  skillRegistry.registerProvider(control => {
+    invalidateTavernSkills = () => control.invalidate()
+    const providers = [
+      new FileSystemSkillProvider(ctx, control, { providerName: 'tavern-interactive-files', includeDefaultRoots: false, customSkillDirs: [dataRoot + '/skills'], bundledSkillDir: sourceRoot + '/presets/tavern/skills' }),
+      new FileSystemSkillProvider(ctx, control, { providerName: 'tavern-background-files', includeDefaultRoots: false, bundledSkillDir: sourceRoot + '/presets/tavern-background/skills' })
+    ]
+    ctx.effect(() => tavernSkills.subscribe(control.invalidate))
+    ctx.effect(() => () => Promise.all(providers.map(provider => provider.dispose())))
+    ctx.on('fs/observed', (target, _observation, actor) => {
+      if (actor?.name === 'write' || actor?.name === 'edit') providers.forEach(provider => provider.observeHostMutation(target.displayPath))
+    })
+    return createTavernSkillProvider({ providers, library: tavernSkills, roleFor: skillRoleFor, enabledFor: skillEnabledFor })
   })
 
   // ---------- profile 私有 preset ----------
@@ -632,10 +666,6 @@ export async function apply(ctx) {
   const chatPersistence = createChatPersistence({ store: chatJournalStore, normalize: normalizeChat, now: Date.now })
   async function readChat(chatId) {
     const chat = await chatPersistence.read(chatId)
-    if (chat && chat.mode !== 'card') {
-      // Runtime preference: ignore legacy opening snapshots without rewriting history.
-      chat.webSearchEnabled = (await readTavernSettings()).webSearchEnabled === true
-    }
     return chat
   }
   async function readChatRevision(chatId, revision) { return await chatPersistence.readRevision(chatId, revision) }
@@ -684,7 +714,12 @@ export async function apply(ctx) {
     }
   })
   async function readSessionMap() { return await conversationRegistry.links() }
-  async function chatForSession(sessionId) { return await conversationRegistry.resolve(sessionId) }
+  async function chatForSession(sessionId) {
+    const chat = await conversationRegistry.resolve(sessionId)
+    if (!chat || groupOfMode(chat.mode) !== 'play' || chat.backgroundConfigVersion === 1 && chat.conversationFeaturesVersion === 1) return chat
+    const legacyImageEnabled = sceneIllustrations ? (await sceneIllustrations.settings()).enabled === true : false
+    return await updateChat(chat.id, current => adoptConversationFeatures(adoptConversationBackground(current, tavernSettingsDocument), tavernSettingsDocument, legacyImageEnabled), { source: 'background-config.adopt' })
+  }
   const historyRecall = createHistoryRecall()
   async function recallHistoryForSession(sessionId, args) {
     const chat = await chatForSession(sessionId)
@@ -1250,6 +1285,7 @@ export async function apply(ctx) {
     }
     const projectionEvents = sessionDebugEvidence(chat.sessionId).events
     const suppressedDshTurns = foregroundSuppressedTurns(chat, projectionEvents)
+    const canClearIncompleteReply = pendingFailedSurfaceTurns({ events: projectionEvents, nodes: agentRegistry.get(chat.sessionId)?.session?.surface?.nodes || [], suppressed: suppressedDshTurns }).length > 0
     return {
       chatId: chat.id,
       contextCompaction: chat.contextCompaction || null,
@@ -1274,7 +1310,8 @@ export async function apply(ctx) {
       forkTurnsByMessageId,
       latestAssistantTurn: latestStoryTurn,
       inputSources,
-      canRollback: hasRollbackMessages(chat.messages),
+      canClearIncompleteReply,
+      canRollback: hasRollbackMessages(chat.messages) || canClearIncompleteReply,
       presentation: null,
       replyProjections: replyDisplay.projections,
       tavernStatusView: replyDisplay.statusView || null,
@@ -1535,8 +1572,9 @@ export async function apply(ctx) {
   const runtimePresetSnapshots = new Map()
   const backgroundAgentRunner = createBackgroundAgentRunner({
     systemAppend: () => runtimePrompt('system-append'),
-    resolveWebSearch: async () => (await readTavernSettings()).webSearchEnabled === true,
-    resolveBackgroundTasks: async () => normalizeBackgroundTasks((await readTavernSettings()).backgroundTasks),
+    resolveModelSelection: async input => backgroundModelSelection(await chatForSession(input.sessionId)) || input.selection,
+    resolveWebSearch: async input => (await chatForSession(input.sessionId))?.webSearchEnabled === true,
+    resolveBackgroundTasks: async input => input.backgroundTasks || normalizeBackgroundTasks((await chatForSession(input.sessionId))?.backgroundTasks),
     backgroundTools: [POSTURE_SUBMIT_TOOL, CHARACTER_DESIGN_READ_TOOL, CHARACTER_DESIGN_SAVE_TOOL, MVU_SUBMIT_UPDATE_TOOL, CANDIDATE_SUBMIT_TOOL, SCRIPT_READ_TOOL, SCRIPT_POINT_TOOL],
     sharedTools: [{
       tool: HISTORY_RECALL_TOOL,
@@ -1765,7 +1803,7 @@ export async function apply(ctx) {
     }
   }
   const candidateGenerator = createCandidateGenerator({
-    backgroundTasks: async () => normalizeBackgroundTasks((await readTavernSettings()).backgroundTasks),
+    backgroundTasks: async chat => normalizeBackgroundTasks((await chatForSession(chat.sessionId))?.backgroundTasks),
     store: {
       chatForSession: chatForSession,
       readChat: readChat,
@@ -1978,7 +2016,7 @@ export async function apply(ctx) {
       let backgroundBoundary = null
       try {
         const card = await readChatCard(snapshot)
-        const backgroundTasksSettings = normalizeBackgroundTasks((await readTavernSettings()).backgroundTasks)
+        const backgroundTasksSettings = normalizeBackgroundTasks(snapshot.backgroundTasks)
         const mvuTarget = snapshot.mvu && snapshot.mvu.enabled === true && snapshot.mvu.owner === 'official'
           ? pendingMvuTarget(snapshot)
           : null
@@ -2039,6 +2077,7 @@ export async function apply(ctx) {
           const run = await backgroundAgentRunner.run({
             onPersistentSessionReady: id => taskRun.bindSession(id),
             task: 'settlement',
+            backgroundTasks: backgroundTasksSettings,
             persistent: true,
             persistentSessionId: backgroundSessionId,
             rewindTo: taskRun.participantRequest.rewindTo,
@@ -2052,7 +2091,7 @@ export async function apply(ctx) {
             }],
             system: [
               backgroundTasksSettings.posture ? runtimePrompt('posture-settlement') : '本轮不生成或提交姿势。完成启用的后台任务后简短回复完成。',
-              ...(backgroundTasksSettings.characterDesign ? ['若发现重要人物需要建立、补全或修订长期设计，在当前后台 Agent 内调用 skill 加载 tavern-character-design，并按 Skill 读取或保存人物档案；无需也不得创建另一个 Agent。',
+              ...(backgroundTasksSettings.characterDesign ? ['若发现重要人物需要建立、补全或修订长期设计，在当前后台 Agent 内调用 skill 加载 character-design，并按 Skill 读取或保存人物档案；无需也不得创建另一个 Agent。',
               '人物设计保存独立于姿势结算；完成设计后继续当前任务。'] : ['本轮人物设计已关闭，不调用人物设计 Skill 或生成档案。']),
               backgroundTasksSettings.posture ? 'posture_submit 是本任务最后一步。' : ''
             ].join('\n\n'),
@@ -2510,6 +2549,7 @@ export async function apply(ctx) {
           userProfile: presentUserPreferenceProfile(await userPreferenceProfile.read()),
           currentConversation: chat && groupOfMode(chat.mode) === 'play' ? {
             enabled: chat.userProfileEnabled === true,
+            content: chat.userProfileEnabled === true ? str(chat.userProfileContextSnapshot) : '',
             profileId: chat.userProfileId || 'default',
             revision: Math.max(0, Number(chat.userProfileRevision) || 0)
           } : null
@@ -2529,6 +2569,7 @@ export async function apply(ctx) {
           return Object.assign(current, patch)
         }, { source: 'user-profile.toggle-conversation' }) : chat
         return { userProfile: presentUserPreferenceProfile(await userPreferenceProfile.read()), currentConversation: {
+          content: saved.userProfileEnabled === true ? str(saved.userProfileContextSnapshot) : '',
           enabled: saved.userProfileEnabled === true, profileId: saved.userProfileId || 'default', revision: Math.max(0, Number(saved.userProfileRevision) || 0)
         } }
       }
@@ -2642,6 +2683,25 @@ export async function apply(ctx) {
       case 'renameResource': return { resource: await renameResource(args && args.path, args && args.name) }
       case 'deleteResource': return await deleteResource(args && args.path)
       case 'deletePreset': return await deletePreset(args && args.path)
+      case 'getConversationWritingSkills': {
+        const chat = await chatForSession(str(args?.sessionId))
+        if (!chat || groupOfMode(chat.mode) !== 'play') throw new Error('请先打开游玩会话')
+        return { skills: (await tavernSkills.list()).filter(skill => skill.agents.includes('foreground')).map(skill => ({ name: skill.name, description: skill.description, enabled: !(chat.disabledWritingSkills || []).map(canonicalTavernSkillName).includes(skill.name) })) }
+      }
+      case 'setConversationWritingSkill': {
+        const chat = await chatForSession(str(args?.sessionId))
+        if (!chat || groupOfMode(chat.mode) !== 'play') throw new Error('请先打开游玩会话')
+        const skill = await tavernSkills.read(args.name)
+        if (!skill?.agents.includes('foreground') || typeof args.enabled !== 'boolean') throw new Error('无效的写作 Skill 配置')
+        await updateChat(chat.id, current => ({ ...current, disabledWritingSkills: args.enabled ? (current.disabledWritingSkills || []).map(canonicalTavernSkillName).filter(name => name !== skill.name) : [...new Set([...(current.disabledWritingSkills || []).map(canonicalTavernSkillName), skill.name])] }), { source: 'writing-skill.switch' })
+        invalidateTavernSkills()
+        return { saved: true }
+      }
+      case 'listSkills': return { skills: (await tavernSkills.list()).map(({ content, path, ...summary }) => summary) }
+      case 'editSkill': return { skill: await tavernSkills.edit(args) }
+      case 'getSkill': return { skill: await tavernSkills.read(args.name), references: await tavernSkills.referenceFiles(args.name) }
+      case 'assignSkill': return { skill: await tavernSkills.assign(args.name, args.agents) }
+      case 'deleteSkill': await tavernSkills.remove(args.name); return { deleted: true }
       case 'getScriptInfo': {
         const script = await readScript(args && args.path)
         const info = scriptContinuity.inspect({ script: script, state: null, request: { kind: 'info' } })
@@ -2656,10 +2716,42 @@ export async function apply(ctx) {
         const change = await updateCard(args && args.path, args && args.patch)
         return { card: change.card, changed: change.changed }
       }
+      case 'getConversationBackgroundModel':
+      case 'getConversationBackgroundConfig': {
+        const chat = await chatForSession(str(args?.sessionId))
+        if (!chat || groupOfMode(chat.mode) !== 'play') throw new Error('请先打开游玩会话')
+        return { backgroundModel: chat.backgroundModelSelection || null, backgroundTasks: normalizeBackgroundTasks(chat.backgroundTasks), webSearchEnabled: chat.webSearchEnabled === true, sceneImagesEnabled: chat.sceneImagesEnabled === true, sceneImagesAvailable: TAVERN_RELEASE_CAPABILITIES.sceneImages, modelCatalog: await tavernModelCatalog() }
+      }
+      case 'setConversationBackgroundModel':
+      case 'setConversationBackgroundConfig': {
+        const sessionId = str(args?.sessionId)
+        const chat = await chatForSession(sessionId)
+        if (!chat || groupOfMode(chat.mode) !== 'play') throw new Error('请先打开游玩会话')
+        const selection = normalizeBackgroundModel(args.backgroundModel)
+        if (args.backgroundModel !== null && !selection) throw new Error('后台模型配置无效')
+        if (selection) {
+          const catalog = await tavernModelCatalog()
+          if (!catalog.some(group => group.provider === selection.provider && group.models.some(model => model.id === selection.model))) throw new Error('所选后台模型不可用')
+          const reasoning = await readBackgroundModelReasoning(llm, selection)
+          if (selection.reasoningEffort && !reasoning?.efforts?.some(effort => effort.id === selection.reasoningEffort)) throw new Error('所选推理强度不可用')
+        }
+        const saved = await updateChat(chat.id, current => patchConversationBackground(current, args), { source: 'background-model.switch-conversation' })
+        return { backgroundModel: saved.backgroundModelSelection || null, backgroundTasks: normalizeBackgroundTasks(saved.backgroundTasks), webSearchEnabled: saved.webSearchEnabled === true, sceneImagesEnabled: saved.sceneImagesEnabled === true }
+      }
       case 'getBackgroundModelReasoning': return { reasoning: await readBackgroundModelReasoning(llm, args) }
       case 'getTavernSettings': return { settings: await readTavernSettings(), modelCatalog: await tavernModelCatalog(), releaseCapabilities: TAVERN_RELEASE_CAPABILITIES }
-      case 'getSceneImageSettings': return { settings: await enabledSceneIllustrations().settings(args?.provider) }
-      case 'saveSceneImageSettings': return { settings: await enabledSceneIllustrations().configure(args) }
+      case 'getSceneImageSettings': {
+        const settings = await enabledSceneIllustrations().settings(args?.provider)
+        if (args?.conversation === true) {
+          const chat = await chatForSession(str(args.sessionId))
+          return { settings: { ...settings, enabled: chat?.sceneImagesEnabled === true } }
+        }
+        return { settings }
+      }
+      case 'saveSceneImageSettings': {
+        if (Object.hasOwn(args || {}, 'enabled')) throw new Error('请在本局设置中开启或关闭场景生图')
+        return { settings: await enabledSceneIllustrations().configure(args) }
+      }
       case 'testSceneImageConnection': return await enabledSceneIllustrations().testConnection(args)
       case 'listSceneImageModels': return await enabledSceneIllustrations().listModels(args)
       case 'sceneImageStatus': return { illustration: await enabledSceneIllustrations().status(args.sessionId, args.turn) }
@@ -3367,7 +3459,7 @@ export async function apply(ctx) {
     })
   }
 
-  const controlledToolNames = new Set(['bash', 'pwsh', ...dshFileToolNames, 'skill', 'web_search', 'tavern_save_skill', ...cordisToolNames, 'tavern_user_profile_read', 'tavern_user_profile_save_draft', 'tavern_user_profile_confirm', 'tavern_read_card', 'tavern_read_card_raw', 'tavern_read_play_chat', 'tavern_read_script', 'tavern_recall_history', 'tavern_read_worldbook', 'tavern_update_worldbook', 'tavern_read_preset', 'tavern_update_preset', 'tavern_update_card', 'tavern_restore_card', 'tavern_validate_card', 'tavern_test_response'])
+  const controlledToolNames = new Set(['bash', 'pwsh', ...dshFileToolNames, 'skill', 'tavern_read_skill_reference', 'web_search', 'tavern_save_skill', ...cordisToolNames, 'tavern_user_profile_read', 'tavern_user_profile_save_draft', 'tavern_user_profile_confirm', 'tavern_read_card', 'tavern_read_card_raw', 'tavern_read_play_chat', 'tavern_read_script', 'tavern_recall_history', 'tavern_read_worldbook', 'tavern_update_worldbook', 'tavern_read_preset', 'tavern_update_preset', 'tavern_update_card', 'tavern_restore_card', 'tavern_validate_card', 'tavern_test_response'])
   const foregroundStrategies = createForegroundOrchestrationStrategies({
     compatibility: {
       beforeTurn: async function (input) {
@@ -3757,12 +3849,29 @@ export async function apply(ctx) {
     }))
 
     tools.register(defineTool({
+      name: 'tavern_read_skill_reference',
+      description: '按需读取当前 Agent 可用 Skill 内的 references/*.md。先用原生 skill 工具读取入口，再按入口指引读取相关参考文件。',
+      parameters: { name: { type: 'string', required: true }, path: { type: 'string', required: true, description: 'Skill 内的相对路径，例如 references/dialogue.md' } },
+      output: { schema: { type: 'object', additionalProperties: false, properties: { content: { type: 'string', required: true } } }, render: (_args, value) => [{ type: 'text', text: value.content }] },
+      isConcurrencySafe: () => true,
+      async execute(args, exec) {
+        const role = await skillRoleFor(exec.agent)
+        const skill = await tavernSkills.read(args.name)
+        if (!role || !skill?.modelInvocable || !skill.agents.includes(role) || !await skillEnabledFor(skill, exec.agent)) throw new Error('此 Skill 未分配给当前 Agent')
+        return { content: await tavernSkills.readReference(args.name, args.path) }
+      }
+    }))
+
+    tools.register(defineTool({
       name: 'tavern_save_skill',
       description: '仅当用户明确要求创建或修改 Tavern Skill 时，把结构化内容安全保存到用户 Skill 目录。不能覆盖内置 Skill；修改同名用户 Skill 必须明确 overwrite=true。',
       parameters: {
         name: { type: 'string', required: true, description: 'kebab-case Skill 名称' },
         description: { type: 'string', required: true, description: '用于 Skill 自动发现的一句话简介，说明做什么以及何时使用' },
         body: { type: 'string', required: true, description: '不含 YAML frontmatter 的完整 Markdown 指令正文' },
+        purpose: { type: 'string', enum: ['card', 'writing', 'background', 'image'], description: '用途：卡片制作、前台写作、后台任务、文生图；默认卡片制作' },
+        agents: { type: 'array', items: { type: 'string', enum: ['card', 'foreground', 'background', 'image'] }, description: '分配给哪些 Agent；省略时按用途默认分配' },
+        references: { type: 'array', items: { type: 'object', additionalProperties: false, properties: { path: { type: 'string', required: true }, content: { type: 'string', required: true } } }, description: 'Skill 自带的参考资料副本，路径为 references/名称.md；省略保留旧文件，传数组替换整套文件' },
         modelInvocable: { type: 'boolean', description: '是否允许 Agent 自动发现，默认 true' },
         userInvocable: { type: 'boolean', description: '是否允许用户显式调用，默认 true' },
         overwrite: { type: 'boolean', description: '同名用户 Skill 已存在且用户明确要求修改时设为 true' }

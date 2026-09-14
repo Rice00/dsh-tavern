@@ -9,8 +9,8 @@ const extractTask = await read('tavern-plugin/prompts/card-task-extract.md')
 const worldBookTask = await read('tavern-plugin/prompts/card-task-worldbook.md')
 const presetTask = await read('tavern-plugin/prompts/card-task-preset.md')
 const scriptTask = await read('tavern-plugin/prompts/card-task-script.md')
-const advancedSkill = await read('presets/tavern/skills/tavern-advanced-capabilities/SKILL.md')
-const mvuSkill = await read('presets/tavern/skills/tavern-card-to-mvu/SKILL.md')
+const advancedSkill = await read('presets/tavern/skills/advanced-capabilities/SKILL.md')
+const mvuSkill = await read('presets/tavern/skills/card-to-mvu/SKILL.md')
 
 test('卡片 system 默认空白，任务与技能独立保留', () => {
   assert.equal(typeof cardMode, 'string')
@@ -27,8 +27,8 @@ test('任务提示继承用户已有授权，不强制重复确认或禁止适�
 test('MVU 转换优先采用无损的批量文件操作，禁止逐块转录大型 JSON', () => {
   assert.match(mvuSkill, /大文件复制或批量变换优先使用 Shell 与脚本/)
   assert.match(mvuSkill, /禁止通过分块读取和分块插入来手工转录整份 JSON/)
-  assert.match(mvuSkill, /复制后生成独立资源 ID/)
-  assert.doesNotMatch(mvuSkill, /若工具只会修改当前卡/)
+  assert.match(mvuSkill, /为副本使用独立 ID/)
+  assert.match(mvuSkill, /不能向仍指向原卡的工具提交变更/)
 })
 
 test('剧本任务不把现有界面路径描述成 Agent 的能力禁令', () => {

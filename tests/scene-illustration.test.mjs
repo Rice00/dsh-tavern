@@ -758,7 +758,7 @@ test('disabling keeps saved images accessible but rejects generation from anothe
   await fx.service.configure({ enabled: false })
   assert.equal((await fx.service.status('parent', 2)).status, 'succeeded')
   assert.deepEqual((await fx.service.readImage('parent', 2, key)).data, png)
-  await assert.rejects(fx.service.start('parent', 2, key), /手动启用/)
+  await assert.rejects(fx.service.start('parent', 2, key), /本局设置/)
   assert.equal(fx.imageCalls(), 1)
 })
 

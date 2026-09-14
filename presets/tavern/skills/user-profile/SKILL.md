@@ -1,5 +1,5 @@
 ---
-name: tavern-user-profile
+name: user-profile
 description: "通过分批访谈建立或修订 DSH Tavern 用户画像：保留原始回答，分析长期游玩与写作偏好，先生成可核对草案，只有用户明确确认后才保存为跨人物卡复用的 Profile。用户要求用户画像、偏好调查、狐析式问卷或修改长期偏好时使用。"
 ---
 

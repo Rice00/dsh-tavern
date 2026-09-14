@@ -1,3 +1,6 @@
+import { execFileSync } from 'node:child_process'
+import { writeFile } from 'node:fs/promises'
+import { clearFailedTurnSurface } from '../tavern-plugin/lib/domain/rollback-surface.js'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -145,8 +148,14 @@ test('配对失败的证据写入现有诊断包，原错误与聊天、原生�
   assert.deepEqual(h.session.events, session)
   assert.deepEqual(h.calls, [])
   const exported = await createMvuDiagnosticExport({sessionId:'session', store})
-  assert.ok(exported.buffer.includes(Buffer.from('regeneration-target')))
-  assert.ok(exported.buffer.includes(Buffer.from('previous-message-not-user')))
+  const directory = await mkdtemp(join(tmpdir(), 'round-diagnostic-'))
+  try {
+    const archive = join(directory, 'diagnostics.zip')
+    await writeFile(archive, exported.buffer)
+    const content = execFileSync('unzip', ['-p', archive, 'mvu/diagnostics.json'], { encoding: 'utf8' })
+    assert.match(content, /regeneration-target/)
+    assert.match(content, /previous-message-not-user/)
+  } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
 test('诊断持久化失败不替换原配对错误，也不阻止正常重新生成', async () => {
@@ -594,4 +603,42 @@ test('真实重新生成与后台调度联动：连续三次只创建一个后�
       assert.ok(requests[i].includes('current-work-' + (i + 1)))
     }
   } finally { await runner.dispose() }
+})
+
+for (const count of [1, 3]) test(`回退先清除 ${count} 次中断，保留已完成剧情和后台状态`, async () => {
+  const h = harness({ checkpoint: true })
+  const before = structuredClone(h.chat)
+  for (let turn = 3; turn < 3 + count; turn++) {
+    h.session.append('turn/start', { turn })
+    h.session.append('user/message', { role: 'user', content: [{ type: 'text', text: '新的输入' }] }, { surfaceOp: 'append' })
+    h.session.append('assistant/message', { turn, step: 1, interrupted: true, message: { role: 'assistant', source: { kind: 'model', provider: 'fixture', model: 'fixture' }, content: [{ type: 'text', text: '半截正文' }] } }, { surfaceOp: 'append' })
+    h.session.append('turn/end', { turn, reason: { kind: 'aborted' } })
+    clearFailedTurnSurface({ session: h.session, turn })
+  }
+  const surfaceBefore = [...h.session.surface.nodes]
+  await h.create().rollback('session', 'chat')
+  assert.deepEqual(h.chat.messages, before.messages)
+  assert.deepEqual(h.chat.timeline, before.timeline)
+  assert.deepEqual(h.chat.posture, before.posture)
+  assert.deepEqual(h.session.surface.nodes, surfaceBefore)
+  assert.deepEqual(h.chat.suppressedDshTurns, Array.from({ length: count }, (_, i) => i + 3))
+  // A new workflow instance reads persisted suppression and can roll back the
+  // previous completed turn on the user's next explicit action.
+  await h.create().rollback('session', 'chat')
+  assert.equal(h.chat.messages.length, 1)
+})
+
+test('首次回复停止后也可清除，不要求已存在完整用户与正文配对', async () => {
+  const h = harness()
+  h.chat.messages.splice(1)
+  h.session.events.length = 0
+  h.session.surface.nodes.length = 0
+  h.session.append('turn/start', { turn: 2 })
+  h.session.append('user/message', { role: 'user', content: [{ type: 'text', text: '输入' }] }, { surfaceOp: 'append' })
+  h.session.append('assistant/message', { turn: 2, step: 1, interrupted: true, message: { role: 'assistant', source: { kind: 'model', provider: 'fixture', model: 'fixture' }, content: [{ type: 'text', text: '半截' }] } }, { surfaceOp: 'append' })
+  h.session.append('turn/end', { turn: 2, reason: { kind: 'aborted' } })
+  clearFailedTurnSurface({ session: h.session, turn: 2 })
+  const result = await h.create().rollback('session', 'chat')
+  assert.deepEqual(result.clearedIncompleteTurns, [2])
+  assert.equal(h.chat.messages.length, 1)
 })

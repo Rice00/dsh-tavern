@@ -1,6 +1,6 @@
 # 航空状态栏转 MVU：第一张实卡样本
 
-> 当前结果：导入、初始化、真实后台结算已通过；修复 `3e5a4fd` 后用户确认右侧自动刷新，回退自动刷新此前已实测。已据此提炼 `tavern-card-to-mvu` Skill；其他题材与边界场景仍应分别验收。
+> 当前结果：导入、初始化、真实后台结算已通过；修复 `3e5a4fd` 后用户确认右侧自动刷新，回退自动刷新此前已实测。已据此提炼 `card-to-mvu` Skill；其他题材与边界场景仍应分别验收。
 
 ## 范围
 
@@ -75,7 +75,7 @@
 
 ## 转换 Skill
 
-方法已整理为 [tavern-card-to-mvu](../../presets/tavern/skills/tavern-card-to-mvu/SKILL.md)，随 Tavern 内置 Skill 目录分发，并在 Codex Skill 目录保存完整副本。配方和通用只读视图均在 Skill 包内，不依赖航空样本文件，不夹带原卡内容。题材净化不属于通用转换步骤。
+方法已整理为 [card-to-mvu](../../presets/tavern/skills/card-to-mvu/SKILL.md)，随 Tavern 内置 Skill 目录分发，并在 Codex Skill 目录保存完整副本。配方和通用只读视图均在 Skill 包内，不依赖航空样本文件，不夹带原卡内容。题材净化不属于通用转换步骤。
 
 ## 后续 Skill 应保留的问题
 

@@ -18,12 +18,23 @@ export function normalizeBackgroundModel(value) {
 
 export function snapshotBackgroundModel(configured) {
   // Null means resolve the current foreground selection when each task starts.
-  // Only an explicit user choice is frozen into the game.
+  // Retain a legacy snapshot; later global revisions supersede it.
   return normalizeBackgroundModel(configured)
 }
 
-export function resolveChatBackgroundModel(chat, fallback) {
-  const source = object(chat).backgroundModelSelection || fallback
+export function configuredChatBackgroundModel(chat, settings) {
+  const game = object(chat)
+  const config = object(settings)
+  // A global change supersedes every older game selection. A later per-game
+  // choice remains in effect until the next global model/effort change.
+  if (config.backgroundModelRevision && game.backgroundModelRevision !== config.backgroundModelRevision) {
+    return normalizeBackgroundModel(config.backgroundModel)
+  }
+  return normalizeBackgroundModel(game.backgroundModelSelection)
+}
+
+export function resolveChatBackgroundModel(chat, fallback, settings) {
+  const source = configuredChatBackgroundModel(chat, settings) || fallback
   return normalizeBackgroundModel(source)
 }
 

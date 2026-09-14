@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { deflateRawSync } from 'node:zlib'
 
 const MAX_RECORD_BYTES = 32768
 const MAX_STORE_BYTES = 2 * 1024 * 1024
@@ -113,24 +114,29 @@ export function variableDiagnosticSummary(value) {
   return { hasStatData: Boolean(value && typeof value.stat_data === 'object' && value.stat_data !== null), hasSchema: Boolean(value?.schema), rootKeys: Object.keys(value || {}).slice(0, 40), statKeys: Object.keys(value?.stat_data || {}).slice(0, 40) }
 }
 
-// Small bounded STORE ZIP: no external dependency or changes to the native exporter.
+// Bounded ZIP with lossless DEFLATE; retain STORE for incompressible files.
 export function diagnosticZip(entries) {
   const local = [], central = []
-  let offset = 0
+  let offset = 0, totalBytes = 0
   for (const entry of entries) {
     const name = Buffer.from(entry.path), data = Buffer.from(entry.content)
-    if (offset + data.length > MAX_EXPORT_BYTES) throw new Error('诊断包超过 32 MiB，请使用原生 Session 导出单独提供日志')
+    totalBytes += data.length
+    if (totalBytes > MAX_EXPORT_BYTES) throw new Error('诊断包超过 32 MiB，请使用原生 Session 导出单独提供日志')
+    const compressed = deflateRawSync(data, { level: 6 })
+    const payload = compressed.length < data.length ? compressed : data
+    const method = payload === compressed ? 8 : 0
     let crc = 0xffffffff
     for (const byte of data) { crc ^= byte; for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0) }
     crc = (crc ^ 0xffffffff) >>> 0
     const header = Buffer.alloc(30)
     header.writeUInt32LE(0x04034b50); header.writeUInt16LE(20, 4); header.writeUInt16LE(0x800, 6)
+    header.writeUInt16LE(method, 8)
     header.writeUInt16LE(0x21, 12) // Valid DOS date: 1980-01-01.
-    header.writeUInt32LE(crc, 14); header.writeUInt32LE(data.length, 18); header.writeUInt32LE(data.length, 22); header.writeUInt16LE(name.length, 26)
+    header.writeUInt32LE(crc, 14); header.writeUInt32LE(payload.length, 18); header.writeUInt32LE(data.length, 22); header.writeUInt16LE(name.length, 26)
     const directory = Buffer.alloc(46)
     directory.writeUInt32LE(0x02014b50); directory.writeUInt16LE(20, 4); header.copy(directory, 6, 4, 30); directory.writeUInt32LE(offset, 42)
-    local.push(header, name, data); central.push(directory, name)
-    offset += header.length + name.length + data.length
+    local.push(header, name, payload); central.push(directory, name)
+    offset += header.length + name.length + payload.length
   }
   const directory = Buffer.concat(central), end = Buffer.alloc(22)
   end.writeUInt32LE(0x06054b50); end.writeUInt16LE(entries.length, 8); end.writeUInt16LE(entries.length, 10)

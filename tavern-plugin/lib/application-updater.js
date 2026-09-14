@@ -347,7 +347,8 @@ export function createApplicationUpdater(options) {
   }
 
   async function statusWithIdentity(identity) {
-    const current = await store.readJson(STATUS_FILE)
+    const saved = await store.readJson(STATUS_FILE)
+    const current = saved === undefined ? undefined : { ...saved, host: await host() }
     if (current !== undefined) {
       if (current.phase === 'update-available' && (current.checkPolicy !== UPDATE_CHECK_POLICY || current.checkedForCommit !== identity.currentCommit)) {
         const invalidated = { phase: 'idle', host: await host(), ...identity }

@@ -35,8 +35,8 @@ test('MVU 结算允许当前后台 Agent 按需加载人物设计 Skill', () => 
     currentVariables: { stat_data: { 人物库: { $meta: { extensible: true } } } },
     updateRules: ['人物库允许预先设计人物；设计字段为性格和外貌，状态字段为位置和在场。']
   }))
-  assert.match(request.turnContext, /人物设计（按需）[\s\S]*tavern-character-design/)
-  assert.match(request.system, /当前后台 Agent 内先加载 tavern-character-design/)
+  assert.match(request.turnContext, /人物设计（按需）[\s\S]*character-design/)
+  assert.match(request.system, /当前后台 Agent 内先加载 character-design/)
   assert.match(request.system, /不得创建另一个 Agent/)
   assert.deepEqual(request.tools.map(tool => tool.name), ['posture_submit', 'character_design_read', 'character_design_save', 'mvu_submit_update'])
   assert.doesNotMatch(request.turnContext, /# 后台人物设计/)
@@ -46,7 +46,7 @@ test('没有 MVU 人物库字段时，普通人物档案能力仍可按需使用
   const request = projectMvuBackgroundRequest(createMvuBackgroundTaskFrame({
     ...input
   }))
-  assert.match(request.turnContext, /人物设计（按需）|tavern-character-design/)
+  assert.match(request.turnContext, /人物设计（按需）|character-design/)
   assert.match(request.system, /当前后台 Agent/)
 })
 

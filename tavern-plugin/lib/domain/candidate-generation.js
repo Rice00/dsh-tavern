@@ -335,7 +335,8 @@ export function createCandidateGenerator(options) {
       if (script === undefined || !Array.isArray(script.chunks) || script.chunks.length === 0) throw new Error('剧本文件不存在，请重新为人物卡导入剧本')
       scriptWindow = scripts.inspect({ script, state: chat.scriptState, request: { kind: 'choice' } })
     }
-    const designEnabled = (await options.backgroundTasks?.(chat))?.characterDesign !== false
+    const backgroundTasks = await options.backgroundTasks?.(chat)
+    const designEnabled = backgroundTasks?.characterDesign !== false
     const task = prompt(scriptMode ? 'candidate-script' : 'candidate-story')
     const constantWorldBookContext = typeof options.stableWorldBookContext === 'function'
       ? await options.stableWorldBookContext(chat, card) : ''
@@ -393,11 +394,12 @@ export function createCandidateGenerator(options) {
       onPersistentSessionReady: id => taskRun.bindSession(id),
       sessionId: input.sessionId,
       task: 'candidate',
+      backgroundTasks,
       selection,
       temperature: 0.8,
       system: [
         context.taskText,
-        designEnabled ? '若确实需要建立、补全或修订长期人物设计，在当前后台 Agent 内调用 skill 加载 tavern-character-design，并按 Skill 使用人物档案工具；无需也不得创建另一个 Agent。完成后继续提交候选项。' : '人物设计已关闭，本任务只生成候选项，不生成档案或调用人物设计 Skill。'
+        designEnabled ? '若确实需要建立、补全或修订长期人物设计，在当前后台 Agent 内调用 skill 加载 character-design，并按 Skill 使用人物档案工具；无需也不得创建另一个 Agent。完成后继续提交候选项。' : '人物设计已关闭，本任务只生成候选项，不生成档案或调用人物设计 Skill。'
       ].join('\n\n'),
       backgroundContext: context.stableText,
       turnContext: context.dynamicText,

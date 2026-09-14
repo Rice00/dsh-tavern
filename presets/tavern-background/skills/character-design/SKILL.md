@@ -1,5 +1,5 @@
 ---
-name: tavern-character-design
+name: character-design
 description: "后台 Agent 在当前任务中按需为重要人物建立、补全或复用完整人物设计档案；所有人物卡都可使用。"
 user-invocable: false
 ---

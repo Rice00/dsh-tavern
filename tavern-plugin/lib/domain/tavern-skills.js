@@ -82,13 +82,37 @@ export function createTavernSkillModule(options = {}) {
     return path.join(root, normalizeTavernSkillName(name), 'SKILL.md')
   }
 
+  const editPath = name => path.join(directory, '.edits', normalizeTavernSkillName(name) + '.json')
+  async function override(name) {
+    try { return JSON.parse(await readFile(editPath(name), 'utf8')) } catch (error) { if (error.code === 'ENOENT') return null; throw error }
+  }
+  async function edit(input) {
+    const skill = await read(input.name)
+    if (!skill) throw new Error('Skill 不存在')
+    const content = input.content
+    if (typeof content !== 'string' || content.length > 100000) throw new Error('Skill 内容不能超过 100000 个字符')
+    const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
+    const meta = match ? parse(match[1]) : null
+    if (!meta || meta.name !== skill.name || typeof meta.description !== 'string' || !meta.description.trim() || !content.slice(match[0].length).trim()) throw new Error('请保留同名 name、非空 description 和正文')
+    const references = input.references ?? await referenceFiles(skill.name)
+    if (!Array.isArray(references) || references.length > 30) throw new Error('参考文件数量无效')
+    const seen = new Set()
+    for (const ref of references) {
+      validateReference(ref.path)
+      if (seen.has(ref.path) || typeof ref.content !== 'string' || ref.content.length > 100000) throw new Error('参考文件重复或内容无效')
+      seen.add(ref.path)
+    }
+    await files.write(editPath(skill.name), JSON.stringify({ content, references }))
+    return await read(skill.name)
+  }
+
   async function read(name) {
     const normalized = normalizeTavernSkillName(canonicalTavernSkillName(name))
     for (const root of roots) {
       const source = { kind: root.kind, path: target(root.path, normalized) }
       try {
         if ((await lstat(path.dirname(source.path))).isSymbolicLink() || (await lstat(source.path)).isSymbolicLink()) throw new Error('Skill 入口不能是符号链接')
-        const content = await readFile(source.path, 'utf8')
+        const content = (await override(normalized))?.content ?? await readFile(source.path, 'utf8')
         const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)
         const meta = match ? parse(match[1]) || {} : {}
         const purpose = meta.metadata?.tavern?.purpose || root.role
@@ -145,6 +169,7 @@ export function createTavernSkillModule(options = {}) {
     if (moved) await rm(backup, { recursive: true, force: true })
     if (agents !== undefined) await files.update(configPath, raw => JSON.stringify({ ...(raw ? JSON.parse(raw) : {}), [name]: agents }))
 
+    await rm(editPath(name), { force: true })
     return { name, source: 'user', path: destination, content, chars: content.length, overwritten: present }
   }
 
@@ -166,6 +191,8 @@ export function createTavernSkillModule(options = {}) {
     validateReference(relative)
     const skill = await read(name)
     if (!skill) throw new Error('Skill 不存在')
+    const edited = await override(skill.name)
+    if (edited) { const ref = edited.references.find(ref => ref.path === relative); if (!ref) throw new Error('参考文件不存在'); return ref.content }
     const base = await realpath(path.dirname(skill.path))
     const resolved = await realpath(path.join(base, relative))
     if (!resolved.startsWith(base + path.sep)) throw new Error('参考文件不能指向 Skill 目录之外')
@@ -174,6 +201,8 @@ export function createTavernSkillModule(options = {}) {
   async function referenceFiles(name) {
     const skill = await read(name)
     if (!skill) throw new Error('Skill 不存在')
+    const edited = await override(skill.name)
+    if (edited) return edited.references
     let entries
     try { entries = await readdir(path.join(path.dirname(skill.path), 'references'), { recursive: true, withFileTypes: true }) } catch (error) { if (error.code === 'ENOENT') return []; throw error }
     const result = []
@@ -199,8 +228,9 @@ export function createTavernSkillModule(options = {}) {
       await files.update(configPath, raw => JSON.stringify({ ...(raw ? JSON.parse(raw) : {}), [skill.name]: null }))
       return
     }
+    await rm(editPath(skill.name), { force: true })
     await rm(path.dirname(skill.path), { recursive: true })
     await files.update(configPath, raw => { const data = raw ? JSON.parse(raw) : {}; delete data[skill.name]; return JSON.stringify(data) })
   }
-  return Object.freeze({ read, list, readReference, referenceFiles, write: input => mutate(() => write(input)), assign: (name, agents) => mutate(() => assign(name, agents)), remove: name => mutate(() => remove(name)), subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener) } })
+  return Object.freeze({ edit: input => mutate(() => edit(input)), read, list, readReference, referenceFiles, write: input => mutate(() => write(input)), assign: (name, agents) => mutate(() => assign(name, agents)), remove: name => mutate(() => remove(name)), subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener) } })
 }

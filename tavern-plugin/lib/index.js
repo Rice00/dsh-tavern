@@ -2696,6 +2696,7 @@ export async function apply(ctx) {
         return { saved: true }
       }
       case 'listSkills': return { skills: (await tavernSkills.list()).map(({ content, path, ...summary }) => summary) }
+      case 'editSkill': return { skill: await tavernSkills.edit(args) }
       case 'getSkill': return { skill: await tavernSkills.read(args.name), references: await tavernSkills.referenceFiles(args.name) }
       case 'assignSkill': return { skill: await tavernSkills.assign(args.name, args.agents) }
       case 'deleteSkill': await tavernSkills.remove(args.name); return { deleted: true }

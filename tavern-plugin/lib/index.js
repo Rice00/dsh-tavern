@@ -2540,6 +2540,7 @@ export async function apply(ctx) {
           userProfile: presentUserPreferenceProfile(await userPreferenceProfile.read()),
           currentConversation: chat && groupOfMode(chat.mode) === 'play' ? {
             enabled: chat.userProfileEnabled === true,
+            content: chat.userProfileEnabled === true ? str(chat.userProfileContextSnapshot) : '',
             profileId: chat.userProfileId || 'default',
             revision: Math.max(0, Number(chat.userProfileRevision) || 0)
           } : null
@@ -2559,6 +2560,7 @@ export async function apply(ctx) {
           return Object.assign(current, patch)
         }, { source: 'user-profile.toggle-conversation' }) : chat
         return { userProfile: presentUserPreferenceProfile(await userPreferenceProfile.read()), currentConversation: {
+          content: saved.userProfileEnabled === true ? str(saved.userProfileContextSnapshot) : '',
           enabled: saved.userProfileEnabled === true, profileId: saved.userProfileId || 'default', revision: Math.max(0, Number(saved.userProfileRevision) || 0)
         } }
       }

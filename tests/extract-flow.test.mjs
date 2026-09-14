@@ -509,7 +509,7 @@ test('用户画像右侧栏聚焦实际生效偏好，详细依据折叠并可�
   assert.match(profileTab, /当前游戏画像/)
   assert.doesNotMatch(profileTab, /准备页仍可单局覆盖/)
   assert.match(profileTab, /setConversationUserProfileEnabled/)
-  assert.match(profileTab, /window\.confirm\([\s\S]*提示词缓存失效/)
+  assert.doesNotMatch(between(profileTab, "async function toggleCurrent", "function beginEdit"), /window\.confirm/)
   assert.doesNotMatch(profileTab, /本局创建后保持冻结/)
   assert.match(profileTab, /dsh-tavern-open-user-profile-task/)
   assert.match(sidebar, /addEventListener\("dsh-tavern-open-user-profile-task"/)

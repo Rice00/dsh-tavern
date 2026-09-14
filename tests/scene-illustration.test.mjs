@@ -823,6 +823,8 @@ test('complete one-click native child Agent flow, no foreground writes, durable 
         tools: { restrict() {}, register(tool) { registered.set(tool.name, tool); return () => {} } }, on(name, fn) { hooks[name] = fn }
       })
       const agent = { session, followup: value => { followup = value }, async whenIdle() {
+        // Match DSH's request-time resolution of dynamic prompt sections.
+        if (typeof persona === 'function') persona = persona({ agent, turn: 1, step: 1 })
         await hooks['agent/pre-step']({ agent, turn: 1, step: 1 }, async () => ({ kind: 'enter', messages: [] }))
         const { characters, ...layout } = planFixture('A woman at a rainy window')
         await registered.get('submit_scene_layout').execute(layout)
@@ -832,6 +834,7 @@ test('complete one-click native child Agent flow, no foreground writes, durable 
       return { agent, async dispose() { disposed++ } }
     }
   } })
+  t.after(() => runner.dispose())
   const fx = await fixture(t, { runAgent: runner.run })
   const before = structuredClone(fx.chat()), target = sceneTarget(fx.chat(), 2)
   const starts = await Promise.all([fx.service.start('parent', 2, target.key), fx.service.start('parent', 2, target.key)])
@@ -847,7 +850,6 @@ test('complete one-click native child Agent flow, no foreground writes, durable 
   assert.equal(disposed, 0, 'image Agent remains resident after the task')
   assert.equal(descriptor.mode, 'continuable')
   assert.equal((await fx.store.readJson(imagePath + 'agent.json')).sessionId, childOptions.sessionId)
-  t.after(() => runner.dispose())
   assert.deepEqual(fx.chat(), before)
   assert.equal(status.attachment, undefined)
   const restarted = fx.createService()

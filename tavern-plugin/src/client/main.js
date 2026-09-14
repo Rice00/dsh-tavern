@@ -718,8 +718,133 @@ window.__ModuleLoader__.load({
 
 		function copyErrorText(text) {
 			if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
-				navigator.clipboard.writeText(text).catch(function () { window.prompt("复制错误信息", text); });
-			} else window.prompt("复制错误信息", text);
+				navigator.clipboard.writeText(text).catch(function () { console.warn("dsh-tavern: 复制失败，请手动选择文本。\n" + text); });
+			} else console.warn("dsh-tavern: 当前环境不支持剪贴板，请手动选择文本。\n" + text);
+		}
+
+		/**
+		 * In-app replacement for window.prompt.
+		 *
+		 * Electron never implements window.prompt, so every previous caller failed
+		 * silently on desktop: it returns undefined (or throws), so guards written as
+		 * `value === null` fell through and the async caller swallowed the result.
+		 * This uses a modal <dialog> instead, so it behaves identically on every client.
+		 *
+		 * Resolves with the trimmed value, or null when cancelled.
+		 * options: { title, description, initialValue, placeholder, maxLength, confirmLabel, onSubmit }
+		 * When onSubmit is supplied the dialog stays open showing busy/error state until
+		 * it settles, which preserves the previous "save, then close" semantics.
+		 */
+		function askTavernText(options) {
+			const opts = options && typeof options === "object" ? options : {};
+			if (typeof document === "undefined") return Promise.resolve(null);
+			return new Promise(function (resolve) {
+				const dialog = document.createElement("dialog");
+				dialog.className = "dsh-tavern-prompt";
+				dialog.setAttribute("aria-label", String(opts.title || "输入"));
+
+				const panel = document.createElement("div");
+				panel.className = "dsh-tavern-prompt-panel";
+
+				const title = document.createElement("div");
+				title.className = "dsh-tavern-prompt-title";
+				title.textContent = String(opts.title || "输入");
+				panel.append(title);
+
+				if (opts.description) {
+					const description = document.createElement("div");
+					description.className = "dsh-tavern-question-sub";
+					description.textContent = String(opts.description);
+					panel.append(description);
+				}
+
+				const input = document.createElement("input");
+				input.type = "text";
+				input.className = "dsh-tavern-prompt-input";
+				input.autocomplete = "off";
+				input.spellcheck = false;
+				input.value = opts.initialValue === undefined || opts.initialValue === null ? "" : String(opts.initialValue);
+				if (opts.placeholder) input.placeholder = String(opts.placeholder);
+				const maxLength = Number(opts.maxLength);
+				input.maxLength = Number.isFinite(maxLength) && maxLength > 0 ? maxLength : 200;
+				panel.append(input);
+
+				const errorLine = document.createElement("div");
+				errorLine.className = "dsh-tavern-prompt-error";
+				errorLine.setAttribute("role", "alert");
+				errorLine.hidden = true;
+				panel.append(errorLine);
+
+				const actions = document.createElement("div");
+				actions.className = "dsh-tavern-prompt-actions";
+				const cancelButton = document.createElement("button");
+				cancelButton.type = "button";
+				cancelButton.className = "dsh-tavern-btn";
+				cancelButton.textContent = "取消";
+				const confirmButton = document.createElement("button");
+				confirmButton.type = "button";
+				confirmButton.className = "dsh-tavern-btn";
+				const confirmLabel = String(opts.confirmLabel || "确认");
+				confirmButton.textContent = confirmLabel;
+				actions.append(cancelButton, confirmButton);
+				panel.append(actions);
+
+				dialog.append(panel);
+
+				let settled = false;
+				let busy = false;
+				function finish(value) {
+					if (settled) return;
+					settled = true;
+					dialog.close();
+					resolve(value);
+				}
+				function cancel() { if (!busy) finish(null); }
+				function setBusy(next) {
+					busy = next;
+					input.disabled = next;
+					cancelButton.disabled = next;
+					confirmButton.disabled = next || input.value.trim() === "";
+					confirmButton.textContent = next ? "保存中…" : confirmLabel;
+				}
+				async function submit() {
+					if (busy) return;
+					const value = input.value.trim();
+					if (value === "") return;
+					if (typeof opts.onSubmit !== "function") { finish(value); return; }
+					errorLine.hidden = true;
+					setBusy(true);
+					try { await opts.onSubmit(value); finish(value); }
+					catch (error) {
+						setBusy(false);
+						errorLine.textContent = String(error && error.message || error);
+						errorLine.hidden = false;
+						input.focus();
+					}
+				}
+
+				input.addEventListener("input", function () { if (!busy) confirmButton.disabled = input.value.trim() === ""; });
+				input.addEventListener("keydown", function (event) {
+					if (event.key !== "Enter" || event.isComposing === true) return;
+					event.preventDefault();
+					void submit();
+				});
+				cancelButton.addEventListener("click", cancel);
+				confirmButton.addEventListener("click", function () { void submit(); });
+				// <dialog> covers the viewport, so backdrop clicks target the element itself.
+				dialog.addEventListener("click", function (event) { if (event.target === dialog) cancel(); });
+				dialog.addEventListener("cancel", function (event) { event.preventDefault(); cancel(); });
+				dialog.addEventListener("close", function () {
+					dialog.remove();
+					if (!settled) { settled = true; resolve(null); }
+				}, { once: true });
+
+				document.body.append(dialog);
+				setBusy(false);
+				dialog.showModal();
+				input.focus();
+				if (typeof input.select === "function") input.select();
+			});
 		}
 
 		function TavernErrorCenter() {
@@ -5655,10 +5780,10 @@ window.__ModuleLoader__.load({
 			}
 			async function renameConversation(item, currentTitle) {
 				setMenuSession(null);
-				const title = window.prompt("重命名对话", currentTitle || item.cardName + "的新对话");
-				if (title === null || !title.trim() || title.trim() === currentTitle) return;
+				const title = await askTavernText({ title: "重命名对话", initialValue: currentTitle || item.cardName + "的新对话", maxLength: 80 });
+				if (title === null || title === currentTitle) return;
 				setBusy(true); setError("");
-				try { await props.renameSession(item.sessionId, title.trim()); await refresh(); }
+				try { await props.renameSession(item.sessionId, title); await refresh(); }
 				catch (err) { setError(String(err && err.message || err)); }
 				finally { setBusy(false); }
 			}
@@ -5840,9 +5965,9 @@ window.__ModuleLoader__.load({
 					trustedCardMode: openingPicker.trustedCardMode
 				})) : null,
 				busy ? h("div", { className: "dsh-tavern-session-switching", role: "status", "aria-live": "polite" }, openingPicker.preparing ? "正在准备开场与脚本资源…" : "正在完成游戏初始化…", openingPicker.preparing ? h("div", { style: { marginTop: "8px", fontSize: "13px", opacity: .75 } }, "首次打开可能需要下载资源，请稍候；后续打开通常更快。") : null) : null,
-					selectedOpening && selectedOpening.usesUser ? h(React.Fragment, null,
+					selectedOpening ? h(React.Fragment, null,
 						h("label", { className: "dsh-tavern-player-name" }, h("span", null, "故事中的玩家称呼（可选）"), h("input", { value: openingPicker.userName ?? "", maxLength: 80, autoFocus: true, placeholder: "你", disabled: busy, onChange: function (event) { const userName = event.target.value; setOpeningPicker(function (current) { return current ? Object.assign({}, current, { userName: userName }) : current; }); } })),
-						h("div", { className: "dsh-tavern-player-name-help" }, "可以填写姓名、昵称或身份；不填则使用“你”。开场白预览会随之更新。")
+						h("div", { className: "dsh-tavern-player-name-help" }, "可以填写姓名、昵称或身份；默认沿用你上次使用的称呼，也可以在这里针对本局修改。开场白预览会随之更新。")
 					) : null,
 				openingPicker.openings.length > 1 ? h("div", { className: "dsh-tavern-greeting-nav" },
 					h("button", { className: "dsh-tavern-btn", disabled: busy, "aria-label": "上一条开场白", onClick: function () { setOpeningPicker(Object.assign({}, openingPicker, { index: (openingPicker.index - 1 + openingPicker.openings.length) % openingPicker.openings.length })); } }, "←"),
@@ -6328,6 +6453,19 @@ window.__ModuleLoader__.load({
 		}
 
 		function TavernSettingsSection() {
+			const [defaultPlayerName, setDefaultPlayerName] = React.useState("");
+			React.useEffect(function () { setDefaultPlayerName(String(window.localStorage.getItem("dsh-tavern-player-name") || "").trim()); }, []);
+			// localStorage is the single source of truth for the default player name: the
+			// prepare screen already reads and writes this key. Keeping it in one place
+			// avoids a second copy in tavern-settings.json that could disagree with it.
+			function saveDefaultPlayerName(value) {
+				const name = String(value || "").trim();
+				if (name === "") window.localStorage.removeItem("dsh-tavern-player-name");
+				else window.localStorage.setItem("dsh-tavern-player-name", name);
+				setDefaultPlayerName(name);
+				window.dispatchEvent(new CustomEvent("dsh-tavern-settings-changed"));
+				window.dispatchEvent(new CustomEvent("dsh-tavern-data-changed"));
+			}
 			const [state, setState] = React.useState({ loading: true, busy: false, webSearchEnabled: false, backgroundModel: null, backgroundTasks: { posture: true, characterDesign: false, variables: true, ledger: false }, modelCatalog: [], sceneImages: false, error: "" });
 			React.useEffect(function () {
 				let active = true;
@@ -6375,6 +6513,15 @@ window.__ModuleLoader__.load({
 				React.createElement("p", { className: "dsh-tavern-settings-intro" }, "设置开局选项和后台任务。"),
                 React.createElement(TavernTextColorSettings),
                 React.createElement(ContextCompactionSettings),
+				React.createElement("div", { className: "dsh-tavern-settings-group" },
+					React.createElement("label", { className: "dsh-tavern-settings-row" },
+						React.createElement("span", { className: "dsh-tavern-settings-copy" },
+							React.createElement("span", { className: "dsh-tavern-settings-title" }, "默认玩家称呼"),
+							React.createElement("span", { className: "dsh-tavern-settings-desc" }, "只影响新开游戏和进入准备界面时的默认值；已有游戏请在对话顶栏单独修改。留空表示使用“你”。")
+						),
+						React.createElement("input", { key: defaultPlayerName, className: "dsh-tavern-settings-text", type: "text", defaultValue: defaultPlayerName, maxLength: 80, placeholder: "你", disabled: state.loading, "aria-label": "默认玩家称呼", onBlur: function (event) { saveDefaultPlayerName(event.target.value); }, onKeyDown: function (event) { if (event.key === "Enter") { event.preventDefault(); event.currentTarget.blur(); } } })
+					)
+				),
 				React.createElement("div", { className: "dsh-tavern-settings-group" },
 					React.createElement("label", { className: "dsh-tavern-settings-row" },
 						React.createElement("span", { className: "dsh-tavern-settings-copy" },
@@ -6452,8 +6599,12 @@ window.__ModuleLoader__.load({
 			}, [sessionId]);
 			async function manageProfile(action, profileId) {
 				if (busy || editing) return;
-				const name = (action === "select" || action === "default") ? undefined : window.prompt(action === "create" ? "新画像名称" : "画像名称", action === "rename" ? record.name : "");
-				if (action !== "select" && action !== "default" && !name) return;
+				let name;
+				if (action === "select" || action === "default") name = undefined;
+				else {
+					name = await askTavernText({ title: action === "create" ? "新画像名称" : "画像名称", initialValue: action === "rename" ? record.name : "", maxLength: 80 });
+					if (!name) return;
+				}
 				setBusy(true); setError("");
 				if (refreshRef.current) refreshRef.current.invalidate();
 				try {
@@ -6706,10 +6857,10 @@ window.__ModuleLoader__.load({
 			}
 			async function renameResource(item, label) {
 				const current = item.path.split("/").pop();
-				const name = window.prompt("重命名文件", current);
-				if (name === null || !name.trim() || name.trim() === current) return;
+				const name = await askTavernText({ title: "重命名文件", initialValue: current, maxLength: 120 });
+				if (name === null || name === current) return;
 				setBusy(true); setError("");
-				try { await rpc("renameResource", { path: item.path, name: name.trim() }, props.sessionId); await refresh(); notifyTavernDataChanged(["scripts", "cards", "sessions"], "resources"); }
+				try { await rpc("renameResource", { path: item.path, name: name }, props.sessionId); await refresh(); notifyTavernDataChanged(["scripts", "cards", "sessions"], "resources"); }
 				catch (err) { setError(String(err && err.message || err)); }
 				finally { setBusy(false); }
 			}
@@ -6905,11 +7056,11 @@ window.__ModuleLoader__.load({
 					catch (err) { setError(String(err && err.message || err)); } finally { setBusy(false); }
 				}
 				async function rename(item) {
-					const current = item.path.split("/").pop(); const name = window.prompt("重命名外部预设", current);
-					if (name === null || !name.trim() || name.trim() === current) return;
+					const current = item.path.split("/").pop(); const name = await askTavernText({ title: "重命名外部预设", initialValue: current, maxLength: 120 });
+					if (name === null || name === current) return;
 					setBusy(true); setError("");
 					try {
-						const result = await rpc("renameResource", { path: item.path, name: name.trim() }, props.scope.sessionId);
+						const result = await rpc("renameResource", { path: item.path, name: name }, props.scope.sessionId);
 						if (item.path === catalog.activePresetPath) await rpc("selectPreset", { path: result.resource.path }, props.scope.sessionId);
 						await refresh(); if (detailPath === item.path) await loadPreset(result.resource.path); notifyTavernDataChanged(["presets", "sessions"], "presets");
 					}
@@ -7224,7 +7375,7 @@ window.__ModuleLoader__.load({
 			React.useEffect(function () { if (requestedSource) load(requestedSource); }, [JSON.stringify(requestedSource)]);
 			function clear() { setRecord(null); setAssociations(null); setSelectedCardPath(""); props.ctx.betterSidebar.updateTab(props.tab.id, { meta: null }); }
 			async function importFile(file) { if (!file) return; setBusy(true); setError(""); try { const result = await rpc("importWorldBook", { payload: await parseTextResourceFile(file) }, props.scope.sessionId); await refresh(); await load({ kind: "standalone", path: result.worldBook.path }); notifyTavernDataChanged(["worldbooks"], "worldbooks"); } catch (err) { setError(String(err && err.message || err)); } finally { setBusy(false); } }
-			async function rename() { if (!record || record.source.kind !== "standalone") return; const current = record.source.path.split("/").pop(); const name = window.prompt("重命名世界书文件", current); if (name === null || !name.trim() || name.trim() === current) return; setBusy(true); try { const result = await rpc("renameResource", { path: record.source.path, name: name.trim() }, props.scope.sessionId); await refresh(); await load({ kind: "standalone", path: result.resource.path }); } catch (err) { setError(String(err && err.message || err)); } finally { setBusy(false); } }
+			async function rename() { if (!record || record.source.kind !== "standalone") return; const current = record.source.path.split("/").pop(); const name = await askTavernText({ title: "重命名世界书文件", initialValue: current, maxLength: 120 }); if (name === null || name === current) return; setBusy(true); try { const result = await rpc("renameResource", { path: record.source.path, name: name }, props.scope.sessionId); await refresh(); await load({ kind: "standalone", path: result.resource.path }); } catch (err) { setError(String(err && err.message || err)); } finally { setBusy(false); } }
 			async function remove(source, name) {
 				if (busy || bindingBusy || !source) return;
 				const detail = source.kind === "card" ? "将移除人物卡内的整本世界书，保留人物卡其他内容，并解除相关绑定。" : "工作版和原版都会删除，并解除相关绑定。";
@@ -7426,10 +7577,10 @@ window.__ModuleLoader__.load({
 			async function renameCard() {
 				if (!card) return;
 				const current = card.path.split("/").pop();
-				const name = window.prompt("重命名人物卡文件", current);
-				if (name === null || !name.trim() || name.trim() === current) return;
+				const name = await askTavernText({ title: "重命名人物卡文件", initialValue: current, maxLength: 120 });
+				if (name === null || name === current) return;
 				setBusy(true); setError("");
-				try { const result = await rpc("renameResource", { path: card.path, name: name.trim() }); await refreshCards(); await loadCard(result.resource.path); notifyTavernDataChanged(["cards", "sessions"], "cards"); }
+				try { const result = await rpc("renameResource", { path: card.path, name: name }); await refreshCards(); await loadCard(result.resource.path); notifyTavernDataChanged(["cards", "sessions"], "cards"); }
 				catch (err) { setError(String(err && err.message || err)); }
 				finally { setBusy(false); }
 			}
@@ -8189,16 +8340,25 @@ window.__ModuleLoader__.load({
 				}, [props.sessionId]);
 				if (!view || view.mode === "card") return null;
 				async function renamePlayer() {
-					const next = window.prompt("修改故事中的玩家称呼\n仅影响之后生成的内容，不会重写历史消息。", view.playerName || "你");
-					if (next === null) return;
+					if (busy) return;
 					setBusy(true);
 					try {
-						const result = await rpc("setPlayerName", { userName: next }, props.sessionId);
-						setView(Object.assign({}, view, { playerName: result.playerName || "你" }));
-						window.localStorage.setItem("dsh-tavern-player-name", result.playerName || "你");
-						notifyTavernDataChanged(["sessions"], "play-controls");
-					} catch (err) { tavernErrorHub.report("玩家称呼", err); }
-					finally { setBusy(false); }
+						await askTavernText({
+							title: "修改故事中的玩家称呼",
+							description: "仅影响之后生成的内容，不会重写历史消息。",
+							initialValue: view.playerName || "你",
+							placeholder: "你",
+							maxLength: 80,
+							onSubmit: async function (next) {
+								try {
+									const result = await rpc("setPlayerName", { userName: next }, props.sessionId);
+									setView(Object.assign({}, view, { playerName: result.playerName || "你" }));
+									window.localStorage.setItem("dsh-tavern-player-name", result.playerName || "你");
+									notifyTavernDataChanged(["sessions"], "play-controls");
+								} catch (err) { tavernErrorHub.report("玩家称呼", err); throw err; }
+							}
+						});
+					} finally { setBusy(false); }
 				}
 				const presetName = view.runtimePreset && view.runtimePreset.name ? view.runtimePreset.name : "无";
 				return React.createElement(React.Fragment, null,

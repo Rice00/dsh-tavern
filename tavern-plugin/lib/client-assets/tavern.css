@@ -724,3 +724,31 @@ body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
 .dsh-tavern-history-window { min-height: 0; display: flex; flex-direction: column; flex: 1; }
 .dsh-tavern-history-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 14px; position: sticky; top: 0; z-index: 2; background: var(--dsw-specific-input-major); }
 .dsh-tavern-history-controls small { color: var(--dsw-alias-label-tertiary); }
+
+/* Shared in-app text prompt. Replaces window.prompt, which Electron never implements;
+   every previous caller failed silently on desktop. */
+.dsh-tavern-prompt {
+  box-sizing: border-box; position: fixed; inset: 0; margin: auto;
+  width: min(400px, calc(100vw - 32px)); height: fit-content; max-height: calc(100vh - 32px);
+  padding: 16px; border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 14px; background: var(--dsw-specific-sidebar-fill);
+  color: var(--dsw-alias-label-primary); box-shadow: 0 18px 54px rgba(0, 0, 0, .35);
+}
+.dsh-tavern-prompt::backdrop { background: rgba(0, 0, 0, .52); }
+.dsh-tavern-prompt-panel { display: flex; flex-direction: column; gap: 10px; }
+.dsh-tavern-prompt-title { font-size: 15px; font-weight: 700; }
+.dsh-tavern-prompt-input {
+  box-sizing: border-box; width: 100%; padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px;
+  background: var(--dsw-specific-input-major); color: inherit; font: inherit; font-size: 13px;
+}
+.dsh-tavern-prompt-input:focus-visible { outline: 2px solid #a66b35; outline-offset: 1px; }
+.dsh-tavern-prompt-error { color: #c45f5f; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.dsh-tavern-prompt-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+.dsh-tavern-settings-text {
+  box-sizing: border-box; width: min(220px, 100%); padding: 7px 9px;
+  border: 1px solid var(--dsw-alias-border-l2); border-radius: 7px;
+  background: var(--dsw-specific-input-major); color: inherit; font: inherit; font-size: 13px;
+}
+.dsh-tavern-settings-text:focus-visible { outline: 2px solid #a66b35; outline-offset: 1px; }

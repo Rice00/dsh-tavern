@@ -7607,7 +7607,7 @@ window.__ModuleLoader__.load({
 				}
 			}
 			return React.createElement("div", { className: "dsh-tavern-settings-section" },
-				React.createElement("p", { className: "dsh-tavern-settings-intro" }, "设置开局选项和后台任务。"),
+				React.createElement("p", { className: "dsh-tavern-settings-intro" }, "设置游戏选项和后台任务。"),
                 React.createElement(TavernTextColorSettings),
                 React.createElement(ContextCompactionSettings),
 				React.createElement("div", { className: "dsh-tavern-settings-group" },
@@ -7636,7 +7636,7 @@ window.__ModuleLoader__.load({
 					React.createElement("label", { className: "dsh-tavern-settings-row dsh-tavern-settings-model-row" },
 						React.createElement("span", { className: "dsh-tavern-settings-copy" },
 							React.createElement("span", { className: "dsh-tavern-settings-title" }, "后台模型"),
-							React.createElement("span", { className: "dsh-tavern-settings-desc" }, "默认随聊天框当前模型切换。手动指定后，新游戏的后台固定使用所选模型；已有游戏保留原配置。")
+							React.createElement("span", { className: "dsh-tavern-settings-desc" }, "修改后对所有游戏的下一次后台任务生效，正在运行的任务不变。", React.createElement("span", { style: { color: "#dc4545", display: "block", marginTop: "8px" } }, "在游戏中切换后台模型或推理强度会破坏缓存，首次请求可能增加耗时和费用。"))
 						),
 						React.createElement("select", { className: "dsh-tavern-settings-select", value: modelKey, disabled: state.loading || state.busy, onChange: function (event) { void setBackgroundModel(event.target.value); }, "aria-label": "后台模型" },
 							React.createElement("option", { value: "" }, "跟随前台（随切换生效）"),
@@ -7649,7 +7649,7 @@ window.__ModuleLoader__.load({
                 React.createElement("label", { className: "dsh-tavern-settings-row dsh-tavern-settings-model-row" },
                     React.createElement("span", { className: "dsh-tavern-settings-copy" },
                         React.createElement("span", { className: "dsh-tavern-settings-title" }, "后台推理强度"),
-                        React.createElement("span", { className: "dsh-tavern-settings-desc" }, modelKey ? "用于新游戏；已有游戏可在“更多 → 本局后台模型”中单独修改。" : "随前台当前模型的推理强度切换。")
+                        React.createElement("span", { className: "dsh-tavern-settings-desc" }, modelKey ? "修改后对所有游戏的下一次后台任务生效。" : "随前台当前模型的推理强度切换。")
                     ),
                     React.createElement("select", { className: "dsh-tavern-settings-select", "aria-label": "后台推理强度", value: effort,
                         disabled: state.loading || state.busy || !modelKey || modelReasoning.key !== modelKey || efforts.length === 0,

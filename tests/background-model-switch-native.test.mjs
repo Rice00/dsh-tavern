@@ -1,16 +1,20 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { applyTavernSettingsPatch } from '../tavern-plugin/lib/domain/tavern-settings.js'
+import { resolveChatBackgroundModel } from '../tavern-plugin/lib/domain/background-model-selection.js'
 import { createSceneImageNativeRuntime } from './fixtures/scene-image-native-runtime.mjs'
 
 test('原生后台 Agent 在任务边界切换模型，保留会话历史并清除旧推理强度和输出上限', { skip: !process.env.DSH_BOOT_MODULE, timeout: 30000 }, async t => {
   let selection = { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'high' }
+  const oldGame = { backgroundModelSelection: { provider: 'old', model: 'frozen' } }
+  let settings = applyTavernSettingsPatch({}, { backgroundModel: selection })
   let release, started
   const ready = new Promise(resolve => { started = resolve })
   const gate = new Promise(resolve => { release = resolve })
   let held = false
   const runtime = await createSceneImageNativeRuntime(process.env.DSH_BOOT_MODULE, {
     systemAppend: () => '',
-    resolveModelSelection: () => ({ ...selection }),
+    resolveModelSelection: () => resolveChatBackgroundModel(oldGame, selection, settings),
     beforeModelRequest: async () => { if (!held) { held = true; started(); await gate } }
   })
   t.after(() => runtime.dispose())
@@ -23,6 +27,7 @@ test('原生后台 Agent 在任务边界切换模型，保留会话历史并清�
   await ready
   const second = run('第二次任务')
   selection = { provider: 'scene-fixture-other', model: 'replacement' }
+  settings = applyTavernSettingsPatch(settings, { backgroundModel: selection })
   release()
   const [a, b] = await Promise.all([first, second])
   assert.equal(a.traceSessionId, b.traceSessionId)
@@ -32,6 +37,7 @@ test('原生后台 Agent 在任务边界切换模型，保留会话历史并清�
   ])
   assert.match(JSON.stringify(runtime.requests[2].messages), /历史标记：雨夜初遇/)
   selection = { provider: 'scene-fixture', model: 'third', reasoningEffort: 'low' }
+  settings = applyTavernSettingsPatch(settings, { backgroundModel: selection })
   const c = await run('第三次任务')
   assert.equal(c.traceSessionId, a.traceSessionId)
   assert.equal(runtime.requests.at(-1).reasoningEffort, 'low')

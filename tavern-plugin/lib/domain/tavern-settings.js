@@ -26,6 +26,7 @@ export function applyTavernSettingsPatch(current, patch) {
   if (Object.hasOwn(input, 'systemAppendEnabled')) next.systemAppendEnabled = input.systemAppendEnabled === true
   if (Object.prototype.hasOwnProperty.call(input, 'webSearchEnabled')) next.webSearchEnabled = input.webSearchEnabled === true
   if (Object.prototype.hasOwnProperty.call(input, 'backgroundModel')) {
+    next.backgroundModelRevision = (Number.isSafeInteger(next.backgroundModelRevision) ? next.backgroundModelRevision : 0) + 1
     if (input.backgroundModel === null) delete next.backgroundModel
     else {
       const backgroundModel = normalizeBackgroundModel(input.backgroundModel)

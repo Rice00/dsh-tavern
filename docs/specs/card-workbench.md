@@ -86,7 +86,7 @@ Better Sidebar 提供四个职责分离的库：
 
 ## 7. Skill
 
-卡片 Agent 只扫描项目内置和 Tavern 用户目录中的 Skill。当前内置 `tavern-create-skill` 与 `tavern-extract-writing-style`，分别用于制作通用 Tavern Skill 和从样文提炼文风规则。旧的预设破甲抽取 Skill 已删除。
+卡片 Agent 只扫描项目内置和 Tavern 用户目录中的 Skill。创建类内置 Skill 包括 `tavern-create-skill` 与 `tavern-create-writing-skill`，分别用于制作通用 Tavern Skill 和根据教学素材编写场景写作提示词。旧的预设破甲抽取 Skill 已删除。
 
 Skill 是工作方法，不是人物卡字段，不自动写入资源，也不进入游玩模式。
 

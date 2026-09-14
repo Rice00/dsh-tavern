@@ -185,11 +185,6 @@
       "size": 1851
     },
     {
-      "path": "presets/tavern/skills/tavern-extract-writing-style/SKILL.md",
-      "sha256": "6bb90e238c412cdb51ad58fa29ee6f59b8879a6c52184a0f9dfeaf6fb882c764",
-      "size": 1890
-    },
-    {
       "path": "presets/tavern/skills/tavern-gentle-rewrite/SKILL.md",
       "sha256": "6f37d1d75743ecb3f04fe518c8408f7063ae57aac6338027a143e867140a75f6",
       "size": 4325

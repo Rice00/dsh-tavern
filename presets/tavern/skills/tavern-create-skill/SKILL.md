@@ -7,7 +7,7 @@ description: "创建或改进 Tavern Skill：把可复用工作方法组织为�
 
 采用 Codex skill-creator 的编写方法，为 Tavern Agent 提供有用、非显而易见的指导。成品通过 `tavern_save_skill` 保存到 Tavern Skill 库。
 
-用户明确引用教学素材制作场景写作 Skill 时，加载 `tavern-create-writing-skill`，由它处理材料依据、场景边界和用户意见；本 Skill 提供通用组织与验证方法。
+用户明确引用教学素材制作场景写作 Skill 时，加载 `tavern-create-writing-skill`，由它处理材料依据、场景边界和用户意见；本 Skill 提供通用组织与验证方法。写作 Skill 使用独立的完整正文，不拆 references；下文参考文件的组织方式适用于其他确有需要的 Skill。
 
 ## 编写原则
 

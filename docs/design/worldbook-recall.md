@@ -39,6 +39,16 @@
 
 概率和作者时间效果本次不启用。
 
+## 模板主动调度
+
+世界书 EJS 支持 `getEnabledWorldInfoEntries()`、`selectActivatedEntries(entries, keywords, condition)` 和 `activewi` / `activateWorldInfo`。条目列表来自本轮绑定书快照（包括停用资料），提供 uid、comment、key/keysecondary 等字段；不额外加载 ST 全局或 persona 库，也不支持按这些来源开关分别取库。
+
+`selectActivatedEntries` 复用完整关键词、主副键、整词、大小写和包含组逻辑；支持 constant/disabled/vectorized 条件筛选，不在这里消耗五条额度。`activewi` 按标题或 uid 请求激活，支持指定书名和正则标题，未找到返回 null；返回条目表示已登记请求，不保证通过额度筛选。
+
+`force=true` 绕过关键词并允许请求停用条目；最终仍遵守本项目五条额度、十轮冷却、分组与排序，不绕过 MVU 专用分类。这是与 [ST-Prompt-Template](https://github.com/zonde306/ST-Prompt-Template/blob/main/src/function/worldinfo.ts) 强制激活语义的明确差异。
+
+脚本请求进入同一选取与投影链，嵌套请求去重；每次重投影都从同一书快照和原始变量开始，不累计试算副作用。最多 16 次收敛，否则明确记录激活错误；失败模板不提交部分请求。日志记录请求来源条目、force 和最终拒绝原因。实际渲染的动态条目才记录冷却。
+
 ## 五条上限与十轮冷却
 
 非常驻条目每轮最多选 5 条，玩家输入与脚本扫描共用此上限。常驻条目不占五条额度。超出上限时优先选择较大 `order`，诊断记录 `limit`。
@@ -56,7 +66,7 @@
 - 某位置存在启用的非常驻条目，或者存在包含组竞争，该位置的常驻条目随激活结果一起进入前台动态 Frame。
 - 只有普通常驻条目的位置仍进入系统前缀。
 - 划分由条目配置决定，不随本轮是否命中改变，避免常驻内容在前缀与后部之间来回移动。
-- `[mvu_update]` 仍留给 MVU 规则链，不进入前台正文。
+- `[mvu_update]` 仍留给 MVU 规则链，不进入前台正文；识别 `31b_[mvu_update]` 等数字编号前缀。
 
 EJS 与宏按最终编排顺序运行；失败条目产生诊断，不发送模板源码，也不记录该条目的冷却。
 

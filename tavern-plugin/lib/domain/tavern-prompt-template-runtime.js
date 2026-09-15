@@ -1,3 +1,4 @@
+import { selectScriptWorldbookEntries } from './worldbook-activation.js'
 import variant from '@jitl/quickjs-singlefile-mjs-release-sync'
 import ejs from 'ejs'
 import { newQuickJSWASMModuleFromVariant } from 'quickjs-emscripten-core'
@@ -275,6 +276,24 @@ function sandboxSource(compiled, context) {
       if (/<%[=_-]?[\\s\\S]*?%>/i.test(match.content)) throw new Error('__DSH_EJS_RESOURCE_UNSUPPORTED__');
       return match.content;
     };
+    const __activationRequests = [];
+    const getEnabledWorldInfoEntries = async () => __clone(__input.worldBookEntries);
+    const selectActivatedEntries = (entries, keywords, condition = {}) => {
+      const refs = JSON.parse(globalThis.__dshSelectWorldbook(JSON.stringify({ refs: entries.map(entry => entry.ref), keywords, condition })));
+      return entries.filter(entry => refs.includes(entry.ref));
+    };
+    const activewi = async (bookOrTitle, titleOrForce = false, force = false) => {
+      const hasBook = typeof titleOrForce !== 'boolean';
+      const title = hasBook ? titleOrForce : bookOrTitle;
+      force = hasBook ? force : titleOrForce;
+      const matches = value => title instanceof RegExp ? (title.lastIndex = 0, title.test(String(value))) : String(value) === String(title);
+      const entry = __input.worldBookEntries.find(entry => (!hasBook || entry.book === String(bookOrTitle)) &&
+        (matches(entry.uid) || matches(entry.id) || matches(entry.name) || matches(entry.comment)));
+      if (!entry) return null;
+      if (!__activationRequests.some(request => request.ref === entry.ref && request.force === Boolean(force)))
+        __activationRequests.push({ ref: entry.ref, force: Boolean(force) });
+      return __clone(entry);
+    };
     const console = Object.freeze({ log() {}, info() {}, warn() {}, error() {}, debug() {} });
     const toastr = Object.freeze({ success() {}, info() {}, warning() {}, error() {} });
     const YAML = Object.freeze({ stringify: value => globalThis.__dshYamlStringify(value) });
@@ -289,6 +308,7 @@ function sandboxSource(compiled, context) {
       lastCharMessageId: __lastChar.id, lastCharMessage: __lastChar.content,
       lastMessage: __transcript.length ? __transcript[__transcript.length - 1].content : '',
       getChatMessage, getChatMessages, getWorldInfo, getwi: getWorldInfo,
+      getEnabledWorldInfoEntries, selectActivatedEntries, activewi, activateWorldInfo: activewi,
       getvar, getVar: getvar, setvar,
       getLocalVar, getGlobalVar, getMessageVar, setLocalVar, setGlobalVar, setMessageVar,
       incvar, decvar, incLocalVar, incGlobalVar, incMessageVar, decLocalVar, decGlobalVar, decMessageVar,
@@ -298,7 +318,7 @@ function sandboxSource(compiled, context) {
     const __template = (${compiled});
     const text = await __template.call(locals, locals);
     if (String(text).length > ${MAX_OUTPUT_CHARS}) throw new Error('__DSH_EJS_OUTPUT_LIMIT__');
-    return JSON.stringify({ text: String(text), scopes: __scopes });
+    return JSON.stringify({ text: String(text), scopes: __scopes, activationRequests: __activationRequests });
   })()`
 }
 
@@ -324,6 +344,14 @@ export class TavernPromptTemplateRuntime {
     runtime.setInterruptHandler(function () { return ++polls > MAX_INTERRUPT_POLLS })
     const vm = runtime.newContext()
     try {
+      const select = vm.newFunction('__dshSelectWorldbook', handle => {
+        const query = JSON.parse(vm.getString(handle))
+        const candidates = (context.worldBookEntries || []).filter(entry => query.refs.includes(entry.ref))
+        const selected = selectScriptWorldbookEntries(candidates, query.keywords, query.condition, context.worldBookSettings, context.worldBookRandom)
+        return vm.newString(JSON.stringify(selected.map(entry => entry.ref)))
+      })
+      vm.setProp(vm.global, '__dshSelectWorldbook', select)
+      select.dispose()
       const stringify = vm.newFunction('__dshYamlStringify', function (handle) {
         return vm.newString(YAML.stringify(vm.dump(handle), { blockQuote: 'literal' }))
       })
@@ -358,7 +386,7 @@ export class TavernPromptTemplateRuntime {
       settled.value.dispose()
       let value
       try { value = JSON.parse(dumped) } catch { return { ok: false, kind: 'runtime-error' } }
-      return { ok: true, text: String(value.text ?? ''), scopes: object(value.scopes), evaluated: true }
+      return { ok: true, text: String(value.text ?? ''), scopes: object(value.scopes), activationRequests: value.activationRequests || [], evaluated: true }
     } catch (error) {
       return { ok: false, kind: failureKind(error) }
     } finally {

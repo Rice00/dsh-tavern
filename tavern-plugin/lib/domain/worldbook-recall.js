@@ -1,6 +1,6 @@
 import { projectAgentContent } from './runtime-content-projection.js'
 import { lastTavernHelperVariables } from './tavern-helper-context.js'
-import { activateWorldBook, promptOrder, placementKey, dynamicPlacementKeys } from './worldbook-activation.js'
+import { activateWorldBook, promptOrder, placementKey, dynamicPlacementKeys, worldBookSettings } from './worldbook-activation.js'
 
 const READ_COOLDOWN_TURNS = 10
 
@@ -51,7 +51,12 @@ function templateBody(value) {
 }
 
 function templateResource(entry, book) {
+  const { rawEntry, ...view } = entry
   return {
+    ...view,
+    uid: entry.sourceUid ?? entry.ref,
+    world: str(book),
+    key: entry.primaryKeys || [], keysecondary: entry.secondaryKeys || [], disable: entry.enabled === false,
     id: str(entry.sourceUid ?? entry.ref),
     name: str(entry.title || entry.comment),
     comment: str(entry.comment || entry.title),
@@ -130,9 +135,9 @@ export function projectWorldBookTemplates(input = {}) {
   if (!runtime || typeof runtime.render !== 'function') throw new Error('缺少世界书模板运行时')
   const resources = allEntries(input.worldBook)
   const controllers = promptOrder((input.selectedEntries || resources).filter(function (entry) {
-    return entry.enabled !== false && (input.selectedEntries || entry.constant === true) && !isMvuUpdateEntry(entry) && (input.includeConstants === true || isWorldBookTemplateEntry(entry))
+    return (entry.enabled !== false || (input.activationRequests || []).some(request => request.ref === entry.ref && request.force)) && (input.selectedEntries || entry.constant === true) && !isMvuUpdateEntry(entry) && (input.includeConstants === true || isWorldBookTemplateEntry(entry))
   }))
-  const dynamicKeys = dynamicPlacementKeys(resources.filter(entry => !isMvuUpdateEntry(entry)))
+  const dynamicKeys = dynamicPlacementKeys([...resources.filter(entry => !isMvuUpdateEntry(entry)), ...controllers.filter(entry => !entry.constant).map(entry => ({ ...entry, enabled: true }))])
   const projectedEntries = []
   let scopes = {
     global: clone(input.globalVariables || {}),
@@ -144,12 +149,15 @@ export function projectWorldBookTemplates(input = {}) {
   const context = []
   const refs = []
   const diagnostics = []
+  const activationRequests = []
   const templateContext = {
     charName: str(input.card && input.card.name),
     userName: str(input.chat && input.chat.macroState && input.chat.macroState.userName) || '你',
     runType: 'generate',
     generateType: str(input.generateType),
     transcript: transcriptOf(input.chat),
+    worldBookSettings: worldBookSettings(input.worldBook),
+    worldBookRandom: input.random,
     worldBookEntries: resources.map(function (entry) {
       return templateResource(entry, input.worldBook && input.worldBook.view && input.worldBook.view.displayName)
     })
@@ -162,6 +170,7 @@ export function projectWorldBookTemplates(input = {}) {
       diagnostics.push({ kind: 'worldbook-template', code: result.kind, ref: str(entry.ref) })
       continue
     }
+    activationRequests.push(...(result.activationRequests || []).map(request => ({ ...request, sourceRef: entry.ref })))
     scopes = clone(result.scopes)
     const projected = input.includeConstants === true
       ? projectAgentContent(result.text, { charName: str(input.card?.name), macroState }) : null
@@ -180,13 +189,15 @@ export function projectWorldBookTemplates(input = {}) {
     refs,
     diagnostics,
     evaluated: controllers.length,
+    activationRequests,
     ...(input.includeConstants === true ? { dynamicConstants: true, macroState } : {})
   }
 }
 
 /** Select at most five non-constant entries; retain the existing ten-turn cooldown. */
 export function prepareWorldBookRecall(input = {}) {
-  const all = enabledEntries(input.worldBook).filter(function (entry) { return !isMvuUpdateEntry(entry) })
+  const forced = new Set((input.activationRequests || []).filter(request => request.force).map(request => request.ref))
+  const all = allEntries(input.worldBook).filter(entry => (entry.enabled !== false || forced.has(entry.ref)) && str(entry.content).trim() && !isMvuUpdateEntry(entry))
   const emptyRecorder = readRecorder([], input.turn)
   if (!input.worldBook || !input.worldBook.view) {
     return { kind: 'skip', context: '', refs: [], totalChars: 0, reason: 'unbound', recordReads: emptyRecorder }

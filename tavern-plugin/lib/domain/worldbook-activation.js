@@ -155,6 +155,22 @@ function filterGroups(candidates, activated, textFor, random, reject) {
   return candidates.filter(entry => retained.has(entry))
 }
 
+/** Script keyword queries share the ordinary matcher and group rules, without a recall quota. */
+export function selectScriptWorldbookEntries(entries, keywords, condition = {}, settings = {}, random = Math.random) {
+  const text = (Array.isArray(keywords) ? keywords : [keywords]).map(str).join('\n')
+  const candidates = priorityOrder(entries).map(entry => ({ ...entry,
+    caseSensitive: entry.caseSensitive ?? settings.caseSensitive,
+    matchWholeWords: entry.matchWholeWords ?? settings.matchWholeWords
+  })).filter(entry => {
+    if (/^@@dont_activate(?:\s|$)/m.test(str(entry.content))) return false
+    if (condition.constant != null && (entry.constant === true) !== condition.constant) return false
+    if (condition.disabled != null && (entry.enabled === false) !== condition.disabled) return false
+    if (condition.vectorized != null && Boolean(entry.vectorized ?? entry.rawEntry?.vectorized) !== condition.vectorized) return false
+    return entry.constant === true || keywordEvaluation(entry, text, [{ text, source: 'script' }]).matched
+  })
+  return filterGroups(candidates, [], () => text, random, () => {})
+}
+
 /** ST-style bounded history, keyword conditions, inclusion groups and recursion.
  * No model-based search, no full-text lookup of inactive entries. Timed effects
  * deliberately remain owned by the existing DSH ten-turn cooldown.
@@ -185,11 +201,13 @@ export function activateWorldBook(input) {
     const candidates = []
     for (const entry of entries) {
       if (rejected.has(entry.ref) || activated.some(item => item.ref === entry.ref)) continue
+      const requests = (input.activationRequests || []).filter(request => request.ref === entry.ref)
+      if (requests.length) reject(entry, 'requested', { activationRequests: requests })
       if (!entry.constant && input.isCoolingDown(entry)) { reject(entry, 'cooldown', { cooldown: { readTurn: input.chat?.worldBookReads?.[entry.ref]?.turn, currentTurn: input.turn, duration: 10 } }); continue }
       const delay = integer(entry.delayUntilRecursion, 0)
       if (delay && (!iteration || delay > level)) { reject(entry, 'recursion-delay'); continue }
       if (iteration && entry.excludeRecursion) { reject(entry, 'recursion-excluded'); continue }
-      if (!entry.constant) {
+      if (!entry.constant && !requests.some(request => request.force)) {
         const match = keywordEvaluation(entry, textFor(entry), sourcesFor(entry))
         reject(entry, 'matched', { match, stage: iteration ? 'recursion' : 'initial', recursionLevel: level, scanSources: sourcesFor(entry).map(({ text, ...source }) => ({ ...source, chars: text.length })) })
         if (!match.matched) { reject(entry, 'keywords'); continue }

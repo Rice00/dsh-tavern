@@ -1,13 +1,13 @@
 {
   "schemaVersion": 2,
-  "revision": "b39bdb457a18cec9188f4e1d9bf3bc98e2c9f9e1",
-  "releaseSequence": 214,
+  "revision": "6c368693d1dac848aad97d03b2cf482e7218de43",
+  "releaseSequence": 215,
   "version": "1.8.0",
   "files": [
     {
       "path": "bin/application-update.mjs",
-      "sha256": "83ebaae923dd70423813dec39c3f71d72e34ebf5d3ddf44a2438aefeda9948ab",
-      "size": 8410
+      "sha256": "9f9dc481d6df8b6320e162bf959f0552a5ead3f61532fd3476e1905fa5dc9bcc",
+      "size": 8914
     },
     {
       "path": "bin/build-tavern-client.mjs",
@@ -86,8 +86,8 @@
     },
     {
       "path": "bin/update-diagnostics.mjs",
-      "sha256": "13e77ab29a0836935dfa47d5051df57caefdaf8e3057eb41ce9be742d573473f",
-      "size": 1399
+      "sha256": "5352337394dabcab2340614594f20936c01265313407592c35397e21047a3ead",
+      "size": 1422
     },
     {
       "path": "config/dsh-compatibility.json",
@@ -106,13 +106,13 @@
     },
     {
       "path": "install.ps1",
-      "sha256": "ac37cf7ab631f86b60704d1518728c24305b019ca85f03fe3af24502e624c5aa",
-      "size": 16184
+      "sha256": "0668eeb8648da7cdeafd5e4941f63206fbffbaf6fbeb9dcb39208fc0cc6b5dfc",
+      "size": 20223
     },
     {
       "path": "install.sh",
-      "sha256": "dd9ac315564471744c3686600042ecdd9cabd56a305dffba81ec068ce2bc0a7a",
-      "size": 12410
+      "sha256": "ab95b9dad89865637239fb2d152eab23024b7caf6c6194f6efb6aa693167ac69",
+      "size": 15479
     },
     {
       "path": "package.json",
@@ -231,8 +231,8 @@
     },
     {
       "path": "tavern-plugin/lib/application-updater.js",
-      "sha256": "c578cb656266c9868ffdd20eb0288eec067e14063474ed592fb444e61e4bafea",
-      "size": 24725
+      "sha256": "b202ac16c16051a86e46b3d00d8033602e863f4c1f8cde240b88fa52f64be23d",
+      "size": 25099
     },
     {
       "path": "tavern-plugin/lib/background-agent-runner.js",

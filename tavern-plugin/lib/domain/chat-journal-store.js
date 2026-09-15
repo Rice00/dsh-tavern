@@ -54,6 +54,7 @@ export function createChatJournalStore(options = {}) {
   const frameLimit = Math.max(1, Number(options.frameLimit) || 200)
   const byteLimit = Math.max(1, Number(options.byteLimit) || 1024 * 1024)
   const mutationTails = new Map()
+  let cachedRead
   if (String(options.dataRoot || '') === '') throw new Error('Chat Journal Store 缺少 dataRoot')
 
   function layout(chatId) {
@@ -232,7 +233,13 @@ export function createChatJournalStore(options = {}) {
   }
 
   async function read(chatId) {
+    const stamp = await version(chatId)
+    if (stamp && cachedRead?.id === chatId && cachedRead.stamp === stamp) return structuredClone(cachedRead.chat)
     const state = await materialize(chatId)
+    // Only the most recently read chat is retained. Verify again after I/O so
+    // an intervening append never gives an old snapshot a new version stamp.
+    if (stamp && stamp === await version(chatId)) cachedRead = state && {id:chatId,stamp,chat:state.chat}
+    else if (cachedRead?.id === chatId) cachedRead = undefined
     return state === null ? undefined : jsonClone(state.chat)
   }
 
@@ -247,6 +254,7 @@ export function createChatJournalStore(options = {}) {
     if (typeof updater !== 'function') throw new Error('Chat Journal Store 缺少 updater')
     return await serialize(chatId, async function () {
       const paths = layout(chatId)
+      if (cachedRead?.id === chatId) cachedRead = undefined
       const currentState = await materialize(paths.id)
       const current = currentState === null ? undefined : jsonClone(currentState.chat)
       const produced = await updater(jsonClone(current))
@@ -298,17 +306,18 @@ export function createChatJournalStore(options = {}) {
     const latestSnapshot = snapshots[snapshots.length - 1]
     const latestJournal = journals[journals.length - 1]
     if (latestSnapshot === undefined && latestJournal === undefined) return ''
-    let journalState = ''
-    if (latestJournal !== undefined) {
-      const info = await stat(latestJournal.path, { bigint: true })
-      journalState = [latestJournal.name, info.size, info.mtimeNs].join(':')
-    }
-    return ['journal', latestSnapshot && latestSnapshot.name || '', journalState].join(':')
+    const relevant = journals.filter(row => row.end > (latestSnapshot?.revision || 0))
+    const stamps = await Promise.all([...(latestSnapshot ? [latestSnapshot] : []), ...relevant].map(async row => {
+      const info = await stat(row.path, { bigint: true })
+      return [row.name,info.ino,info.size,info.mtimeNs,info.ctimeNs].join(':')
+    }))
+    return ['journal', latestSnapshot?.name || '', ...stamps].join(':')
   }
 
   async function remove(chatId) {
     await serialize(chatId, async function () {
       const paths = layout(chatId)
+      if (cachedRead?.id === chatId) cachedRead = undefined
       await rm(paths.root, { recursive: true, force: true })
       if (legacyData && typeof legacyData.remove === 'function') await legacyData.remove(paths.legacyRelative)
       else await rm(paths.legacy, { force: true })

@@ -175,3 +175,22 @@ test('连续小写入的重放只复制一次完整人物卡，历史 revision �
   historical.cardPayload = 'changed locally'
   assert.equal(latest.cardPayload, 'unchanged-card'.repeat(1000))
 })
+
+test('相同存储版本复用读取结果，外部写入、删除重建和返回值编辑不会污染缓存', async t => {
+  const root=await temporary();t.after(()=>rm(root,{recursive:true,force:true}))
+  const store=createChatJournalStore({dataRoot:root})
+  await bump(store,'cached',chat=>{chat.cardPayload='CACHE-PAYLOAD';chat.counter=1})
+  await store.read('cached')
+  const parse=JSON.parse;let parses=0
+  t.mock.method(JSON,'parse',function(text,...args){if(String(text).includes('CACHE-PAYLOAD'))parses++;return parse(text,...args)})
+  const copy=await store.read('cached');copy.counter=99
+  assert.equal((await store.read('cached')).counter,1)
+  assert.equal(parses,0,'未变化的聊天不应重新解析完整存档')
+  const external=createChatJournalStore({dataRoot:root})
+  await bump(external,'cached',chat=>{chat.counter=2})
+  assert.equal((await store.read('cached')).counter,2)
+  await external.remove('cached')
+  assert.equal(await store.read('cached'),undefined)
+  await bump(external,'cached',chat=>{chat.counter=3})
+  assert.equal((await store.read('cached')).counter,3)
+})

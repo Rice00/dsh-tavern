@@ -291,14 +291,13 @@ export function createChatJournalStore(options = {}) {
     if (typeof updater !== 'function') throw new Error('Chat Journal Store 缺少 updater')
     return await serialize(chatId, async function () {
       const paths = layout(chatId)
-      if (cachedRead?.id === chatId) cachedRead = undefined
-      const currentState = await materialize(paths.id)
-      const current = currentState === null ? undefined : jsonClone(currentState.chat)
+      const currentState = await cachedState(paths.id)
+      const current = currentState == null ? undefined : currentState.chat
       const produced = await updater(jsonClone(current))
-      if (produced === undefined) return current
+      if (produced === undefined) return jsonClone(current)
       const next = jsonClone(produced)
       if (next === undefined || next === null || typeof next !== 'object' || Array.isArray(next)) throw new Error('Chat Journal 只能保存 JSON object')
-      if (currentState === null) {
+      if (currentState == null) {
         await mkdir(paths.journals, { recursive: true })
         await writeSnapshot(paths, next, revisionOf(next))
         return jsonClone(next)
@@ -307,7 +306,7 @@ export function createChatJournalStore(options = {}) {
       const revision = revisionOf(next)
       if (revision !== baseRevision + 1) throw new Error('Chat Journal 写入 revision 非连续，期望 ' + (baseRevision + 1) + '，实际 ' + revision)
       const changes = diffJson(current, next)
-      if (changes.length === 0) return current
+      if (changes.length === 0) return jsonClone(current)
       if (currentState.legacy) await migrateLegacy(paths, current)
       if (currentState.open !== null && currentState.openInvalidLine > 0) {
         await truncate(currentState.open.path, currentState.openValidBytes)
@@ -323,8 +322,18 @@ export function createChatJournalStore(options = {}) {
       }
       if (metadata.requestId) frame.requestId = String(metadata.requestId)
       if (metadata.operationId) frame.operationId = String(metadata.operationId)
+      cachedRead = undefined
       const open = await appendFrame(paths, frame, currentState.open)
-      await maybeRotate(paths, { chat: next, revision }, open, currentState.openFrameCount + 1)
+      const rotated = await maybeRotate(paths, { chat: next, revision }, open, currentState.openFrameCount + 1)
+      if (!rotated) {
+        // The JSON-normalized result is private; callers only receive detached copies.
+        cachedRead = {
+          id: chatId,
+          stamp: await version(chatId),
+          state: { ...currentState, chat: next, revision, legacy: false, open,
+            openFrameCount: currentState.openFrameCount + 1, openInvalidLine: 0 }
+        }
+      }
       return jsonClone(next)
     })
   }

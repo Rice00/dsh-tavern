@@ -194,3 +194,21 @@ test('相同存储版本复用读取结果，外部写入、删除重建和返�
   await bump(external,'cached',chat=>{chat.counter=3})
   assert.equal((await store.read('cached')).counter,3)
 })
+
+test('普通写入后直接复用最新状态，失败或放弃的编辑不污染缓存', async t => {
+  const root=await temporary();t.after(()=>rm(root,{recursive:true,force:true}))
+  const store=createChatJournalStore({dataRoot:root})
+  await bump(store,'write-cache',chat=>{chat.cardPayload='WRITE-CACHE-PAYLOAD';chat.counter=0})
+  await store.read('write-cache')
+  const saved=await bump(store,'write-cache',chat=>{chat.counter=1})
+  saved.counter=999
+  const parse=JSON.parse;let parses=0
+  t.mock.method(JSON,'parse',function(text,...args){if(String(text).includes('WRITE-CACHE-PAYLOAD'))parses++;return parse(text,...args)})
+  assert.equal((await store.read('write-cache')).counter,1)
+  assert.equal(parses,0,'写入后读取不应重新解析完整存档')
+  await assert.rejects(store.update('write-cache',chat=>{chat.counter=999;throw new Error('abort')}),/abort/)
+  const unchanged=await store.update('write-cache',chat=>{chat.counter=999})
+  assert.equal(unchanged.counter,1)
+  unchanged.counter=999
+  assert.equal((await store.read('write-cache')).counter,1)
+})

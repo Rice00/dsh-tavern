@@ -28,7 +28,8 @@ test('长模板按实际输出挡住，按作者顺序停止，不跳过长条�
 test('零预算关闭非常驻召回，常驻标签保持原有路径', async () => {
   const result = await project([e('常驻', '基础规则', 300, {constant:true}), e('动态', '资料')], 0)
   assert.deepEqual(result.refs, [])
-  assert.match(result.context, /基础规则/)
+  assert.equal(result.context, '')
+  assert.equal(result.prefixContext, '基础规则')
   assert.equal(result.log.budget.used, 0)
   assert.equal(result.log.entries.find(e => e.ref === '动态').reason, 'budget')
 })

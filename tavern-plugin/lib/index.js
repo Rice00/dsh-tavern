@@ -1165,6 +1165,13 @@ export async function apply(ctx) {
       if(!selected || selected.chat.sessionId!==sessionId || selected.chat.backgroundConfigVersion!==1 || selected.chat.conversationFeaturesVersion!==1)return undefined
       return selected
     },
+    resolveChangedChatSlice: async (sessionId,revision) => {
+      const chatId=(await readSessionMap())[sessionId]
+      if(!chatId)return undefined
+      const selected=await chatPersistence.readChangedSlice(chatId,revision)
+      if(!selected || selected.chat.sessionId!==sessionId || selected.chat.backgroundConfigVersion!==1 || selected.chat.conversationFeaturesVersion!==1)return undefined
+      return selected
+    },
     patchChat: async (chatId,revision,changes,metadata) => {
       if(deletedChatIds.has(chatId))throw new Error('对话已删除')
       const saved=await chatPersistence.patch(chatId,revision,changes,metadata)

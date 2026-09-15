@@ -27,3 +27,22 @@ test('selected journal reads and versioned patches preserve history, isolation a
  await assert.rejects(db.patch('c',4,[],{assertCurrent(){throw new Error('settlement active')}}),/settlement active/)
  assert.equal((await db.read('c'))._storageRevision,4)
 })
+
+test('changed slices cover multiple commits and fall back after external writes or eviction',async t=>{
+ const root=await mkdtemp(join(tmpdir(),'journal-changes-'));t.after(()=>rm(root,{recursive:true,force:true}))
+ const db=createChatPersistence({store:createChatJournalStore({dataRoot:root,frameLimit:100})})
+ await db.write({id:'c',messages:[{text:'one'},{text:'two'}]})
+ await db.read('c')
+ await db.update('c',c=>{c.messages.push({text:'three'});return c})
+ await db.update('c',c=>{c.messages[0].text='edited';return c})
+ const changed=await db.readChangedSlice('c',1)
+ assert.deepEqual(changed.indices,[0,2]);assert.equal(changed.messageCount,3)
+ changed.chat.messages[0].text='detached'
+ assert.equal((await db.readChangedSlice('c',1)).chat.messages[0].text,'edited')
+ const other=createChatPersistence({store:createChatJournalStore({dataRoot:root})})
+ await other.update('c',c=>{c.messages[1].text='external';return c})
+ assert.equal(await db.readChangedSlice('c',1),undefined)
+ const revision=(await db.read('c'))._storageRevision
+ for(let i=0;i<33;i++)await db.update('c',c=>{c.counter=i;return c})
+ assert.equal(await db.readChangedSlice('c',revision),undefined)
+})

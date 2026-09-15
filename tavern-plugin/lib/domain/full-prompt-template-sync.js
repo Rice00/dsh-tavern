@@ -34,6 +34,30 @@ export function createFullPromptTemplateSync({ capacity = 32 } = {}) {
     while (readers.size > capacity) readers.delete(readers.keys().next().value)
     return result
   }
+  synchronize.reader = cursor => {
+    const before = readers.get(cursor)
+    return before && {chatId:before.chatId, sessionId:before.sessionId, revision:before.revision, lifecycle:before.lifecycle}
+  }
+  synchronize.selected = (snapshot, cursor, indices, length, baseRevision) => {
+    const before = readers.get(cursor)
+    const {chat, ...state} = snapshot.state
+    if (!before || before.chatId !== state.chatId || before.sessionId !== state.sessionId
+      || before.revision !== baseRevision || before.lifecycle !== state.lifecycleRevision) return undefined
+    const hashes = before.chat.slice(0, length)
+    hashes.length = length
+    const set = []
+    for (let i=0;i<indices.length;i++) {
+      const index = indices[i], hash = digest(chat[i])
+      if (hash !== before.chat[index]) set.push([index, chat[i]])
+      hashes[index] = hash
+    }
+    const stateHashes = fields(state), environmentHashes = fields(snapshot.environment)
+    const nextCursor = randomUUID()
+    readers.delete(cursor)
+    readers.set(nextCursor, {...before, revision:state.stateRevision, chat:hashes, state:stateHashes, environment:environmentHashes})
+    return {cursor:nextCursor, baseCursor:cursor, delta:{state:changes(state,before.state,stateHashes),
+      environment:changes(snapshot.environment,before.environment,environmentHashes), chat:{length,set}}}
+  }
   synchronize.matches = (cursor, chat) => {
     const before=readers.get(cursor)
     return Boolean(before && before.chatId===chat.id && before.sessionId===chat.sessionId && before.revision===chat._storageRevision && before.lifecycle===(chat.tavernHelperLifecycleRevision||0))

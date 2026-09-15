@@ -32,7 +32,7 @@ const seeded={id:'test-chat',sessionId:'test-session',cardPath:'cards/test.json'
 const dataBytes=Buffer.byteLength(JSON.stringify(seeded))
 await persistence.write(seeded)
 const serverMetrics=[]
-const adapter=createTavernScriptHostAdapter({resolveChatSlice:(_id,indices)=>persistence.readSlice('test-chat',indices),patchChat:persistence.patch,resolveChat:()=>persistence.read('test-chat'),writeChat:persistence.write,
+const adapter=createTavernScriptHostAdapter({resolveChatSlice:(_id,indices)=>persistence.readSlice('test-chat',indices),resolveChangedChatSlice:(_id,revision)=>persistence.readChangedSlice('test-chat',revision),patchChat:persistence.patch,resolveChat:()=>persistence.read('test-chat'),writeChat:persistence.write,
  updateChat:persistence.update,readChatRevision:persistence.readRevision,readCard:async()=>({name:'Alice',description:'虚构旅行者',personality:'谨慎',mes_example:'',scenario:'河边小镇',first_mes:'旅人抵达',data:{name:'Alice',description:'虚构旅行者',personality:'谨慎',mes_example:'',scenario:'河边小镇',first_mes:'旅人抵达'}}),scriptDispatch:{},
  globalVariables:createPromptTemplateGlobalVariables(createProfileDataStore({dataRoot:root})),
     fullExtensionSettings:createTavernExtensionSettings(createProfileDataStore({dataRoot:root})),

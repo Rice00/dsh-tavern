@@ -19,7 +19,7 @@ async function fixture(t) {
   await persistence.write({id:'chat',sessionId:'session',cardPath:'cards/test.json',mode:'story',mvu:{enabled:true},
     tavernHelperLifecycleRevision:1,variables:{local:1},messages:[{role:'assistant',text:'正文',sourceText:'正文',turn:1,
       variables:[{hp:10}],tavernPluginData:{unrelated:{keep:true}}}],tavernPluginMetadata:{other:true}})
-  const adapter=createTavernScriptHostAdapter({resolveChatSlice:(_id,indices)=>persistence.readSlice('chat',indices),patchChat:persistence.patch,resolveChat:()=>persistence.read('chat'),writeChat:persistence.write,
+  const adapter=createTavernScriptHostAdapter({resolveChatSlice:(_id,indices)=>persistence.readSlice('chat',indices),resolveChangedChatSlice:(_id,revision)=>persistence.readChangedSlice('chat',revision),patchChat:persistence.patch,resolveChat:()=>persistence.read('chat'),writeChat:persistence.write,
     updateChat:persistence.update,readChatRevision:persistence.readRevision,readCard:async()=>({name:'角色'}),
     worldBooks:{bound:async()=>null},scriptDispatch:{},isPlayChat:()=>true,
     globalVariables:createPromptTemplateGlobalVariables(createProfileDataStore({dataRoot:root})),
@@ -280,7 +280,7 @@ test('unchanged reads and current variable patches bypass complete chat read/upd
  let reads=0,updates=0
  const adapter=createTavernScriptHostAdapter({
   resolveChat:()=>{reads++;return persistence.read('chat')},
-  resolveChatSlice:(_id,indices)=>persistence.readSlice('chat',indices),patchChat:persistence.patch,
+  resolveChatSlice:(_id,indices)=>persistence.readSlice('chat',indices),resolveChangedChatSlice:(_id,revision)=>persistence.readChangedSlice('chat',revision),patchChat:persistence.patch,
   writeChat:persistence.write,updateChat:(...args)=>{updates++;return persistence.update(...args)},readChatRevision:persistence.readRevision,
   readCard:async()=>({name:'角色'}),worldBooks:{bound:async()=>null},scriptDispatch:{},isPlayChat:()=>true
  })
@@ -288,6 +288,7 @@ test('unchanged reads and current variable patches bypass complete chat read/upd
  const unchanged=await adapter.readFullPromptTemplateState('session',initial.cursor)
  assert.equal(reads,1)
  assert.deepEqual(unchanged.delta.chat.set,[])
+
  const {chatId,sessionId,stateRevision,lifecycleRevision}=initial.state
  const request={chatId,sessionId,stateRevision,lifecycleRevision,changes:[{op:'set',path:['chat',0,'variables',0,'hp'],value:22}]}
  const result=await adapter.saveFullPromptTemplateState('session',request)
@@ -298,6 +299,12 @@ test('unchanged reads and current variable patches bypass complete chat read/upd
  request.changes[0].value=23
  await assert.rejects(adapter.saveFullPromptTemplateState('session',request),e=>e.code==='PROMPT_TEMPLATE_STATE_CONFLICT')
  assert.equal(updates,1)
+ const current=await adapter.readFullPromptTemplateState('session')
+ const readsBefore=reads
+ await persistence.update('chat',c=>{c.messages.push({role:'assistant',text:'only new row'});return c})
+ const appended=await adapter.readFullPromptTemplateState('session',current.cursor)
+ assert.equal(reads,readsBefore,'changed revision must not read full history')
+ assert.deepEqual(appended.delta.chat.set.map(([index])=>index),[1])
 })
 
 test('concurrent unchanged readers recover when the same cursor is consumed',async t=>{
@@ -328,4 +335,28 @@ test('current patch writes the virtual input floor without appending or touching
  assert.equal(saved.messages.length,1)
  assert.equal(saved.messages[0].variables[0].hp,10)
  assert.equal(saved.promptTemplateInput.message.variables[0].hp,6)
+})
+
+test('changed-floor synchronization equals full projection through append, variables, pending input and rollback',async t=>{
+ const {adapter,persistence,open}=await fixture(t)
+ const {applyTemplateSync}=await import('../tavern-plugin/lib/vendor/st-prompt-template/host-build/native-connection.js')
+ let received=await adapter.readFullPromptTemplateState('session')
+ for(const mutate of [
+  c=>{c.messages.push({role:'assistant',text:'新增',variables:[{hp:9}]})},
+  c=>{c.messages[0].variables[0].hp=3;c.variables.local=4},
+  c=>{c.promptTemplateInput={message:{role:'user',text:'尚未提交',variables:[{input:1}]}}},
+  c=>{c.messages.push({role:'user',text:'已提交'});delete c.promptTemplateInput},
+  c=>{c.messages.splice(0,1);c.messages[0].text='回退后改写'},
+  c=>{c.messages.length=0},
+  c=>{c.messages.push({role:'assistant',text:'重新开始'})}
+ ]) {
+  await persistence.update('chat',c=>{mutate(c);return c})
+  const delta=await adapter.readFullPromptTemplateState('session',received.cursor)
+  received=applyTemplateSync(received,delta)
+  const full=await adapter.readFullPromptTemplateState('session')
+  assert.deepEqual(received.state,full.state)
+ }
+ await open().update('chat',c=>{c.messages[0].text='外部修改';return c})
+ received=applyTemplateSync(received,await adapter.readFullPromptTemplateState('session',received.cursor))
+ assert.deepEqual(received.state,(await adapter.readFullPromptTemplateState('session')).state)
 })

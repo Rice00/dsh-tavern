@@ -55,6 +55,7 @@ export function createChatJournalStore(options = {}) {
   const byteLimit = Math.max(1, Number(options.byteLimit) || 1024 * 1024)
   const mutationTails = new Map()
   let cachedRead
+  let recentChanges = []
   if (String(options.dataRoot || '') === '') throw new Error('Chat Journal Store 缺少 dataRoot')
 
   function layout(chatId) {
@@ -237,6 +238,7 @@ export function createChatJournalStore(options = {}) {
   async function cachedState(chatId) {
     const stamp = await version(chatId)
     if (stamp && cachedRead?.id === chatId && cachedRead.stamp === stamp) return cachedRead.state
+    recentChanges = []
     const state = await materialize(chatId)
     if (stamp && stamp === await version(chatId)) cachedRead = state && {id:chatId,stamp,state}
     else if (cachedRead?.id === chatId) cachedRead = undefined
@@ -258,6 +260,30 @@ export function createChatJournalStore(options = {}) {
     const state=await cachedState(chatId)
     return state && !indices.some(i=>i>=(state.chat.messages?.length||0)) ? slice(state.chat,indices) : undefined
   }
+  function rememberChanges(revision, changes) {
+    const indices = new Set()
+    let tail = Infinity
+    for (const change of changes) {
+      if (!change.path.length) { tail = 0; break }
+      if (change.path[0] !== 'messages') continue
+      if (change.path.length > 1 && Number.isSafeInteger(change.path[1])) indices.add(change.path[1])
+      else tail = Math.min(tail, change.op === 'splice' ? change.index : 0)
+    }
+    recentChanges.push({revision, indices: [...indices], tail})
+    if (recentChanges.length > 32) recentChanges.shift()
+  }
+  async function readChangedSlice(chatId, revision) {
+    const state = await cachedState(chatId)
+    if (!state || !Number.isSafeInteger(revision) || revision >= state.revision) return undefined
+    const frames = recentChanges.filter(frame => frame.revision > revision)
+    if (frames.length !== state.revision - revision || frames[0]?.revision !== revision + 1) return undefined
+    const length = state.chat.messages?.length || 0
+    const indices = new Set(frames.flatMap(frame => frame.indices).filter(index => index < length))
+    const tail = Math.min(...frames.map(frame => frame.tail))
+    for (let index = tail; index < length; index++) indices.add(index)
+    const sorted = [...indices].sort((a,b) => a-b)
+    return {...slice(state.chat, sorted), indices: sorted, baseRevision: revision}
+  }
   /** Exact-version internal commit; stale callers must use their existing merge path. */
   async function patch(chatId, expectedRevision, changes, metadata={}) {
     return serialize(chatId,async()=>{
@@ -275,6 +301,7 @@ export function createChatJournalStore(options = {}) {
       cachedRead=undefined
       const open=await appendFrame(paths,frame,state.open)
       const rotated=await maybeRotate(paths,{chat:next,revision:frame.revision},open,state.openFrameCount+1)
+      rememberChanges(frame.revision, changes)
       if(!rotated)cachedRead={id:chatId,stamp:await version(chatId),state:{...state,chat:next,revision:frame.revision,legacy:false,open,openFrameCount:state.openFrameCount+1,openInvalidLine:0}}
       return slice(next,[]).chat
     })
@@ -325,6 +352,7 @@ export function createChatJournalStore(options = {}) {
       cachedRead = undefined
       const open = await appendFrame(paths, frame, currentState.open)
       const rotated = await maybeRotate(paths, { chat: next, revision }, open, currentState.openFrameCount + 1)
+      rememberChanges(revision, changes)
       if (!rotated) {
         // The JSON-normalized result is private; callers only receive detached copies.
         cachedRead = {
@@ -375,5 +403,5 @@ export function createChatJournalStore(options = {}) {
     })
   }
 
-  return Object.freeze({ read, readSlice, patch, readRevision, update, version, remove })
+  return Object.freeze({ read, readSlice, readChangedSlice, patch, readRevision, update, version, remove })
 }

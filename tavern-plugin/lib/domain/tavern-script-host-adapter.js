@@ -325,7 +325,15 @@ export function createTavernScriptHostAdapter(options = {}) {
   async function readFullPromptTemplateState(sessionId, cursor) {
     const selected=await options.resolveChatSlice?.(sessionId,[])
     const reuse=selected?.denseMessages && syncTemplateState.matches(cursor,selected.chat)
-    const chat = reuse ? selected.chat : await resolveChat(sessionId)
+    const reader = syncTemplateState.reader(cursor)
+    let changed = !reuse && selected?.denseMessages && reader?.chatId === selected.chat.id
+      && reader.sessionId === selected.chat.sessionId
+      && reader.lifecycle === (selected.chat.tavernHelperLifecycleRevision || 0)
+      ? await options.resolveChangedChatSlice?.(sessionId, reader.revision) : undefined
+    if (!changed?.denseMessages || changed.chat.id !== reader?.chatId
+      || changed.chat.sessionId !== reader?.sessionId
+      || (changed.chat.tavernHelperLifecycleRevision || 0) !== reader?.lifecycle) changed = undefined
+    const chat = reuse ? selected.chat : changed ? changed.chat : await resolveChat(sessionId)
     assertTemplateChat(chat)
     const card = await options.readCard(chat)
     const record = await options.worldBooks.bound(chat.cardPath, card, chat)
@@ -343,6 +351,12 @@ export function createTavernScriptHostAdapter(options = {}) {
         world_names: worldName ? [worldName] : [], selected_world_info: [],
         worldbooks: worldName && book ? { [worldName]: book } : {},
         dsh: { settling: settlementTransactions.has(str(sessionId)) || ['pending', 'running'].includes(chat.settleStatus), cardPath: chat.cardPath, model: options.modelFor ? await options.modelFor(chat) : chat.model?.model || chat.model || '', regexScripts: card.extensions?.regex_scripts || [] } }
+    }
+    if (changed) {
+      const indices = [...changed.indices]
+      if (chat.promptTemplateInput?.message) indices.push(changed.messageCount)
+      return syncTemplateState.selected(snapshot,cursor,indices,changed.messageCount+(chat.promptTemplateInput?.message?1:0),changed.baseRevision)
+        || await readFullPromptTemplateState(sessionId)
     }
     if (!reuse) return syncTemplateState(snapshot,cursor)
     // A concurrent reader may have consumed the same cursor while resources loaded.

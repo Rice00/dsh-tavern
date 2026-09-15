@@ -54,3 +54,14 @@ test('同一权威版本跳过整段历史指纹计算，独立环境变化仍�
   assert.deepEqual(delta.delta.chat.set,[])
   assert.equal(delta.delta.environment.set.settings.n,2)
 })
+
+test('selected projection fingerprints only changed rows and rejects consumed or stale cursors',()=>{
+ const sync=createFullPromptTemplateSync()
+ const first=sync({state:{chatId:'c',sessionId:'s',stateRevision:1,lifecycleRevision:0,chat:[{mes:'old'},{mes:'two'}]},environment:{}})
+ const snapshot={state:{chatId:'c',sessionId:'s',stateRevision:2,lifecycleRevision:0,chat:[{mes:'new'}]},environment:{}}
+ assert.equal(sync.selected(snapshot,first.cursor,[1],2,0),undefined)
+ const result=sync.selected(snapshot,first.cursor,[1],2,1)
+ assert.deepEqual(applyTemplateSync(first,result).state.chat,[{mes:'old'},{mes:'new'}])
+ assert.equal(sync.selected(snapshot,first.cursor,[1],2,1),undefined)
+ assert.equal(sync.selected({...snapshot,state:{...snapshot.state,lifecycleRevision:1}},result.cursor,[1],2,2),undefined)
+})

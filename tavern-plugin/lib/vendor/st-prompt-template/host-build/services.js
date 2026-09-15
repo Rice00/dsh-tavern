@@ -19,7 +19,15 @@ export function createTemplateServices(context, rpc) {
       extension_settings.variables.global = result.globalVariables
       return result.text
     },
-    getRegexedString: (value, placement, options = {}) => applyTavernRegexText(value, [...(context()?.dsh?.regexScripts || []), ...(extension_settings.regex || [])], { ...options, placement }).text,
+    getRegexedString(value, placement, options = {}) {
+      const scripts = [...(context()?.dsh?.regexScripts || []), ...(extension_settings.regex || [])]
+      const displayScripts = options.statusBoundaries ? scripts.map((rule, index) => {
+        if (!/StatusPlaceHolderImpl|<[a-z][a-z0-9-]*-status\b/i.test(rule.findRegex || '') || !/<(?:script|iframe|object|embed)\b/i.test(rule.replaceString || '')) return rule
+        const content = String(rule.replaceString).replace(/^\s*```(?:html|htm)?\s*\n([\s\S]*?)\n```\s*$/i, '$1')
+        return {...rule,replaceString:`<div data-dsh-template-status="${index}">${content}</div>`}
+      }) : scripts
+      return applyTavernRegexText(value, displayScripts, { ...options, placement }).text
+    },
     getTokenCountAsync: value => rpc('countFullTemplateTokens', { text: String(value) }).then(result => result.tokens),
     executeSlashCommandsWithOptions: source => executeTemplateSlash(source, text => rpc('executeTemplateHostCommand', { text })),
     copyText: value => navigator.clipboard.writeText(String(value))

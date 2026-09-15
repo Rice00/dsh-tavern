@@ -352,7 +352,7 @@ export function createReplyHistoryProjector({ maxCacheBytes = 16 * 1024 * 1024, 
 
       const templateDisplay = message.tavernPluginData?.template_display
       if (templateDisplay && templateDisplay.source === sourceText && templateDisplay.swipe === (message.swipeId || 0)) {
-        projections.push({ version: 2, turn, text: templateDisplay.html, mode: 'html', parts: [{ kind: 'html', content: templateDisplay.html }], warnings: [] })
+        projections.push({ version: 2, turn, text: templateDisplay.html, mode: 'html', parts: Array.isArray(templateDisplay.parts) ? structuredClone(templateDisplay.parts) : [{ kind: 'html', content: templateDisplay.html }], warnings: [] })
         latestSourceBacked = hasSource
         continue
       }

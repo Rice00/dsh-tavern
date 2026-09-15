@@ -1,12 +1,42 @@
 import { marked } from 'marked'
-import { chat } from './host.js'
+import { chat, getRegexedString, name1, name2 } from './host.js'
 
-export function formatTemplateMessage(text) {
+export function formatTemplateSource(text) {
   // Compare DOM serialization on both sides: parsing alone lowercases custom
   // tags and expands self-closing tags without any template display change.
   const template = document.createElement('template')
   template.innerHTML = marked.parse(String(text ?? ''), { gfm: true })
   return template.innerHTML
+}
+
+export function formatTemplateMessage(text, _name, isSystem = false, isUser = false, index = chat.length - 1) {
+  const source = isSystem ? text : getRegexedString(String(text ?? ''), isUser ? 1 : 2,
+    { isMarkdown: true, depth: Math.max(0, chat.length - index - 1), statusBoundaries: true })
+  // Upstream's render evaluator uses HTML-escaped EJS delimiters, including
+  // inside raw script/style text where the DOM would not escape them for us.
+  return formatTemplateSource(String(source ?? '').replace(/\{\{\s*(user|char)\s*\}\}/gi, (token, name) => name.toLowerCase() === 'user' ? name1 || '你' : name2 || token).replace(/<%/g, '&lt;%').replace(/%>/g, '%&gt;'))
+}
+
+export function captureTemplateDisplay(message, index) {
+  const html = templateMessageHTML(document.querySelector(`.mes[mesid="${index}"] .mes_text`))
+  if (html === formatTemplateSource(message.mes)) return undefined
+  const root = document.createElement('div'); root.innerHTML = html
+  const parts = []
+  const append = content => { if (content.trim()) parts.push({kind:'html',content}) }
+  // Keep declared status panels and fenced HTML separate from surrounding prose.
+  for (;;) {
+    const element = root.querySelector('[data-dsh-template-status], pre > code.language-html, pre > code.language-htm')
+    if (!element) break
+    const status = element.hasAttribute('data-dsh-template-status')
+    const target = status ? element : element.parentElement
+    const range = document.createRange(); range.setStart(root,0); range.setEndBefore(target)
+    const prefix = document.createElement('div'); prefix.append(range.extractContents()); append(prefix.innerHTML)
+    if (status) parts.push({kind:'html',content:element.innerHTML,statusRule:Number(element.getAttribute('data-dsh-template-status'))})
+    else append(element.textContent)
+    target.remove()
+  }
+  append(root.innerHTML)
+  return {source:message.mes,swipe:message.swipe_id || 0,html,parts}
 }
 
 // The mirror is only for upstream formatting. Card HTML executes in its visible DSH frame.
@@ -51,7 +81,7 @@ export function mountTemplateMessages() {
   root.replaceChildren()
   chat.forEach((message, index) => {
     const row = document.createElement('div'); row.className = 'mes'; row.setAttribute('mesid', String(index))
-    const content = document.createElement('div'); content.className = 'mes_text'; content.innerHTML = inertMarkup(formatTemplateMessage(message.mes))
+    const content = document.createElement('div'); content.className = 'mes_text'; content.innerHTML = inertMarkup(formatTemplateMessage(message.mes, message.name, message.is_system, message.is_user, index))
     row.append(content); root.append(row)
   })
 }
@@ -63,7 +93,7 @@ export function createTemplateDOMServices() {
     updateMessageBlock(index, message) {
       if (Array.isArray(message.swipes)) message.swipes[message.swipe_id || 0] = message.mes
       const element = document.querySelector(`.mes[mesid="${Number(index)}"] .mes_text`)
-      if (element) element.innerHTML = inertMarkup(formatTemplateMessage(message.mes))
+      if (element) element.innerHTML = inertMarkup(formatTemplateMessage(message.mes, message.name, message.is_system, message.is_user, index))
     },
     addCopyToCodeBlocks(parent) {
       for (const pre of parent[0]?.querySelectorAll('pre') || []) {

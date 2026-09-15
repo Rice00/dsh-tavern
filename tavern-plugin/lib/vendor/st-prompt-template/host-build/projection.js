@@ -1,5 +1,5 @@
 import { entryRandom } from '../../../domain/worldbook-random-sequence.js'
-import { mountTemplateMessages, formatTemplateMessage, templateMessageHTML } from './dom.js'
+import { mountTemplateMessages, captureTemplateDisplay } from './dom.js'
 import { eventSource, withTemplateProjection } from './host.js'
 import { prepareContext, evalTemplate } from '../upstream/src/function/ejs.ts'
 import { STATE } from '../upstream/src/function/variables.ts'
@@ -40,8 +40,8 @@ export async function projectTemplate(operation, input) {
       mountTemplateMessages()
       await eventSource.emit('MESSAGE_SENT', index)
       await eventSource.emit('USER_MESSAGE_RENDERED', String(index), 'template-input', false)
-      const html = templateMessageHTML(document.querySelector(`.mes[mesid="${index}"] .mes_text`))
-      if (html !== formatTemplateMessage(message.mes)) message.template_display = {source:message.mes,swipe:0,html}
+      const display = captureTemplateDisplay(message,index)
+      if (display) message.template_display = display
       return {message:copy(message),scopes:scopes()}
     } finally { chat.pop(); mountTemplateMessages() }
   })

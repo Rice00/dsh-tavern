@@ -5202,7 +5202,7 @@ window.__ModuleLoader__.load({
 					onChange: function () { toggle(card.path); }
 				}) : null;
 			}
-			return { managing, toggle, toolbar, checkbox, isSelected, reset, paths };
+			return { managing, toggle, toolbar, checkbox, isSelected, reset, paths, begin: function () { setManaging(true); setPaths([]); setNotice(""); } };
 		}
 
 		function tavernHistoryCardKey(item) {
@@ -5894,17 +5894,6 @@ window.__ModuleLoader__.load({
 					return forkConversation(item, title, request.turn);
 				});
 			}, [history, summaries, busy]);
-			async function exportCard(card) {
-				try {
-					const res = await call("exportCard", { path: card.path });
-					const blob = new Blob([JSON.stringify(res.document, null, 2)], { type: "application/json" });
-					const url = URL.createObjectURL(blob);
-					const a = document.createElement("a");
-					a.href = url; a.download = (card.name || "人物卡") + ".json";
-					document.body.appendChild(a); a.click(); a.remove();
-					URL.revokeObjectURL(url);
-				} catch (err) { setError(String(err && err.message || err)); }
-			}
 			async function checkUpdate() {
 				if (updateStatus.phase === "checking" || updateStatus.phase === "running") return;
 				setUpdateStatus({ ...updateStatus, phase: "checking", host: updateStatus.host || "cli", checkedAt: Date.now(), error: "" });
@@ -6042,16 +6031,13 @@ window.__ModuleLoader__.load({
 			const playPicker = h("div", { className: "dsh-tavern-card-picker", role: "dialog", "aria-modal": "true", "aria-label": openingPicker ? "游戏准备" : "选择人物卡开始游玩" }, pickerError, openingPicker ? openingChoice : h(React.Fragment, null,
 				h("div", { className: "dsh-tavern-card-picker-head" }, h("span", null, "选择人物卡 · 开始游玩"), h("span", { className: "dsh-tavern-spacer" }), h(MobileCardImportButton, { inputRef: fileRef, disabled: busy, onImported: async function () { await refresh(); notifyDataChanged(["cards"]); } }), h("button", { className: "dsh-tavern-btn", onClick: closePicker }, "关闭")),
 				h("input", { ref: fileRef, type: "file", accept: ".png,.json", style: { display: "none" }, onChange: function (e) { const f = e.target.files && e.target.files[0]; if (f) importCard(f); e.target.value = ""; } }),
-				cardBatch.toolbar(organization.visible),
 				organization.toolbar(),
 				organization.visible.length ? h(React.Fragment, null, h("div", { className: "dsh-tavern-side-empty", style: { padding: "4px 6px" } }, "已绑定剧本的人物卡将自动按剧本推进；未绑定的按自由故事推进。剧本绑定在“卡片模式”中管理。"), organization.renderCards(function (card) { return h("div", { key: card.path, className: "dsh-tavern-card-pick-wrap" },
 					cardBatch.checkbox(card),
-					organization.actions(card),
-					h("button", { className: "dsh-tavern-card-pick" + (card.hasImage ? " with-image" : "") + (cardBatch.managing && cardBatch.isSelected(card.path) ? " selected" : ""), disabled: busy || (!cardBatch.managing && Boolean(card.readError)), onClick: function () { if (cardBatch.managing) cardBatch.toggle(card.path); else preparePlayConversation(card); } }, h(TavernCardListContent, { card: card, detail: card.script ? ("剧本：" + card.script.title) : "自由故事（未绑定剧本）" })),
-					!cardBatch.managing ? h("button", { className: "dsh-tavern-script-file", disabled: busy, title: "从人物卡库删除", onClick: function () { if (window.confirm("从人物卡库删除“" + card.name + "”吗？\n人物卡工作版和原版都会删除，已有对话会保留。")) call("deleteCard", { path: card.path }).then(refresh, function (err) { setError(String(err && err.message || err)); }); } }, "删除") : null,
-					!cardBatch.managing ? h("button", { className: "dsh-tavern-script-file", disabled: busy, title: "导出为 SillyTavern 兼容 JSON", onClick: function () { exportCard(card); } }, "导出") : null
+					h("button", { className: "dsh-tavern-card-pick" + (card.hasImage ? " with-image" : "") + (cardBatch.managing && cardBatch.isSelected(card.path) ? " selected" : ""), disabled: busy || (!cardBatch.managing && Boolean(card.readError)), onClick: function () { if (cardBatch.managing) cardBatch.toggle(card.path); else preparePlayConversation(card); } }, h(TavernCardListContent, { card: card, detail: card.script ? ("剧本：" + card.script.title) : "自由故事（未绑定剧本）" }))
 				); })) : h("div", { className: "dsh-tavern-empty" }, cards.length ? "没有匹配的人物卡" : "还没有人物卡。\n点“导入人物卡”添加 PNG/JSON 卡片。")
 			));
+
 			const cardEditRows = cards.length ? cards.map(function (card) { return h("div", { key: card.path, className: "dsh-tavern-card-pick-wrap" },
 				h("button", { className: "dsh-tavern-card-pick" + (card.hasImage ? " with-image" : ""), disabled: busy, onClick: function () { newCardConversation(card, cardEntry === "gentle" ? "gentle" : "edit", cardEntry === "gentle" ? "人物卡温和改写" : "修改人物卡"); } }, h(TavernCardListContent, { card: card, detail: cardEntry === "gentle" ? "另存温和副本，再配置试玩案例" : "选择这张人物卡开始修改" }))
 			); }) : h("div", { className: "dsh-tavern-empty" }, "还没有人物卡，可先在空白工作台中创建。");
@@ -7624,17 +7610,15 @@ window.__ModuleLoader__.load({
 			const h = React.createElement;
 			if (selectedPath) {
 				if (!card) return h("div", { className: "dsh-tavern-library" }, h("div", { className: "dsh-tavern-status-head" }, h("button", { className: "dsh-tavern-btn", onClick: clearCard }, "← 返回人物卡库")), loading ? h("div", { className: "dsh-tavern-empty" }, "正在读取人物卡…") : error ? h("div", { className: "dsh-tavern-dock-error" }, error, h("button", { className: "dsh-tavern-btn", onClick: function () { loadCard(selectedPath); } }, "重新读取")) : h("div", { className: "dsh-tavern-empty" }, "人物卡读取失败", h("button", { className: "dsh-tavern-btn", onClick: function () { loadCard(selectedPath); } }, "重新读取")));
-				return h(CardFieldsPanel, { view: { card: card }, library: true, busy: busy, onBack: clearCard, onAttach: sessionMode === "card" ? function () { props.appendMention(card.path, card.name); } : null, onOpenWorldBook: props.openWorldBook, onRename: renameCard, onExport: exportCardFile, onDelete: deleteCardFile, onSaved: function (saved) { setCard(Object.assign({}, saved, { path: selectedPath })); refreshCards(); } });
+				return h(CardFieldsPanel, { view: { card: card }, library: true, organizationSettings: organization.detailSettings(cards.find(item => item.path === selectedPath)), busy: busy, onBack: clearCard, onAttach: sessionMode === "card" ? function () { props.appendMention(card.path, card.name); } : null, onOpenWorldBook: props.openWorldBook, onRename: renameCard, onExport: exportCardFile, onDelete: deleteCardFile, onSaved: function (saved) { setCard(Object.assign({}, saved, { path: selectedPath })); refreshCards(); } });
 			}
 			const visible = organization.visible;
 			return h("div", { className: "dsh-tavern-library" },
 				h("div", { className: "dsh-tavern-status-head" }, h("div", { className: "dsh-tavern-status-title" }, "人物卡库"), h("div", { className: "dsh-tavern-question-sub" }, cards.length + " 张人物卡"), h("div", { className: "dsh-tavern-library-head-actions" }, h(MobileCardImportButton, { inputRef: importInput, disabled: busy, onImported: async function (imported) { await refreshCards(); await loadCard(imported.path); notifyTavernDataChanged(["cards"], "cards"); } }), h("input", { ref: importInput, type: "file", multiple: true, accept: ".png,.json", style: { display: "none" }, onChange: function (event) { const files = Array.from(event.target.files || []); importCardFiles(files); event.target.value = ""; } }))),
 				h("div", { className: "dsh-tavern-question-sub dsh-tavern-card-import-hint", role: "status" }, importStatus || "支持多选 PNG、JSON 人物卡一起导入"),
-				cardBatch.toolbar(visible),
 				organization.toolbar(),
 				h("div", { className: "dsh-tavern-resource-body" }, error ? h("div", { className: "dsh-tavern-dock-error" }, error) : null, visible.length ? organization.renderCards(function (item) { return h("div", { key: item.path, className: "dsh-tavern-library-card-row" },
 					cardBatch.checkbox(item),
-					organization.actions(item),
 					h("button", { className: "dsh-tavern-library-card" + (item.hasImage ? " with-image" : "") + (cardBatch.managing && cardBatch.isSelected(item.path) ? " selected" : ""), disabled: busy, onClick: function () { if (cardBatch.managing) cardBatch.toggle(item.path); else loadCard(item.path); } }, h(TavernCardListContent, { card: item, detail: item.path.split("/").pop(), extra: item.script ? "已绑定剧本：" + item.script.title : "" })),
 					sessionMode === "card" && !cardBatch.managing ? h("button", { className: "dsh-tavern-resource-at", title: "在对话中引用", onClick: function () { props.appendMention(item.path, item.name); } }, "在对话中引用") : null
 				); }) : h("div", { className: "dsh-tavern-empty" }, cards.length ? "没有匹配的人物卡" : "还没有人物卡") )
@@ -7954,6 +7938,7 @@ window.__ModuleLoader__.load({
 					h("div", { className: "dsh-tavern-question-sub" }, props.view.card.path ? props.view.card.path.split("/").pop() : ""),
 					props.library ? h("div", { className: "dsh-tavern-library-head-actions" }, props.onAttach ? h("button", { className: "dsh-tavern-btn", onClick: props.onAttach }, "在对话中引用") : null, h("button", { className: "dsh-tavern-btn", onClick: props.onRename }, "重命名文件"), h("button", { className: "dsh-tavern-btn", onClick: props.onExport }, "导出"), h("button", { className: "dsh-tavern-btn", onClick: props.onDelete }, "删除")) : null
 				),
+				props.organizationSettings,
 				scriptHero,
 				h("div", { className: "dsh-tavern-card-fields" },
 					h("details", { className: "dsh-tavern-card-advanced", open: true }, h("summary", null, "基本信息"), F("name", "角色名称"), F("tags", "标签"), F("description", "角色描述", true), F("personality", "性格"), F("scenario", "场景设定"), F("first_mes", "开场白", true), F("alternate_greetings", "备选开场白（--- 分隔）"), F("system_prompt", "系统提示"), F("post_history_instructions", "历史后指令"), F("mes_example", "对话示例", true), F("creator_notes", "创作者备注")),

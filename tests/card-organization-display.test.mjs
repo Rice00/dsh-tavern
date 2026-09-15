@@ -7,12 +7,17 @@ const source = await readFile(new URL('../tavern-plugin/src/client/card-organiza
 const context = vm.createContext({})
 vm.runInContext(source, context)
 
-test('分组展示将星标置顶且不复制归属卡片，分组名不会与内置区块冲突', () => {
+test('全部保留所有卡及既有排序；收藏、分组和搜索组合过滤且不重复', () => {
   const cards = [
-    { path: 'a', group: '星标' }, { path: 'b', group: '' },
-    { path: 'c', group: '星标', starred: true }, { path: 'd', group: '其他' }
+    { path: 'c', name: '收藏卡', group: '奇幻', starred: true },
+    { path: 'b', name: '未分组卡', group: '' },
+    { path: 'a', name: '奇幻卡', group: '奇幻' }
   ]
-  const result = JSON.parse(JSON.stringify(context.cardOrganizationSections(cards)))
-  assert.deepEqual(result.map(section => section.key), ['starred', 'group:', 'group:星标', 'group:其他'])
-  assert.deepEqual(result.flatMap(section => section.cards.map(card => card.path)), ['c', 'b', 'a', 'd'])
+  const paths = (filter, query = '') => Array.from(context.filterOrganizedCards(cards, filter, query), card => card.path)
+  assert.deepEqual(paths('*'), ['c', 'b', 'a'])
+  assert.deepEqual(paths('favorites'), ['c'])
+  assert.deepEqual(paths('group:'), ['b'])
+  assert.deepEqual(paths('group:奇幻'), ['c', 'a'])
+  assert.deepEqual(paths('*', '奇幻'), ['a'])
+  assert.deepEqual(paths('favorites', '奇幻'), [])
 })

@@ -865,23 +865,34 @@ body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
 .dsh-skill-editor { box-sizing: border-box; width: 100%; min-height: 55vh; padding: 20px; border: 1px solid color-mix(in srgb, currentColor 22%, transparent); border-radius: 12px; background: var(--background, Canvas); color: inherit; font: 14px/1.7 ui-monospace, monospace; resize: vertical; tab-size: 2; }
 .dsh-skill-editor:focus-visible { outline: 2px solid #a76c36; outline-offset: 2px; }
 
-.dsh-tavern-card-organization { display: grid; gap: 8px; margin: 8px 0; }
-.dsh-tavern-card-organization-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.dsh-tavern-card-organization-tools label { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-.dsh-tavern-card-organization select { max-width: 100%; min-height: 32px; }
-.dsh-tavern-card-group { min-width: 0; width: 100%; }
-.dsh-tavern-card-group-title { font-size: 13px; margin: 14px 0 8px; font-weight: 600; }
-.dsh-tavern-card-group-title span { opacity: .6; font-weight: 400; }
-.dsh-tavern-card-organization-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
-.dsh-tavern-card-organization-actions select { max-width: 110px; min-height: 32px; }
-.dsh-tavern-card-star { font-size: 20px; min-width: 36px; min-height: 36px; }
-.dsh-tavern-card-star[aria-pressed="true"] { color: #dba84d; }
-.dsh-tavern-card-organization-actions { order: 1; }
-.dsh-tavern-card-pick-wrap > .dsh-tavern-script-file { order: 2; }
+.dsh-tavern-card-organization { display: flex; gap: 10px; align-items: center; margin: 12px 0; }
+.dsh-tavern-card-organization > .dsh-tavern-library-search { flex: 1; width: 0; min-width: 80px; margin: 0; }
+.dsh-tavern-group-picker { position: relative; flex: 0 1 190px; min-width: 105px; }
+.dsh-tavern-group-picker > summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 38px; padding: 0 12px; border: 1px solid var(--dsw-alias-border-l2, #454750); border-radius: 7px; cursor: pointer; list-style: none; }
+.dsh-tavern-group-picker > summary::-webkit-details-marker { display: none; }
+.dsh-tavern-group-picker > summary > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsh-tavern-group-picker[open] > summary { border-color: var(--dsw-alias-label-secondary, #aaa); }
+.dsh-tavern-group-menu { position: absolute; top: calc(100% + 6px); left: 0; width: min(260px, 75vw); z-index: 50; border: 1px solid var(--dsw-alias-border-l2, #454750); border-radius: 9px; padding: 6px; background: var(--dsw-specific-sidebar-fill, #202124); box-shadow: 0 12px 32px #0005; }
+.dsh-tavern-group-options { max-height: 280px; overflow-y: auto; }
+.dsh-tavern-group-menu button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 38px; padding: 8px 12px; border: 0; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; border-radius: 5px; overflow-wrap: anywhere; }
+.dsh-tavern-group-menu button:hover, .dsh-tavern-group-menu button:focus-visible { background: var(--dsw-specific-input-major, #ffffff12); }
+.dsh-tavern-group-menu button[aria-pressed="true"] { font-weight: 600; }
+.dsh-tavern-group-options button > span { width: 16px; flex-shrink: 0; }
+.dsh-tavern-group-menu-footer { border-top: 1px solid var(--dsw-alias-border-l2, #454750); margin-top: 6px; padding-top: 6px; }
+.dsh-tavern-group-manager { width: min(440px, calc(100vw - 32px)); max-height: 80vh; border: 1px solid var(--dsw-alias-border-l2, #454750); border-radius: 12px; background: var(--dsw-specific-sidebar-fill, #202124); color: var(--dsw-alias-label-primary, #eee); padding: 0; }
+.dsh-tavern-group-manager::backdrop { background: #0008; }
+.dsh-tavern-group-manager-content { padding: 20px; }
+.dsh-tavern-group-manager-head, .dsh-tavern-group-manager-row, .dsh-tavern-group-manager-footer { display: flex; align-items: center; gap: 8px; }
+.dsh-tavern-group-manager-head { justify-content: space-between; margin-bottom: 12px; }
+.dsh-tavern-group-manager-head h3 { margin: 0; font-size: 16px; }
+.dsh-tavern-group-manager-row { padding: 10px 0; border-bottom: 1px solid var(--dsw-alias-border-l2, #454750); }
+.dsh-tavern-group-manager-row > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.dsh-tavern-group-manager-footer { margin-top: 18px; flex-wrap: wrap; }
+.dsh-tavern-card-detail-organization { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 0; }
+.dsh-tavern-card-detail-organization label { display: flex; align-items: center; gap: 8px; }
+.dsh-tavern-card-detail-organization select { max-width: 180px; min-height: 32px; }
+.dsh-tavern-card-detail-organization button[aria-pressed="true"] { color: #dba84d; }
+.dsh-tavern-card-batch-panel { padding: 10px 0; }
 @media (max-width: 600px) {
-  .dsh-tavern-card-pick-wrap, .dsh-tavern-library-card-row { flex-wrap: wrap; }
-  .dsh-tavern-card-pick-wrap > .dsh-tavern-card-pick,
-  .dsh-tavern-library-card-row > .dsh-tavern-library-card { flex: 1 1 100%; }
-  .dsh-tavern-card-organization-actions { flex-direction: row; margin-right: auto; }
-  .dsh-tavern-card-organization-actions select { max-width: 140px; }
+  .dsh-tavern-group-picker { flex-basis: 140px; }
 }

@@ -19,7 +19,7 @@ async function fixture(t) {
   await persistence.write({id:'chat',sessionId:'session',cardPath:'cards/test.json',mode:'story',mvu:{enabled:true},
     tavernHelperLifecycleRevision:1,variables:{local:1},messages:[{role:'assistant',text:'正文',sourceText:'正文',turn:1,
       variables:[{hp:10}],tavernPluginData:{unrelated:{keep:true}}}],tavernPluginMetadata:{other:true}})
-  const adapter=createTavernScriptHostAdapter({resolveChat:()=>persistence.read('chat'),writeChat:persistence.write,
+  const adapter=createTavernScriptHostAdapter({resolveChatSlice:(_id,indices)=>persistence.readSlice('chat',indices),patchChat:persistence.patch,resolveChat:()=>persistence.read('chat'),writeChat:persistence.write,
     updateChat:persistence.update,readChatRevision:persistence.readRevision,readCard:async()=>({name:'角色'}),
     worldBooks:{bound:async()=>null},scriptDispatch:{},isPlayChat:()=>true,
     globalVariables:createPromptTemplateGlobalVariables(createProfileDataStore({dataRoot:root})),
@@ -273,4 +273,59 @@ test('局部保存回执不覆盖等待期间的后续编辑，下一次保存�
   assert.equal(connection.snapshot.chat[0].variables[0].hp,12)
   await connection.callbacks.saveChatConditional(connection.snapshot)
   assert.equal((await persistence.read('chat')).messages[0].variables[0].hp,12)
+})
+
+test('unchanged reads and current variable patches bypass complete chat read/update',async t=>{
+ const {persistence}=await fixture(t)
+ let reads=0,updates=0
+ const adapter=createTavernScriptHostAdapter({
+  resolveChat:()=>{reads++;return persistence.read('chat')},
+  resolveChatSlice:(_id,indices)=>persistence.readSlice('chat',indices),patchChat:persistence.patch,
+  writeChat:persistence.write,updateChat:(...args)=>{updates++;return persistence.update(...args)},readChatRevision:persistence.readRevision,
+  readCard:async()=>({name:'角色'}),worldBooks:{bound:async()=>null},scriptDispatch:{},isPlayChat:()=>true
+ })
+ const initial=await adapter.readFullPromptTemplateState('session')
+ const unchanged=await adapter.readFullPromptTemplateState('session',initial.cursor)
+ assert.equal(reads,1)
+ assert.deepEqual(unchanged.delta.chat.set,[])
+ const {chatId,sessionId,stateRevision,lifecycleRevision}=initial.state
+ const request={chatId,sessionId,stateRevision,lifecycleRevision,changes:[{op:'set',path:['chat',0,'variables',0,'hp'],value:22}]}
+ const result=await adapter.saveFullPromptTemplateState('session',request)
+ assert.equal(updates,0);assert.equal(reads,1)
+ assert.equal((await persistence.read('chat')).messages[0].variables[0].hp,22)
+ assert.equal(result.statePatch.find(c=>c.path[0]==='stateRevision').value,2)
+ // A stale variable write must go through the existing merge and reject conflict.
+ request.changes[0].value=23
+ await assert.rejects(adapter.saveFullPromptTemplateState('session',request),e=>e.code==='PROMPT_TEMPLATE_STATE_CONFLICT')
+ assert.equal(updates,1)
+})
+
+test('concurrent unchanged readers recover when the same cursor is consumed',async t=>{
+ const {persistence}=await fixture(t)
+ let blocked=false,waiting=[]
+ const adapter=createTavernScriptHostAdapter({
+  resolveChat:()=>persistence.read('chat'),resolveChatSlice:(_id,indices)=>persistence.readSlice('chat',indices),
+  writeChat:persistence.write,readCard:async()=>{
+   if(blocked)await new Promise(resolve=>{waiting.push(resolve);if(waiting.length===2){blocked=false;waiting.forEach(r=>r())}})
+   return {name:'角色'}
+  },worldBooks:{bound:async()=>null},scriptDispatch:{}
+ })
+ const first=await adapter.readFullPromptTemplateState('session')
+ blocked=true
+ const results=await Promise.all([adapter.readFullPromptTemplateState('session',first.cursor),adapter.readFullPromptTemplateState('session',first.cursor)])
+ assert.equal(results.filter(r=>r.delta).length,1)
+ assert.equal(results.filter(r=>Array.isArray(r.state?.chat)).length,1)
+})
+
+test('current patch writes the virtual input floor without appending or touching the previous reply',async t=>{
+ const {adapter,persistence}=await fixture(t)
+ await persistence.update('chat',c=>{c.promptTemplateInput={message:{role:'user',text:'输入',variables:[{hp:5}]}};return c})
+ const {state}=await adapter.readFullPromptTemplateState('session')
+ const {chat,chat_metadata,...header}=state
+ const result=await adapter.saveFullPromptTemplateState('session',{...header,changes:[{op:'set',path:['chat',1,'variables',0,'hp'],value:6}]})
+ assert.equal(result.updated,true)
+ const saved=await persistence.read('chat')
+ assert.equal(saved.messages.length,1)
+ assert.equal(saved.messages[0].variables[0].hp,10)
+ assert.equal(saved.promptTemplateInput.message.variables[0].hp,6)
 })

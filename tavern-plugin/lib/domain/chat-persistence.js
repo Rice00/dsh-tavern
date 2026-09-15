@@ -217,10 +217,23 @@ export function createChatPersistence(options = {}) {
     return typeof records.version === 'function' ? await records.version(chatId) : ''
   }
 
+  async function readSlice(chatId, indices=[]) {
+    if(!records.readSlice)return undefined
+    const selected=await records.readSlice(chatId,indices)
+    return selected ? {...selected,chat:normalize(selected.chat)} : undefined
+  }
+  // Returns metadata only. Callers cannot accidentally retain another complete history.
+  async function patch(chatId, revision, changes, metadata={}) {
+    if(!records.patch)return undefined
+    if(changes.some(c=>['_storageRevision','updatedAt','id'].includes(c.path?.[0])))throw new Error('Reserved journal patch field')
+    return await records.patch(chatId,revision,[...changes,{op:'set',path:['_storageRevision'],value:revision+1},
+      ...(metadata.touchUpdatedAt===false?[]:[{op:'set',path:['updatedAt'],value:now()}])],metadata)
+  }
+
   async function remove(chatId) {
     baselines.forEach(function (entry, key) { if (key.startsWith(String(chatId) + ':')) { baselineBytes -= entry.bytes; baselines.delete(key) } })
     await records.remove(chatId)
   }
 
-  return Object.freeze({ read, readRevision, write, update, version, remove })
+  return Object.freeze({ read, readSlice, patch, readRevision, write, update, version, remove })
 }

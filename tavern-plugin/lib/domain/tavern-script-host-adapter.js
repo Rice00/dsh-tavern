@@ -323,7 +323,9 @@ export function createTavernScriptHostAdapter(options = {}) {
   }
 
   async function readFullPromptTemplateState(sessionId, cursor) {
-    const chat = await resolveChat(sessionId)
+    const selected=await options.resolveChatSlice?.(sessionId,[])
+    const reuse=selected?.denseMessages && syncTemplateState.matches(cursor,selected.chat)
+    const chat = reuse ? selected.chat : await resolveChat(sessionId)
     assertTemplateChat(chat)
     const card = await options.readCard(chat)
     const record = await options.worldBooks.bound(chat.cardPath, card, chat)
@@ -333,7 +335,7 @@ export function createTavernScriptHostAdapter(options = {}) {
     extensionSettings.variables = { ...extensionSettings.variables, global: options.globalVariables ? await options.globalVariables.read() : {} }
     if (!Array.isArray(extensionSettings.regex)) extensionSettings.regex = []
     const character = { ...card, data: { ...card, extensions: { ...card.extensions, ...(worldName ? { world: worldName } : {}) } } }
-    return syncTemplateState({
+    const snapshot = {
       capabilities: {statePatch:1},
       state: projectFullPromptTemplateState(chat),
       environment: { characters: [character], name1: str(chat.macroState?.userName) || '你', name2: str(card.name),
@@ -341,7 +343,11 @@ export function createTavernScriptHostAdapter(options = {}) {
         world_names: worldName ? [worldName] : [], selected_world_info: [],
         worldbooks: worldName && book ? { [worldName]: book } : {},
         dsh: { settling: settlementTransactions.has(str(sessionId)) || ['pending', 'running'].includes(chat.settleStatus), cardPath: chat.cardPath, model: options.modelFor ? await options.modelFor(chat) : chat.model?.model || chat.model || '', regexScripts: card.extensions?.regex_scripts || [] } }
-    }, cursor)
+    }
+    if (!reuse) return syncTemplateState(snapshot,cursor)
+    // A concurrent reader may have consumed the same cursor while resources loaded.
+    return syncTemplateState.unchanged(snapshot,cursor,selected.messageCount+(chat.promptTemplateInput?.message?1:0))
+      || await readFullPromptTemplateState(sessionId)
   }
 
   async function saveFullPromptTemplateGlobals(sessionId, variables, expectedVariables) {
@@ -365,7 +371,38 @@ export function createTavernScriptHostAdapter(options = {}) {
     return { updated: true, settings: saved.EjsTemplate }
   }
 
+  // Common variable/display writes keep their native row indices and exact revision.
+  // Stale versions and body/swipe edits retain the full three-way merge below.
+  async function saveTemplatePatch(sessionId, request) {
+    if(!options.resolveChatSlice || !options.patchChat || !Array.isArray(request?.changes))return undefined
+    const allowed=['variables','variables_initialized','is_ejs_processed','template_display','template_rendered']
+    if(request.changes.some(c=>!Array.isArray(c.path) || !(c.path[0]==='chat_metadata' || c.path[0]==='chat' && Number.isSafeInteger(c.path[1]) && c.path[1]>=0 && allowed.includes(c.path[2]))))return undefined
+    const indices=[...new Set(request.changes.filter(c=>c.path[0]==='chat').map(c=>c.path[1]))].sort((a,b)=>a-b)
+    const head=await options.resolveChatSlice(sessionId,[])
+    if(!head?.denseMessages || head.chat._storageRevision!==request.stateRevision)return undefined
+    const virtual=head.chat.promptTemplateInput?.message ? head.messageCount : -1
+    if(indices.some(i=>i>=head.messageCount && i!==virtual))return undefined
+    const storedIndices=indices.filter(i=>i<head.messageCount)
+    const selected=storedIndices.length ? await options.resolveChatSlice(sessionId,storedIndices) : head
+    if(!selected?.denseMessages || selected.chat._storageRevision!==request.stateRevision)return undefined
+    const projectedIndices=[...storedIndices,...(virtual>=0?[virtual]:[])]
+    const baseline=selected.chat
+    assertTemplateChat(baseline)
+    if(settlementTransactions.has(str(sessionId)))throw new Error('MVU 结算进行中，模板存档不能覆盖结算事务')
+    const compact={...request,changes:request.changes.map(c=>c.path[0]==='chat'?{...c,path:['chat',projectedIndices.indexOf(c.path[1]),...c.path.slice(2)]}:c)}
+    const expanded=expandFullPromptTemplatePatch(baseline,compact)
+    const next=applyFullPromptTemplateState(baseline,baseline,expanded)
+    // No body rewrites on this path: native message history needs no resynchronization.
+    const changes=diffJson(baseline,next).map(c=>c.path[0]==='messages'?{...c,path:['messages',storedIndices[c.path[1]],...c.path.slice(2)]}:c)
+    const saved=await options.patchChat(baseline.id,request.stateRevision,changes,{source:'prompt-template.state',assertCurrent:()=>{if(settlementTransactions.has(str(sessionId)))throw new Error('MVU 结算进行中，模板存档不能覆盖结算事务')}})
+    if(!saved)return undefined
+    const receipt=diffJson(expanded,{...projectFullPromptTemplateState(next),stateRevision:saved._storageRevision})
+    return {updated:true,statePatch:receipt.map(c=>c.path[0]==='chat'?{...c,path:['chat',projectedIndices[c.path[1]],...c.path.slice(2)]}:c)}
+  }
+
   async function saveFullPromptTemplateState(sessionId, request) {
+    const fast=await saveTemplatePatch(sessionId,request)
+    if(fast)return fast
     const patch = Array.isArray(request?.changes)
     if (!patch) validateFullPromptTemplateSave(request)
     const chat = await resolveChat(sessionId)

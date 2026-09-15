@@ -1158,6 +1158,23 @@ export async function apply(ctx) {
       await sessionStore.flush(session)
     },
     resolveChat: chatForSession,
+    resolveChatSlice: async (sessionId,indices) => {
+      const chatId=(await readSessionMap())[sessionId]
+      if(!chatId)return undefined
+      const selected=await chatPersistence.readSlice(chatId,indices)
+      if(!selected || selected.chat.sessionId!==sessionId || selected.chat.backgroundConfigVersion!==1 || selected.chat.conversationFeaturesVersion!==1)return undefined
+      return selected
+    },
+    patchChat: async (chatId,revision,changes,metadata) => {
+      if(deletedChatIds.has(chatId))throw new Error('对话已删除')
+      const saved=await chatPersistence.patch(chatId,revision,changes,metadata)
+      if(saved) {
+        await syncChatSummary(saved)
+        void coordinationEvents?.publish(saved.sessionId)
+        queueAutoCompaction(saved.sessionId)
+      }
+      return saved
+    },
     writeChat,
     updateChat,
     readChatRevision,

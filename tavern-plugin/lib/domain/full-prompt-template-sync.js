@@ -12,7 +12,7 @@ function changes(value, before, hashes) {
  */
 export function createFullPromptTemplateSync({ capacity = 32 } = {}) {
   const readers = new Map()
-  return function synchronize(snapshot, cursor) {
+  function synchronize(snapshot, cursor, unchangedLength) {
     const { chat, ...state } = snapshot.state
     const before = readers.get(cursor)
     const compatible = before && before.chatId === state.chatId && before.sessionId === state.sessionId
@@ -20,12 +20,13 @@ export function createFullPromptTemplateSync({ capacity = 32 } = {}) {
     // This reader only receives authoritative projections. A storage revision
     // covers messages and metadata; settings/worldbooks have separate lifetimes.
     const unchanged = compatible && Number.isSafeInteger(state.stateRevision) && state.stateRevision > 0 && before.revision === state.stateRevision && before.lifecycle === state.lifecycleRevision
+    if (unchangedLength !== undefined && !unchanged) return undefined
     const hashes = unchanged ? before.chat : chat.map(digest)
     const stateHashes = unchanged ? before.state : fields(state)
     const environmentHashes = fields(snapshot.environment)
     const result = compatible ? { cursor: nextCursor, baseCursor: cursor, delta: {
       state: unchanged ? {set:{},remove:[]} : changes(state, before.state, stateHashes), environment: changes(snapshot.environment, before.environment, environmentHashes),
-      chat: { length: chat.length, set: unchanged ? [] : chat.flatMap((row, index) => hashes[index] === before.chat[index] ? [] : [[index, row]]) }
+      chat: { length: unchangedLength ?? chat.length, set: unchanged ? [] : chat.flatMap((row, index) => hashes[index] === before.chat[index] ? [] : [[index, row]]) }
     } } : { ...snapshot, cursor: nextCursor }
     if (compatible) readers.delete(cursor)
     readers.set(nextCursor, { chatId: state.chatId, sessionId: state.sessionId,
@@ -33,4 +34,10 @@ export function createFullPromptTemplateSync({ capacity = 32 } = {}) {
     while (readers.size > capacity) readers.delete(readers.keys().next().value)
     return result
   }
+  synchronize.matches = (cursor, chat) => {
+    const before=readers.get(cursor)
+    return Boolean(before && before.chatId===chat.id && before.sessionId===chat.sessionId && before.revision===chat._storageRevision && before.lifecycle===(chat.tavernHelperLifecycleRevision||0))
+  }
+  synchronize.unchanged = (snapshot,cursor,length) => synchronize(snapshot,cursor,length)
+  return synchronize
 }

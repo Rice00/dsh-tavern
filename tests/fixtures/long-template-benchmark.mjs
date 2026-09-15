@@ -32,7 +32,7 @@ const seeded={id:'test-chat',sessionId:'test-session',cardPath:'cards/test.json'
 const dataBytes=Buffer.byteLength(JSON.stringify(seeded))
 await persistence.write(seeded)
 const serverMetrics=[]
-const adapter=createTavernScriptHostAdapter({resolveChat:()=>persistence.read('test-chat'),writeChat:persistence.write,
+const adapter=createTavernScriptHostAdapter({resolveChatSlice:(_id,indices)=>persistence.readSlice('test-chat',indices),patchChat:persistence.patch,resolveChat:()=>persistence.read('test-chat'),writeChat:persistence.write,
  updateChat:persistence.update,readChatRevision:persistence.readRevision,readCard:async()=>({name:'Alice',description:'虚构旅行者',personality:'谨慎',mes_example:'',scenario:'河边小镇',first_mes:'旅人抵达',data:{name:'Alice',description:'虚构旅行者',personality:'谨慎',mes_example:'',scenario:'河边小镇',first_mes:'旅人抵达'}}),scriptDispatch:{},
  globalVariables:createPromptTemplateGlobalVariables(createProfileDataStore({dataRoot:root})),
     fullExtensionSettings:createTavernExtensionSettings(createProfileDataStore({dataRoot:root})),
@@ -70,7 +70,9 @@ try {
   assert(result.messages[0].content==='HP 7','request template not evaluated');
   await measure('variable write '+i,async()=>{await plugin.command('ejs',{},'<% setMessageVar("round", '+i+') %>');await plugin.api.saveVariables(true);await plugin.flush()});
  }
- const persisted=await fetch('/persisted').then(r=>r.json());assert(persisted.firstHp===7 && persisted.lastRound===2 && persisted.messages===COUNT+3,'persisted state mismatch');
+ await fetch('/prepare-input');await plugin.refresh();
+ await measure('virtual variable write',async()=>{await plugin.command('ejs',{},'<% setMessageVar("inputCheck", 1) %>');await plugin.api.saveVariables(true);await plugin.flush()});
+ const persisted=await fetch('/persisted').then(r=>r.json());assert(persisted.inputCheck===1 && persisted.firstHp===7 && persisted.lastRound===2 && persisted.messages===COUNT+3,'persisted state mismatch');
  const report={ok:true,persisted,count:COUNT,dataBytes:BYTES,measures,syncModes,wire,connectMs,server:await fetch('/metrics').then(r=>r.json())};
  await fetch('/report',{method:'POST',body:JSON.stringify(report)});output.textContent=JSON.stringify(report);await plugin.dispose();
 }catch(error){window.smoke={ok:false,error:String(error.stack||error)};output.textContent=JSON.stringify(window.smoke);await fetch('/report',{method:'POST',body:JSON.stringify(window.smoke)})}
@@ -80,11 +82,12 @@ const server=createServer(async(req,res)=>{
   const path=new URL(req.url,'http://localhost').pathname
   if(path==='/report'){let body='';for await(const chunk of req)body+=chunk;await writeFile(join(outputRoot,count+'.json'),body);res.end('ok');return}
   if(path==='/metrics'){res.end(JSON.stringify(serverMetrics));return}
+  if(path==='/prepare-input'){await persistence.update('test-chat',c=>{c.promptTemplateInput={message:{role:'user',text:'合成待提交输入',variables:[{hp:7}]}};return c});res.end('ok');return}
   if(path==='/append'){const start=performance.now();await persistence.update('test-chat',chat=>{chat.messages.push({id:'extra-'+chat.messages.length,role:'assistant',text:prose,variables:[{hp:7}]});return chat});res.end(JSON.stringify({ms:performance.now()-start}));return}
   if(path==='/enqueue-task'){taskResult=runtime.forSession('test-session').render('Task HP <%= getMessageVar("hp") %>');taskResult.catch(()=>{});await new Promise(r=>setImmediate(r));res.end('queued');return}
   if(path==='/task-result'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify(await taskResult));return}
   if(path==='/'){res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end(html);return}
-  if(path==='/persisted'){const state=await open().read('test-chat');res.setHeader('Content-Type','application/json');res.end(JSON.stringify({firstHp:state.messages[0].variables[0].hp,lastRound:state.messages.at(-1).variables[0].round,messages:state.messages.length,revision:state._storageRevision}));return}
+  if(path==='/persisted'){const state=await open().read('test-chat');res.setHeader('Content-Type','application/json');res.end(JSON.stringify({inputCheck:state.promptTemplateInput?.message.variables[0].inputCheck,firstHp:state.messages[0].variables[0].hp,lastRound:state.messages.at(-1).variables[0].round,messages:state.messages.length,revision:state._storageRevision}));return}
   if(path.startsWith('/api/')) {
    if(path.startsWith(FULL_PROMPT_TEMPLATE_ASSET_PREFIX) || path.startsWith(TAVERN_RUNTIME_ASSET_PREFIX)) {
     const file=path.startsWith(FULL_PROMPT_TEMPLATE_ASSET_PREFIX)?await asset(path):await readTavernRuntimeAsset(path)

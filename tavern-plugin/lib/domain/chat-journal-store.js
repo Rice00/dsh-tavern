@@ -1,7 +1,7 @@
 import { appendFile, mkdir, readFile, readdir, rename, rm, stat, truncate, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 
-import { applyJsonChanges, diffJson } from './json-mutation.js'
+import { applyJsonChanges, applyJsonChangesShared, diffJson } from './json-mutation.js'
 
 const STORAGE_REVISION = '_storageRevision'
 const SNAPSHOT_PATTERN = /^(\d{12})\.json$/
@@ -226,21 +226,58 @@ export function createChatJournalStore(options = {}) {
 
   async function maybeRotate(paths, state, open, frameCount) {
     const info = await stat(open.path)
-    if (frameCount < frameLimit && info.size < byteLimit) return
+    if (frameCount < frameLimit && info.size < byteLimit) return false
     await writeSnapshot(paths, state.chat, state.revision)
     const sealed = path.join(paths.journals, revisionName(open.start) + '-' + revisionName(state.revision) + '.jsonl')
     await rename(open.path, sealed)
+    return true
   }
 
-  async function read(chatId) {
+  // Retain only the most recent materialization, verified against disk on every read.
+  async function cachedState(chatId) {
     const stamp = await version(chatId)
-    if (stamp && cachedRead?.id === chatId && cachedRead.stamp === stamp) return structuredClone(cachedRead.chat)
+    if (stamp && cachedRead?.id === chatId && cachedRead.stamp === stamp) return cachedRead.state
     const state = await materialize(chatId)
-    // Only the most recently read chat is retained. Verify again after I/O so
-    // an intervening append never gives an old snapshot a new version stamp.
-    if (stamp && stamp === await version(chatId)) cachedRead = state && {id:chatId,stamp,chat:state.chat}
+    if (stamp && stamp === await version(chatId)) cachedRead = state && {id:chatId,stamp,state}
     else if (cachedRead?.id === chatId) cachedRead = undefined
-    return state === null ? undefined : jsonClone(state.chat)
+    return state
+  }
+  async function read(chatId) {
+    const previous=cachedRead?.state
+    const state=await cachedState(chatId)
+    return state ? (state===previous?structuredClone(state.chat):jsonClone(state.chat)) : undefined
+  }
+  function slice(chat, indices) {
+    const {messages:rawMessages,...head}=chat
+    const messages=Array.isArray(rawMessages)?rawMessages:[]
+    if(indices.some(i=>!Number.isSafeInteger(i)||i<0||i>=messages.length))throw new Error('消息楼层不存在')
+    return {chat:structuredClone({...head,messages:indices.map(i=>messages[i])}),messageCount:messages.length,denseMessages:Array.isArray(rawMessages) && messages.every(m=>m && typeof m==='object' && !Array.isArray(m))}
+  }
+  /** Detached metadata and selected native rows, never an editable full-chat snapshot. */
+  async function readSlice(chatId, indices=[]) {
+    const state=await cachedState(chatId)
+    return state && !indices.some(i=>i>=(state.chat.messages?.length||0)) ? slice(state.chat,indices) : undefined
+  }
+  /** Exact-version internal commit; stale callers must use their existing merge path. */
+  async function patch(chatId, expectedRevision, changes, metadata={}) {
+    return serialize(chatId,async()=>{
+      const state=await cachedState(chatId)
+      if(!state || state.revision!==expectedRevision)return undefined
+      const paths=layout(chatId)
+      const next=applyJsonChangesShared(state.chat,changes)
+      if(next.id!==chatId || revisionOf(next)!==expectedRevision+1)throw new Error('Invalid journal patch revision')
+      if(state.legacy)await migrateLegacy(paths,state.chat)
+      if(state.open && state.openInvalidLine>0)await truncate(state.open.path,state.openValidBytes)
+      const frame={schemaVersion:1,chatId,baseRevision:expectedRevision,revision:expectedRevision+1,timestamp:now(),source:String(metadata.source||'unknown'),changes}
+      if(metadata.requestId)frame.requestId=String(metadata.requestId)
+      if(metadata.operationId)frame.operationId=String(metadata.operationId)
+      metadata.assertCurrent?.()
+      cachedRead=undefined
+      const open=await appendFrame(paths,frame,state.open)
+      const rotated=await maybeRotate(paths,{chat:next,revision:frame.revision},open,state.openFrameCount+1)
+      if(!rotated)cachedRead={id:chatId,stamp:await version(chatId),state:{...state,chat:next,revision:frame.revision,legacy:false,open,openFrameCount:state.openFrameCount+1,openInvalidLine:0}}
+      return slice(next,[]).chat
+    })
   }
 
   async function readRevision(chatId, revision) {
@@ -329,5 +366,5 @@ export function createChatJournalStore(options = {}) {
     })
   }
 
-  return Object.freeze({ read, readRevision, update, version, remove })
+  return Object.freeze({ read, readSlice, patch, readRevision, update, version, remove })
 }

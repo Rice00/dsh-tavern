@@ -12,7 +12,7 @@ function isOpeningChooser(source) {
     || (/<script\b/i.test(source) && /\bswipe\s*\.\s*to\s*\(/.test(source))
 }
 
-/** Preserve greeting UI, including capability checks; MVU initializes only after commit. */
+/** Static greeting projection; getCardOpenings attaches the preparation runtime afterwards. */
 export async function projectCardOpeningPreviews(input = {}) {
   const card = input.card && typeof input.card === 'object' ? input.card : {}
   const extensions = input.extensions && typeof input.extensions === 'object' ? input.extensions : {}

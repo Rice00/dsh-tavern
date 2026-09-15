@@ -3102,13 +3102,14 @@ window.__ModuleLoader__.load({
 				+ 'try{await loader.load(new URL(script.assetUrl,document.baseURI).href);}finally{window.removeEventListener("message",retry);}}else await window.__dshTavernInitializationTiming.wait("companion-module",loadModule(script.content,script.id,' + (input && input.previewScope === true ? 'true' : 'false') + '),script.id);'
 				+ 'if(script.system==="official-mvu")await window.waitGlobalInitialized("Mvu");window.__dshTavernHelperSubscriptionsReady(script.id);'
 				+ '}catch(error){window.__dshTavernHelperSubscriptionsFailed(script.id,error);if(script.system==="official-mvu")break;}}}catch(error){for(const script of scripts)window.__dshTavernHelperSubscriptionsFailed(script.id,error);}finally{window.__dshTavernResolveCompanionScriptsReady();}';
+			// Start now: document.open() can remove deferred module tags before they run.
 			const moduleUrl = "data:text/javascript;base64," + encodeTavernScriptSource(loaderSource);
 			return {
 				head: tavernIconDependencies()
 				+ tavernStaticAssetShim()
 				+ tavernHelperScriptDependencies()
 				+ '<script data-dsh-tavern-helper-script>' + bootstrap + '<\/script>',
-				body: '<div id="extensions_settings2" hidden><select id="world_info_sort_order"><option value="13">自定义排序</option></select></div><div id="tavern_helper" hidden></div><script type="module" src="' + moduleUrl + '"><\/script>'
+				body: '<div id="extensions_settings2" hidden><select id="world_info_sort_order"><option value="13">自定义排序</option></select></div><div id="tavern_helper" hidden></div><script>void import(' + JSON.stringify(moduleUrl) + ');<\/script>'
 			};
         }
 

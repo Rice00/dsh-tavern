@@ -76,7 +76,7 @@ function installOpeningPreviewBridge(token, preview) {
     if (Number(id) !== 0 || (options && options.role && !['all', 'assistant'].includes(options.role))) return [];
     return [{ message_id: 0, role: 'assistant', message: swipes[selected], swipe_id: selected, swipes: swipes.slice() }];
   };
-  // Some chooser pages await this gate without reading MVU. No game state exists yet.
+  // Standalone choosers without a preparation draft may await this gate without reading MVU.
   window.waitGlobalInitialized = async function (name) {
     if (original) return original.waitGlobalInitialized(name);
     if (name === 'Mvu' && !preview.preparationId) return undefined;

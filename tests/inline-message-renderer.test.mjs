@@ -688,7 +688,7 @@ test('官方 MVU owner 作为共享沙箱首个系统模块本地加载', () => 
   assert.equal(frames.length, 1)
   assert.match(frames[0].srcdoc, /"officialMvu":true/)
   assert.ok(frames[0].srcdoc.indexOf('__dsh_official_mvu__') < frames[0].srcdoc.indexOf('guard'))
-  const loaderUrl = frames[0].srcdoc.match(/<script type="module" src="data:text\/javascript;base64,([^"]+)"/)[1]
+  const loaderUrl = frames[0].srcdoc.match(/data:text\/javascript;base64,([^"]+)"/)[1]
   const loader = Buffer.from(loaderUrl, 'base64').toString('utf8')
   const modules = JSON.parse(loader.match(/const scripts=(\[[^\n]*\]);\n/)[1])
   assert.equal(modules[0].assetUrl, '/api/dsh-tavern/vendor/magvarupdate/bundle.js')
@@ -1923,7 +1923,7 @@ test('Host acknowledgements extend idle waits but cannot extend the total event 
 test('trusted scripts await host jQuery before executing; isolated scripts do not access host', () => {
   for (const trustedCardMode of [true, false]) {
     const document = client.buildTavernHelperScriptDocument({ trustedCardMode, scripts: [{ id: 'ball', content: 'void 0' }] });
-    const loader = Buffer.from(document.match(/<script type="module" src="data:text\/javascript;base64,([^"]+)"/)[1], 'base64').toString();
+    const loader = Buffer.from(document.match(/data:text\/javascript;base64,([^"]+)"/)[1], 'base64').toString();
     assert.equal(loader.includes('await ensureHostJQuery(window.parent)'), trustedCardMode);
     if (trustedCardMode) assert.ok(loader.indexOf('await ensureHostJQuery(window.parent)') < loader.indexOf('for(const script of scripts)'));
   }
@@ -1998,7 +1998,7 @@ test('trusted script UI uses host body and its installed draggable; isolation re
     const window = { parent: { jQuery: hostJQuery }, $: localJQuery, jQuery: localJQuery,
       __dshTavernHelperReady: Promise.resolve(), addEventListener() {}, __dshTavernResolveCompanionScriptsReady() {} }
     const document = client.buildTavernHelperScriptDocument({ trustedCardMode, scripts: [] })
-    const loader = Buffer.from(document.match(/<script type="module" src="data:text\/javascript;base64,([^"]+)"/)[1], 'base64').toString()
+    const loader = Buffer.from(document.match(/data:text\/javascript;base64,([^"]+)"/)[1], 'base64').toString()
     await vm.runInNewContext('(async()=>{' + loader + '})()', { window })
     assert.equal(window.$('body'), trustedCardMode ? hostBody : localBody)
     if (trustedCardMode) assert.equal(typeof window.$.fn.draggable, 'function')
@@ -2039,7 +2039,7 @@ test('trusted opening exposes live MVU and EJS to original parent-window checks'
       addEventListener(name, handler) { events[name] = handler },
       __dshTavernResolveCompanionScriptsReady() {} }
     const html = client.buildTavernFrameDocument({ trustedCardMode, openingPreview: { runtime: { context: {}, scripts: [] } } })
-    const loader = Buffer.from(html.match(/<script type="module" src="data:text\/javascript;base64,([^"]+)"/)[1], 'base64').toString()
+    const loader = Buffer.from(html.match(/data:text\/javascript;base64,([^"]+)"/)[1], 'base64').toString()
     await vm.runInNewContext('(async()=>{' + loader + '})()', { window: frame })
     const bridge = html.match(/<script data-dsh-tavern-opening-host>([\s\S]*?)<\/script>/)
     if (bridge) vm.runInNewContext(bridge[1], { window: frame })
@@ -2072,7 +2072,7 @@ test('preparation host APIs retain priority over a background session runtime', 
 
 test('managed MVU keeps jQuery when a card declares its own lexical dollar helper', async () => {
   const html = client.buildTavernHelperScriptDocument({ scripts: [] })
-  const loader = Buffer.from(html.match(/<script type="module" src="data:text\/javascript;base64,([^"]+)"/)[1], 'base64').toString()
+  const loader = Buffer.from(html.match(/data:text\/javascript;base64,([^"]+)"/)[1], 'base64').toString()
   const source = loader.slice(loader.indexOf('const loadModule=') + 17, loader.indexOf(';\nconst createMvuLoader='))
   const sandbox = { window: { jQuery: callback => callback(), addEventListener() {}, removeEventListener() {} }, document: {
     getElementById: () => null,

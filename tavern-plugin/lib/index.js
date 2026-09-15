@@ -2002,7 +2002,7 @@ export async function apply(ctx) {
       const message = messages[messageId]
       if (!message || message.role !== 'assistant' || !message.mvu || message.mvu.pending !== true) continue
       const swipeId = Math.max(0, Number(message.swipeId) || 0)
-      const variables = Array.isArray(message.variables) ? message.variables[swipeId] : undefined
+      const variables = message.mvuBaseline?.swipeId === swipeId ? message.mvuBaseline.variables : (Array.isArray(message.variables) ? message.variables[swipeId] : undefined)
       return {
         messageId,
         swipeId,
@@ -2074,7 +2074,8 @@ export async function apply(ctx) {
       let backgroundBoundary = null
       try {
         const card = await readChatCard(snapshot)
-        const backgroundTasksSettings = normalizeBackgroundTasks(snapshot.backgroundTasks)
+        const variableRetry = snapshot.messages?.some(message => message.mvu?.pending && message.mvu?.variableRetry === true)
+        const backgroundTasksSettings = normalizeBackgroundTasks(variableRetry ? { variables: true, posture: false, characterDesign: false } : snapshot.backgroundTasks)
         const mvuTarget = snapshot.mvu && snapshot.mvu.enabled === true && snapshot.mvu.owner === 'official'
           ? pendingMvuTarget(snapshot)
           : null
@@ -2082,7 +2083,13 @@ export async function apply(ctx) {
         let result = null
         let mvuResult = null
         if (mvuTarget !== null && (backgroundTasksSettings.variables !== false || mvuTarget.message.mvu.pendingSubmission)) {
+          if (!mvuTarget.message.mvuBaseline || mvuTarget.message.mvuBaseline.swipeId !== mvuTarget.swipeId) {
+            mvuTarget.message.mvuBaseline = { swipeId: mvuTarget.swipeId, variables: structuredClone(mvuTarget.variables) }
+            await writeChat(snapshot, { source: 'settlement.baseline' })
+          }
           const settlementInput = {
+            guidance: mvuTarget.message.mvu.guidance || '',
+            preserveForeground: variableRetry,
             onPersistentSessionReady: id => taskRun.bindSession(id),
             backgroundTasks: backgroundTasksSettings,
             operationId: taskRun.operationId,
@@ -2196,7 +2203,7 @@ export async function apply(ctx) {
         let stat = { postureUpdated: false }
         const waitingRuntime = Boolean(mvuResult && mvuResult.receipt && mvuResult.receipt.status === 'pending')
         const completion = {
-          stateChanged: Boolean(mvuResult && mvuResult.receipt && mvuResult.receipt.status === 'updated') ||
+          stateChanged: Boolean(mvuResult?.effect?.changes?.length) || Boolean(mvuResult && mvuResult.receipt && mvuResult.receipt.status === 'updated') ||
             str(result && result.posture).trim() !== '',
           participant: taskRun.participant({ sessionId: backgroundSessionId, boundary: backgroundBoundary }),
           apply(draft) {
@@ -2215,6 +2222,7 @@ export async function apply(ctx) {
                 const waitingRuntime = receipt.status === 'pending'
                 target.mvu = {
                   pending: waitingRuntime,
+                  ...(waitingRuntime ? { variableRetry, guidance: mvuTarget.message.mvu.guidance || '' } : {}),
                   modified: receipt.status === 'updated',
                   diagnostics: receipt.status === 'stale' ? [{ message: receipt.summary }] : [],
                   events: receipt.status === 'stale' ? [] : ['MESSAGE_RECEIVED'],
@@ -2338,11 +2346,14 @@ export async function apply(ctx) {
     return view(stopped.chat, await readChatCard(stopped.chat))
   }
 
-  async function retrySettlement(sessionId, turn) {
+  async function retrySettlement(sessionId, turn, guidance = '') {
     const chat = await chatForSession(sessionId)
     if (chat === undefined) throw new Error('当前会话没有绑定人物卡')
     const activity = backgroundTasks.activity(chat)
     if (activity.busy) throw new Error('后台 Agent 正在运行，请稍候')
+    if (Object.values(storyTimeline.inspect({ chat }).operations || {}).some(operation => operation.kind === 'body' && operation.status === 'running')) {
+      throw new Error('正文正在生成，请等待完成后再重新结算')
+    }
     const messages = Array.isArray(chat.messages) ? chat.messages : []
     let target = null
     for (let messageId = messages.length - 1; messageId >= 0; messageId--) {
@@ -2357,7 +2368,13 @@ export async function apply(ctx) {
     const officialMvu = chat.mvu && chat.mvu.enabled === true && chat.mvu.owner === 'official'
     if (officialMvu) {
       if (!target.message.mvu) throw new Error('当前最新正文没有可重试的变量结算')
-      target.message.mvu = { pending: true, modified: false, diagnostics: [], events: [] }
+      const swipeId = Math.max(0, Number(target.message.swipeId) || 0)
+      if (!target.message.mvuBaseline || target.message.mvuBaseline.swipeId !== swipeId) {
+        if (['updated', 'unchanged', 'partial'].includes(target.message.mvu.receipt?.status)) {
+          throw new Error('这轮旧记录没有结算前快照，无法安全重新结算变量')
+        }
+      }
+      target.message.mvu = { pending: true, variableRetry: true, guidance: str(guidance).trim(), modified: false, diagnostics: [], events: [] }
     } else if (activity.phase !== 'failed' || activity.role !== 'settlement') {
       throw new Error('当前最新正文没有失败的后台结算')
     }
@@ -3016,8 +3033,8 @@ export async function apply(ctx) {
       case 'regenBody': return { view: await regenBody(args && args.chatId, args && args.guidance, args && args.sessionId) }
       case 'rollbackTurn': return { view: await rollbackTurn(args && args.sessionId, args && args.chatId) }
       case 'stopBackground': return { view: await stopBackground(args && args.sessionId, args && args.operationId) }
-      case 'retrySettlement': return { view: await retrySettlement(args && args.sessionId, args && args.turn) }
-      case 'retryMvuSettlement': return { view: await retrySettlement(args && args.sessionId, args && args.turn) }
+      case 'retrySettlement': return { view: await retrySettlement(args && args.sessionId, args && args.turn, args && args.guidance) }
+      case 'retryMvuSettlement': return { view: await retrySettlement(args && args.sessionId, args && args.turn, args && args.guidance) }
       default: throw new Error('未知方法: ' + method)
     }
   }

@@ -489,3 +489,40 @@ test('Helper creation waits for native session publication and propagates public
   const failed = harness(chat(), { publishCreatedMessages: async () => { throw new Error('native flush failed') } })
   await assert.rejects(failed.adapter.createMessages('session-1', [{ role: 'user', message: '开局' }], {}, 2), /native flush failed/)
 })
+
+
+test('变量重算在隔离副本恢复基线，替换已结算结果而不重复扣减', async () => {
+  const value = chat()
+  value.messages.unshift({ role: 'user', text: '行动', variables: [{ stat_data: { hp: 4 }, schema: {} }] })
+  const targetId = 1
+  value.messages[targetId].displayText = '<div>已渲染正文</div>'
+  value.messages[targetId].variables[0] = { stat_data: { hp: 7 }, schema: {} }
+  let adapter
+  adapter = harness(value, { scriptDispatch: {
+    async dispatch(_session, _event, _args, context, work) {
+      assert.equal(context.messages[targetId].variables.stat_data.hp, 10)
+      assert.equal(context.messages[0].variables.stat_data.hp, 10)
+      assert.equal(value.messages[0].variables[0].stat_data.hp, 4)
+      assert.equal(value.messages[targetId].variables[0].stat_data.hp, 7)
+      await adapter.updateMessages('session-1', [{ message_id: targetId,
+        data: { stat_data: { hp: context.messages[targetId].variables.stat_data.hp - 1 }, schema: {} }
+      }], 2, work.eventId)
+      return { handled: true }
+    }
+  } }).adapter
+  const result = await adapter.settleMvuUpdate({ operationId: 'retry', sessionId: 'session-1',
+    messageId: targetId, swipeId: 0, expectedLifecycleRevision: 2, storyText: '旧正文',
+    preserveForeground: true, baselineVariables: { stat_data: { hp: 10 }, schema: {} }, command: '<UpdateVariable/>',
+    validate: ({ before, after }) => {
+      assert.equal(before.stat_data.hp, 10)
+      assert.equal(after.stat_data.hp, 9)
+      return { changes: [], failures: [] }
+    }
+  })
+  assert.equal(value.messages[targetId].variables[0].stat_data.hp, 7)
+  applyMvuSettlementEffect(value, result.effect)
+  assert.equal(value.messages[targetId].variables[0].stat_data.hp, 9)
+  assert.equal(value.messages[0].variables[0].stat_data.hp, 4)
+  assert.equal(value.messages[targetId].text, '旧正文')
+  assert.equal(value.messages[targetId].displayText, '<div>已渲染正文</div>')
+})

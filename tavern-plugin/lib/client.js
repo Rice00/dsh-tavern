@@ -1311,13 +1311,13 @@ window.__ModuleLoader__.load({
 					busy = next;
 					input.disabled = next;
 					cancelButton.disabled = next;
-					confirmButton.disabled = next || input.value.trim() === "";
+					confirmButton.disabled = next || (!opts.allowEmpty && input.value.trim() === "");
 					confirmButton.textContent = next ? "保存中…" : confirmLabel;
 				}
 				async function submit() {
 					if (busy) return;
 					const value = input.value.trim();
-					if (value === "") return;
+					if (value === "" && !opts.allowEmpty) return;
 					if (typeof opts.onSubmit !== "function") { finish(value); return; }
 					errorLine.hidden = true;
 					setBusy(true);
@@ -1330,7 +1330,7 @@ window.__ModuleLoader__.load({
 					}
 				}
 
-				input.addEventListener("input", function () { if (!busy) confirmButton.disabled = input.value.trim() === ""; });
+				input.addEventListener("input", function () { if (!busy) confirmButton.disabled = !opts.allowEmpty && input.value.trim() === ""; });
 				input.addEventListener("keydown", function (event) {
 					if (event.key !== "Enter" || event.isComposing === true) return;
 					event.preventDefault();
@@ -5778,13 +5778,18 @@ window.__ModuleLoader__.load({
 				if (retrying) return;
 				setRetrying(true);
 				try {
-					await rpc("retrySettlement", { turn: props.turn }, props.sessionId);
+					await askTavernText({
+						title: "重新结算变量", description: "指导意见（选填），仅对本次结算生效。正文保持不变。",
+						placeholder: "例如：这轮还没有交付物品，不要扣除库存。",
+						allowEmpty: true, maxLength: 4000, confirmLabel: "重新结算",
+						onSubmit: guidance => rpc("retrySettlement", { turn: props.turn, guidance }, props.sessionId)
+					});
 					liveTavernView.invalidate(props.sessionId);
 				} catch (error) { tavernErrorHub.report("重试变量结算", error); }
 				finally { setRetrying(false); }
 			}
-			const retryButton = (status === "error" || status === "stale" || status === "interrupted" || status === "partial")
-				? h("button", { type: "button", className: "dsh-tavern-mvu-retry", disabled: retrying, onClick: retry }, retrying ? "重试中…" : "重试变量结算")
+			const retryButton = props.latest
+				? h("button", { type: "button", className: "dsh-tavern-mvu-retry", disabled: retrying || props.busy || status === "pending", onClick: retry }, props.busy || status === "pending" ? "结算中…" : retrying ? "重试中…" : ["error", "stale", "interrupted", "partial"].includes(status) ? "重试变量结算" : "重新结算变量")
 				: null;
 			const hasDetails = String(receipt.summary || "") !== "" || changes.length > 0 || sideEffects.length > 0 || failures.length > 0 || retryButton;
 			if (!hasDetails) return h("div", { className: "dsh-tavern-mvu-receipt", "data-status": status }, summary);
@@ -6224,7 +6229,7 @@ window.__ModuleLoader__.load({
 					t: props.t
 				});
 				if (!(data.status === "running" || data.status === "interrupted" || rendered.length > 0)) return null;
-				const mvuReceiptNode = mvuReceipt ? React.createElement(TavernMvuReceipt, { receipt: mvuReceipt, sessionId: props.sessionId, turn: storyTurn }) : null;
+				const mvuReceiptNode = mvuReceipt ? React.createElement(TavernMvuReceipt, { receipt: mvuReceipt, sessionId: props.sessionId, turn: storyTurn, latest: storyTurn === liveState.view?.settlementTurn, busy: Boolean(liveState.view?.activity?.busy) }) : null;
 				const sceneImagesEnabled = Boolean(liveState.view && liveState.view.releaseCapabilities && liveState.view.releaseCapabilities.sceneImages);
 				const illustration = sceneImagesEnabled && settled && storyTurn > 0 && isPlayMode(liveState.view && liveState.view.mode) && !sessionTransitioning ? React.createElement(SceneIllustration, { key: props.sessionId + ":" + storyTurn + ":" + JSON.stringify(projection), sessionId: props.sessionId, turn: storyTurn }) : null;
 				return React.createElement("div", { className: "dsh-tavern-assistant", "data-streaming": data.status === "running" || undefined }, rendered, illustration, mvuReceiptNode);

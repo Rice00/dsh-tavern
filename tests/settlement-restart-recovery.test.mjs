@@ -339,3 +339,43 @@ test('已有游戏读取本局联网开关，忽略全局变化', async () => {
   assert.equal((await sandbox.readChat('chat')).webSearchEnabled, false)
   assert.equal(stored.webSearchEnabled, false)
 })
+
+
+test('成功后带意见重新结算：复用原始快照，只更新变量，失败保留上次结果', async () => {
+  const run = await harness({ beginRunning: false })
+  let calls = 0
+  run.sandbox.mvuSettlement.settleVariables = async input => {
+    calls++
+    assert.equal(input.currentVariables.stat_data.hp, 10)
+    if (calls > 1) {
+      assert.equal(input.guidance, '只扣一点生命')
+      assert.equal(input.backgroundTasks.posture, false)
+      assert.equal(input.backgroundTasks.characterDesign, false)
+      assert.equal(run.get().messages[1].variables[0].stat_data.hp, 7)
+      if (calls === 2) throw new Error('模拟模型失败')
+    }
+    return { receipt: { version: 1, status: 'updated', changes: [] }, effect: {
+      version: 1, operationId: input.operationId, chatId: input.chatId, sessionId: input.sessionId,
+      branchId: input.branchId, basedOnRevision: input.basedOnRevision,
+      expectedLifecycleRevision: input.expectedLifecycleRevision, messageId: 1, swipeId: 0,
+      changes: [{ op: 'set', path: ['messages', 1, 'variables', 0, 'stat_data', 'hp'], value: calls === 1 ? 7 : 9 }]
+    } }
+  }
+  await run.sandbox.queueSettlement('chat')
+  assert.equal(run.get().messages[1].mvuBaseline.variables.stat_data.hp, 10)
+  assert.equal(run.get().messages[1].variables[0].stat_data.hp, 7)
+  await run.sandbox.retrySettlement('session', 2, '只扣一点生命')
+  await run.sandbox.queueSettlement('chat')
+  assert.equal(calls, 2)
+  assert.equal(run.get().messages[1].variables[0].stat_data.hp, 7)
+  assert.equal(run.get().messages[1].text, '门开了')
+  assert.equal(run.get().settleStatus, 'failed')
+  await run.sandbox.retrySettlement('session', 2, '只扣一点生命')
+  await run.sandbox.queueSettlement('chat')
+  assert.equal(calls, 3)
+  assert.equal(run.get().messages[1].variables[0].stat_data.hp, 9)
+  assert.equal(run.get().messages[1].mvuBaseline.variables.stat_data.hp, 10)
+  assert.equal(run.get().messages[1].text, '门开了')
+  assert.equal(run.get().settleStatus, 'done')
+  await assert.rejects(run.sandbox.retrySettlement('session', 1), /只能重试当前最新正文/)
+})

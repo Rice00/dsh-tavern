@@ -344,6 +344,7 @@ export function createMvuBackgroundTaskFrame(input = {}) {
     taskRules: {
       updateRules: Array.isArray(input.updateRules) ? input.updateRules.map(str).filter(Boolean) : [],
       backgroundTasks: normalizeBackgroundTasks(input.backgroundTasks),
+      guidance: str(input.guidance).trim(),
       updateOnlyFromStory: true
     },
     outputContract: { tool: MVU_SUBMIT_UPDATE_TOOL_NAME, required: true, singleCommit: true, maxToolCalls: 3 }
@@ -369,6 +370,7 @@ export function projectMvuBackgroundRequest(frame) {
     turnContext: [
       '【当前变量快照】',
       JSON.stringify(promptVariables(state.currentVariables)),
+      ...(rules.guidance ? ['【本次重新结算的指导意见（仅本次有效）】', str(rules.guidance)] : []),
       '【变量结构】',
       JSON.stringify(state.variableSchema || {}),
       ...(updateRules.length === 0 ? [] : ['【人物卡变量更新规则】', updateRules.join('\n\n')]),
@@ -403,6 +405,8 @@ export function createMvuSettlementModule(options = {}) {
       chatId: input.chatId, branchId: input.branchId, basedOnRevision: input.basedOnRevision,
       sessionId: input.sessionId, messageId: input.messageId, swipeId: input.swipeId,
       expectedLifecycleRevision: input.expectedLifecycleRevision, diagnosticId,
+      baselineVariables: input.currentVariables,
+      preserveForeground: input.preserveForeground === true,
       storyText: frame.foregroundOutput.storyText,
       command: formatMvuUpdateCommand(submission),
       validate: ({ before, after }) => auditMvuSettlement(before, after, submission.operations)

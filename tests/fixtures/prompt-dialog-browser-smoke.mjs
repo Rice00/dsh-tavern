@@ -146,6 +146,11 @@ try {
   await cancelButton.click()
   await outcome()
 
+  await open({ title: '重新结算变量', allowEmpty: true, confirmLabel: '重新结算' })
+  assert.equal(await confirmButton.isEnabled(), true)
+  await confirmButton.click()
+  assert.equal(await outcome(), '', 'optional guidance accepts an empty value')
+
   console.log('PASS: askTavernText focuses and preselects, trims on confirm, cancels on Escape/backdrop/button, blocks empty and over-long input, keeps the dialog open across a failed submit, locks while saving, and ignores composition Enter')
 } finally {
   await browser.close()

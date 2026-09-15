@@ -1,10 +1,18 @@
 import { placementKey, promptOrder } from './worldbook-activation.js'
 import { hasWorldbookRandom } from './worldbook-random.js'
 
+// Explicit state reads cannot be part of an immutable prefix, even on blue-light entries.
+export function hasWorldbookStateReads(content) {
+  const text = String(content || '')
+  if (/\{\{\s*(?:getvar|getglobalvar|lastmessage|lastusermessage|lastcharmessage|lastmessageid)\b/i.test(text)) return true
+  return [...text.matchAll(/<%[=_-]?([\s\S]*?)%>/g)].some(match =>
+    /\b(?:getvar|getGlobalVar|getLocalVar|getMessageVar|getChatMessages|variables|chat_messages|lastUserMessage|lastCharMessage)\b/.test(match[1]))
+}
+
 // Separate fixed bodies from changing bodies while keeping both projections wrapped.
 export function worldbookPlacement(entries) {
   const ordered = promptOrder(entries.filter(entry => entry.enabled !== false))
-  const refs = new Set(ordered.filter(entry => !entry.constant || entry.group || hasWorldbookRandom(entry.content)).map(entry => entry.ref))
+  const refs = new Set(ordered.filter(entry => !entry.constant || entry.group || (hasWorldbookRandom(entry.content) || hasWorldbookStateReads(entry.content))).map(entry => entry.ref))
   const buckets = new Map()
   for (const entry of ordered) {
     const key = placementKey(entry)
@@ -30,7 +38,7 @@ export function worldbookPlacement(entries) {
     // remain intact with their span rather than losing their original scope.
     for (const [start, end] of spans) if (bucket.slice(start, end + 1).some(entry => refs.has(entry.ref))) {
       const boundary = [bucket[start], bucket[end]]
-      const tagsOnly = boundary.every(entry => entry.constant && !entry.group && !hasWorldbookRandom(entry.content) && !String(entry.content).replace(/<\/?[\p{L}_][\p{L}\p{N}_:.-]*\s*>/gu, '').trim())
+      const tagsOnly = boundary.every(entry => entry.constant && !entry.group && !(hasWorldbookRandom(entry.content) || hasWorldbookStateReads(entry.content)) && !String(entry.content).replace(/<\/?[\p{L}_][\p{L}\p{N}_:.-]*\s*>/gu, '').trim())
       if (tagsOnly) {
         boundary.forEach(entry => refs.add(entry.ref))
         wrapperSpans.push(bucket.slice(start, end + 1))

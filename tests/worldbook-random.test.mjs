@@ -72,3 +72,17 @@ test('标签与说明混写的边界不强行拆分', async () => {
   assert.equal(placement.prefixRefs.size, 0)
   assert.equal(placement.foregroundRefs.size, 4)
 })
+
+test('常驻状态模板随轮追加，存档时间变化不改固定前缀', () => {
+  const worldBook = { view: { entries: [
+    { ref: 'fixed', content: '固定世界规则', constant: true, enabled: true },
+    { ref: 'state', content: '<状态><%= getMessageVar("clock") %></状态>', constant: true, enabled: true }
+  ] } }
+  const render = clock => projectWorldBookTemplates({ worldBook, runtime, includeConstants: true,
+    chat: { messages: [{ role: 'assistant', variables: [{ clock }] }] } })
+  const a = render('09:10'), b = render('09:12')
+  assert.equal(a.prefixContext, '固定世界规则')
+  assert.equal(b.prefixContext, a.prefixContext)
+  assert.equal(a.foregroundContext, '<状态>09:10</状态>')
+  assert.equal(b.foregroundContext, '<状态>09:12</状态>')
+})

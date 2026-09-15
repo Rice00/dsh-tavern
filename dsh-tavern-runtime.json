@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "6c368693d1dac848aad97d03b2cf482e7218de43",
-  "releaseSequence": 215,
+  "revision": "ff1bcad2b76b97306e8954c5bc87b5a1e0395414",
+  "releaseSequence": 216,
   "version": "1.8.0",
   "files": [
     {
@@ -386,8 +386,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/chat-history-import-service.js",
-      "sha256": "d251328cfe2bf383be48fead24fed014af6e0853aa575f4ff1e95f6e0981d02b",
-      "size": 9030
+      "sha256": "36d76fc967e95c423f94831cae19a7e5327ec2261284659d156ccbaa21a7a194",
+      "size": 9895
     },
     {
       "path": "tavern-plugin/lib/domain/chat-history-import.js",
@@ -486,8 +486,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/foreground-worldbook.js",
-      "sha256": "92108ad4e4c926d082b9b8fbf20e88bf4247249b59fc8e5174d831ec763b759b",
-      "size": 7259
+      "sha256": "8f36ccb1d8ac14f21cb306765ad3d3ea4038309a6767f7b339b0cc2915d1c639",
+      "size": 7405
     },
     {
       "path": "tavern-plugin/lib/domain/full-prompt-template-assets.js",

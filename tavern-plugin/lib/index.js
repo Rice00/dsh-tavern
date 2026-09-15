@@ -44,6 +44,7 @@ import { TAVERN_RELEASE_CAPABILITIES } from './domain/release-capabilities.js'
 import { createSessionStablePrefixStorage, ensureSessionStablePrefix, readSessionStablePrefix, sessionStablePrefixSections, withCurrentWorldbook } from './domain/session-stable-prefix.js'
 import { waitForWritableSession } from './domain/agent-readiness.js'
 import { createCardDeletion } from './domain/card-deletion.js'
+import { createCardOrganization } from './domain/card-organization.js'
 import { orderCardsByNewestImport } from './domain/card-list-order.js'
 import { createCardPreparation } from './domain/card-preparation.js'
 import { withGlobalRegexScripts } from './domain/card-extension-reading.js'
@@ -199,6 +200,7 @@ export async function apply(ctx) {
   const dataRoot = resolveTavernDataRoot()
   const stablePrefixStorage = createSessionStablePrefixStorage(dataRoot + '/session-prefixes')
   const profileData = createProfileDataStore({ dataRoot })
+  const cardOrganization = createCardOrganization(profileData)
   const worldbookRecallLog = createWorldbookRecallLog({ store: profileData })
   const userPreferenceProfile = createUserPreferenceProfile({ store: profileData })
   const sceneWorldbooks = TAVERN_RELEASE_CAPABILITIES.sceneImages ? createSceneWorldbooks({ store: profileData }) : null
@@ -746,6 +748,7 @@ export async function apply(ctx) {
     return historyRecall.recall(Object.assign({ chat }, args || {}))
   }
   resourceGraph = createResourceGraph({
+    cardOrganization,
     resources: fileResources,
     presets: runtimePresets,
     chats: { readIndex, writeIndex, readChat, writeChat },
@@ -791,7 +794,7 @@ export async function apply(ctx) {
         }
       }
     }))
-    return orderCardsByNewestImport(cards)
+    return await cardOrganization.project(orderCardsByNewestImport(cards))
   }
   async function resourceBindingProjection() {
     const cards = await listCards()
@@ -972,7 +975,9 @@ export async function apply(ctx) {
     }
   }
   async function deleteCard(cardPath) {
-    return await cardDeletion.remove(cardPath)
+    const result = await cardDeletion.remove(cardPath)
+    if (result.deleted) await cardOrganization.movePath(normalizeResourcePath(cardPath, 'card'), null)
+    return result
   }
   async function stopChatForDeletion(chatId) {
     const chat = await readChat(str(chatId))
@@ -2602,6 +2607,8 @@ export async function apply(ctx) {
   async function dispatchMethod(method, args) {
     if (method.startsWith('gameplay.')) return await gameplayApi.call(method.slice(9), args || {})
     switch (method) {
+      case 'getCardOrganization': return { groups: (await cardOrganization.read()).groups }
+      case 'organizeCards': return { groups: (await cardOrganization.update(args || {}, await fileResources.list('card'))).groups }
       case 'listCards': return { cards: await listCards() }
       case 'getUpdateStatus': return { status: await applicationUpdater.status() }
       case 'checkUpdate': return { status: await applicationUpdater.check() }

@@ -1,3 +1,24 @@
+// Compatibility transport for template builds predating the session task queue.
+// The official plugin still owns projection and persistence; never retry started work.
+function createLegacyTemplateWorkProcessor(plugin, rpc, runtimeId) {
+  return async function processNext() {
+    const work = await rpc('claimFullTemplateWork', { runtimeId, ready: true });
+    if (!work.event) return false;
+    const identity = { runtimeId, eventId: work.event.id, leaseToken: work.leaseToken };
+    const started = await rpc('startFullTemplateWork', identity);
+    if (!started.started) return true;
+    let receipt;
+    try {
+      let result;
+      try { result = await plugin.project(work.event.name, work.event.args[0]); }
+      finally { await plugin.flush(); }
+      receipt = { args: [result] };
+    } catch (error) { receipt = { error: String(error.stack || error) }; }
+    await rpc('completeFullTemplateWork', { ...identity, ...receipt });
+    return true;
+  };
+}
+
 // A production instance of the complete upstream plugin, owned by the selected play session.
 function createFullTemplateExecutor({ window: hostWindow, rpc: invoke, executeSlash }) {
   let owner = null;
@@ -56,12 +77,15 @@ async function run(){
   const {connectTemplateSession,createTemplateServices,createTemplatePanel}=templateModule;templateHost=templateModule.templateHost;
   const settingsHtml=await fetch('/api/dsh-tavern/vendor/st-prompt-template/settings.html').then(r=>r.text());
   plugin=await connectTemplateSession({sessionId,runtimeId,rpc,settingsHtml,libraries:{yaml:YAML},services:createTemplateServices(()=>context,rpc)});
-  for(const method of ['processNext','synchronize']) if(typeof plugin?.[method]!=='function') throw new Error('完整提示词模板版本不匹配：缺少 '+method+'，请更新酒馆并刷新页面');
+  const methods=Object.keys(plugin || {}).sort();
+  for(const method of ['project','flush','synchronize']) if(typeof plugin?.[method]!=='function') throw new Error('完整提示词模板版本不匹配：缺少 '+method+'；入口 '+entryUrl+'；接口 '+methods.join(',')+'，请更新酒馆并刷新页面');
+  const processNext=typeof plugin.processNext==='function' ? ()=>plugin.processNext() : (${createLegacyTemplateWorkProcessor.toString()})(plugin,rpc,runtimeId);
+  if(typeof plugin.processNext!=='function')console.warn('完整模板使用旧版任务接口', {entryUrl,methods});
   context=plugin.context;
   panel=createTemplatePanel({rpc,plugin,close:()=>parent.postMessage({token,type:'template-close'},'*')});
   while(true){
    try {
-   if(!await plugin.processNext()) {
+   if(!await processNext()) {
     if(panelRequested){panelRequested=false;await panel.open()}
     if(!sessionId.startsWith('opening:') && dirty && Date.now()-lastSync>1000){dirty=false;lastSync=Date.now();try{const result=await plugin.synchronize();if(result.deferred)dirty=true;}catch(error){console.error('模板消息同步失败',error);dirty=true;}}
     await new Promise(resolve=>setTimeout(resolve,100));

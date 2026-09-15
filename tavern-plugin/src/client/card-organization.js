@@ -59,11 +59,27 @@ function useCardOrganization(cards, busy, refresh, onError, batch) {
     const selected = choices.find(choice => choice.value === filter)?.label || '全部';
     return h(React.Fragment, null,
       h('div', { className: 'dsh-tavern-card-organization' },
-        h('details', { ref: menu, className: 'dsh-tavern-group-picker', onBlur: event => {
+        h('details', { ref: menu, className: 'dsh-tavern-group-picker', onToggle: event => {
+          const root = event.currentTarget;
+          if (event.target !== root) return;
+          const popup = root.querySelector('.dsh-tavern-group-menu');
+          if (typeof popup.showPopover !== 'function') return;
+          if (!root.open) { if (popup.matches(':popover-open')) popup.hidePopover(); return; }
+          popup.showPopover();
+          const rect = root.querySelector('summary').getBoundingClientRect();
+          const height = Math.max(80, window.innerHeight - 24);
+          popup.style.maxHeight = height + 'px';
+          const bounds = popup.getBoundingClientRect();
+          popup.style.left = Math.max(12, Math.min(rect.left, window.innerWidth - bounds.width - 12)) + 'px';
+          popup.style.top = Math.max(12, Math.min(rect.bottom + 6, window.innerHeight - bounds.height - 12)) + 'px';
+        }, onBlur: event => {
           if (!event.currentTarget.contains(event.relatedTarget)) closeMenu();
         }, onKeyDown: event => { if (event.key === 'Escape') { closeMenu(); menu.current.querySelector('summary').focus(); } } },
           h('summary', { 'aria-label': '选择分组：' + selected }, h('span', null, selected), h('span', { 'aria-hidden': true }, '⌄')),
-          h('div', { className: 'dsh-tavern-group-menu' },
+          h('div', { className: 'dsh-tavern-group-menu',
+            ...(typeof HTMLElement !== 'undefined' && 'showPopover' in HTMLElement.prototype ? { popover: 'auto' } : {}),
+            onToggle: event => { if (event.newState === 'closed' || event.nativeEvent?.newState === 'closed') event.currentTarget.closest('details').open = false; }
+          },
             h('div', { className: 'dsh-tavern-group-options' }, choices.map(choice => h('button', {
               key: choice.value, type: 'button', 'aria-pressed': filter === choice.value,
               onClick: () => { setFilter(choice.value); closeMenu(); }

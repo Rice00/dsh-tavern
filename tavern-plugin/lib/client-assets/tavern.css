@@ -930,3 +930,5 @@ body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
 
 .dsh-tavern-character-design-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
 .dsh-tavern-character-design-head .dsh-tavern-status-label { margin: 0; }
+
+.dsh-tavern-group-menu[popover] { position: fixed; inset: auto; margin: 0; overflow-y: auto; color: var(--dsw-alias-label-primary); }

@@ -155,7 +155,9 @@ export function createBackgroundAgentTask(options) {
         // DSH restores complete sections after the assembly waterfall, so the
         // additional instruction must be part of this authoritative text.
         text: () => {
-          const assembly = { sections: [{ name: 'deployment:persona', text: state.input.task === 'image' ? readSceneImageSystemInstruction() : backgroundPersona }] }
+          const fixed = sessionStablePrefixSections(state.session)
+          const sections = state.currentWorldbook === undefined ? fixed : withCurrentWorldbook(fixed, state.currentWorldbook)
+          const assembly = { sections: [...sections, { name: 'deployment:persona', text: state.input.task === 'image' ? readSceneImageSystemInstruction() : backgroundPersona }] }
           return prependSystemInstruction(assembly, options.systemAppend?.()).sections.map(section => section.text).join('\n\n')
         }
       })
@@ -173,8 +175,6 @@ export function createBackgroundAgentTask(options) {
       childCtx.tools.restrict({ allow: state.input.task === 'phone' ? [] : state.input.task === 'image' ? ['skill', 'tavern_read_skill_reference'] : ['skill', 'tavern_read_skill_reference', 'web_search'] })
       childCtx.on('system-prompt/assemble', async function (_assembly, _context, next) {
         const assembly = await next()
-        const sections = [...(assembly.sections || []), ...sessionStablePrefixSections(_context?.agent?.session)]
-        assembly.sections = state.currentWorldbook === undefined ? sections : withCurrentWorldbook(sections, state.currentWorldbook)
         prependSystemInstruction(assembly, options.systemAppend?.())
         if (state.input.task === 'phone') {
           assembly.sections = (assembly.sections || []).filter(function (section) {
@@ -342,6 +342,7 @@ export function createBackgroundAgentTask(options) {
   }
 
   async function execute({ agent, state, traceSessionId, persistent }, input) {
+    state.session = agent.session
     const runtimeInput = state.input
     try { rewindBackgroundSurface(agent.session, input.rewindTo) }
     catch (error) { console.warn('dsh-tavern: 后台历史回退未完成，继续当前任务:', str(error?.message || error)) }

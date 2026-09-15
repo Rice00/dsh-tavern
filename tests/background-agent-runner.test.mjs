@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
+// Match DSH's final complete-section restoration, after middleware runs.
+function completeSystem(sections) {
+  return sections.filter(s => s.complete).map(s => typeof s.text === 'function' ? s.text() : s.text).join('\n')
+}
+
 import { createBackgroundAgentRunner, executeBackgroundCompaction, maximumBackgroundTokens } from '../tavern-plugin/lib/background-agent-runner.js'
 import { readSceneImageSystemInstruction, readScenePlanInstruction } from '../tavern-plugin/lib/scene-image-prompts.js'
 
@@ -353,7 +358,7 @@ test('后台固定背景只保存一次，连续候选、结算和恢复均进�
     const sections = []
     let assemble, pending
     await options.setup({
-      systemPrompt: { variable(name, value) { variables.set(name, value) }, section(value) { sections.push({ ...value, text: typeof value.text === 'function' ? value.text() : value.text }) }, suppressRuntimeContext() {} },
+      systemPrompt: { variable(name, value) { variables.set(name, value) }, section(value) { sections.push(value) }, suppressRuntimeContext() {} },
       tools: { restrict() {}, register() {} }, on(name, fn) { if (name === 'system-prompt/assemble') assemble = fn }
     })
     return {
@@ -361,7 +366,7 @@ test('后台固定背景只保存一次，连续候选、结算和恢复均进�
         session,
         followup(message) { pending = (async () => {
           const assembly = await assemble(null, { agent: { session } }, async () => ({ sections, tools: [] }))
-          const system = assembly.sections.map(section => section.text.replace(/\{\{([^}]+)\}\}/g, (_, name) => variables.get(name)())).join('\n')
+          const system = completeSystem(sections)
           history.push(message)
           const request = { sessionId: 'background', system, messages: history.slice() }
           packets.push({ system: request.system, messages: request.messages, text: message.content[0].text })
@@ -552,7 +557,7 @@ test('后台 Runner 执行候选任务，查询超限后提示开始推理而不
       createCalls.push(options)
       await options.setup({
         systemPrompt: {
-          section(value) { sections.push({ ...value, text: typeof value.text === 'function' ? value.text() : value.text }) },
+          section(value) { sections.push(value) },
           variable(name, provider) { variables.push({ name, provider }) },
           suppressRuntimeContext() {}
         },
@@ -607,10 +612,10 @@ test('后台 Runner 执行候选任务，查询超限后提示开始推理而不
   assert.equal(createCalls[0].agentOptions.maxTokens, 4000)
   assert.equal(sections[0].complete, true)
   assert.equal(sections.length, 1)
-  assert.doesNotMatch(sections[0].text, /tavern_runtime_preset_front/)
-  assert.doesNotMatch(sections[0].text, /future::macro/)
-  assert.doesNotMatch(sections[0].text, /候选系统提示/)
-  assert.doesNotMatch(sections[0].text, /tavern_background_task/)
+  assert.doesNotMatch(completeSystem(sections), /tavern_runtime_preset_front/)
+  assert.doesNotMatch(completeSystem(sections), /future::macro/)
+  assert.doesNotMatch(completeSystem(sections), /候选系统提示/)
+  assert.doesNotMatch(completeSystem(sections), /tavern_background_task/)
   assert.equal(variables.some(function (entry) { return entry.name === 'tavern_background_task' }), false)
   assert.equal(variables.some(function (entry) { return entry.name === 'tavern_runtime_preset_front' }), false)
   assert.deepEqual(requestMessages.map(function (entry) { return [entry.role, entry.content[0].text] }), [
@@ -1299,7 +1304,7 @@ test('persistent background tools change with configuration without creating ano
 
 test('常驻后台会话在下一任务替换世界书，任务内固定且不改历史', async () => {
   let assemble, pending, current = '当前DLC', creates = 0
-  const seen = [], prompts = []
+  const seen = [], prompts = [], sections = []
   const session = { id: 'dynamic-book-background', header: {}, events: [], append(type, data) { const event = { type, data, seq: this.events.length }; this.events.push(event); return event } }
   const runner = createBackgroundAgentRunner({
     id: () => session.id,
@@ -1307,11 +1312,11 @@ test('常驻后台会话在下一任务替换世界书，任务内固定且不�
     resolveCurrentWorldbook: async () => current,
     agents: { get: () => ({ session: { header: {} } }), async create(options) {
       creates++
-      await options.setup({ systemPrompt: { section() {}, suppressRuntimeContext() {} }, tools: { restrict() {}, register() {} }, on(name, callback) { if (name === 'system-prompt/assemble') assemble = callback } })
+      await options.setup({ systemPrompt: { section(value) { sections.push(value) }, suppressRuntimeContext() {} }, tools: { restrict() {}, register() {} }, on(name, callback) { if (name === 'system-prompt/assemble') assemble = callback } })
       return { agent: { session, followup(message) { prompts.push(message.content[0].text); pending = (async () => {
         current = '任务中途变化'
         const result = await assemble({}, { agent: { session } }, async () => ({ sections: [], tools: [] }))
-        seen.push(result.sections.map(s => s.text).join('\n'))
+        seen.push(completeSystem(sections))
         session.append('assistant/message', { message: { content: [{ type: 'text', text: '完成' }] } })
       })() }, async whenIdle() { await pending } }, async dispose() {} }
     } }
@@ -1378,17 +1383,17 @@ test('temporary settlement tools conclude only after both submissions, without a
 
 test('生图已有空前缀会话补入开局 system，连续任务保持背景且不混入正文', async () => {
   let assemble, pending, reads = 0
-  const seen = [], personas = []
+  const seen = [], sections = [], personas = []
   const session = { id: 'image-opening-context', header: {}, events: [], append(type, data) { const event = { type, data, seq: this.events.length }; this.events.push(event); return event } }
   const runner = createBackgroundAgentRunner({
     id: () => session.id,
     resolveStablePrefix: async () => { reads++; return '【用户已确认的长期偏好】\n偏好标记\n【故事设定 · 人物卡】\n人物标记\n【常驻世界书】\n常驻标记' },
     resolveCurrentWorldbook: async () => undefined,
     agents: { get: () => ({ session: { header: {} } }), async create(options) {
-      await options.setup({ systemPrompt: { section(value) { personas.push(typeof value.text === 'function' ? value.text() : value.text) }, suppressRuntimeContext() {} }, tools: { restrict() {}, register() {} }, on(name, callback) { if (name === 'system-prompt/assemble') assemble = callback } })
+      await options.setup({ systemPrompt: { section(value) { personas.push(value) }, suppressRuntimeContext() {} }, tools: { restrict() {}, register() {} }, on(name, callback) { if (name === 'system-prompt/assemble') assemble = callback } })
       return { agent: { session, followup(message) { pending = (async () => {
         const result = await assemble({}, { agent: { session } }, async () => ({ sections: personas.map(text => ({ name: 'persona', text })), tools: [] }))
-        seen.push({ system: result.sections.map(s => s.text).join('\n'), message })
+        seen.push({ system: completeSystem(personas), message })
         session.append('assistant/message', { message: { content: [{ type: 'text', text: '完成' }] } })
       })() }, async whenIdle() { await pending } }, async dispose() {} }
     } }
@@ -1409,15 +1414,15 @@ test('生图已有空前缀会话补入开局 system，连续任务保持背景�
 
 for (const task of ['settlement', 'image']) test(task + ' 已有会话在明确更新人物卡后切换背景', async () => {
   let assemble, pending, revision = 0, background = '开局人物设定'
-  const seen = []
+  const seen = [], sections = []
   const session = { id: 'updated-' + task, header: {}, events: [], append(type, data) { const event = { type, data, seq: this.events.length + 1 }; this.events.push(event); return event } }
   const runner = createBackgroundAgentRunner({
     resolveStablePrefixRevision: async () => revision, resolveStablePrefix: async () => background,
     agents: { get: () => ({ session: { header: {} } }), async create(options) {
-      await options.setup({ systemPrompt: { section() {}, suppressRuntimeContext() {} }, tools: { restrict() {}, register() {} }, on(event, callback) { if (event === 'system-prompt/assemble') assemble = callback } })
+      await options.setup({ systemPrompt: { section(value) { sections.push(value) }, suppressRuntimeContext() {} }, tools: { restrict() {}, register() {} }, on(event, callback) { if (event === 'system-prompt/assemble') assemble = callback } })
       return { agent: { session, followup() { pending = (async () => {
         const result = await assemble({}, { agent: { session } }, async () => ({ sections: [], tools: [] }))
-        seen.push(result.sections.map(s => s.text).join('\n'))
+        seen.push(completeSystem(sections))
         session.append('assistant/message', { message: { content: [{ type: 'text', text: '完成' }] } })
       })() }, async whenIdle() { await pending } }, async dispose() {} }
     } }
@@ -1427,7 +1432,10 @@ for (const task of ['settlement', 'image']) test(task + ' 已有会话在明确�
       revision = version; background = version ? '已确认的新版设定' : '开局人物设定'
       await runner.run({ sessionId: 'parent', persistent: true, task, selection: { provider: 'test', model: 'fake' }, messages: [], tools: [] })
     }
-    assert.deepEqual(seen, ['开局人物设定', '已确认的新版设定', '已确认的新版设定'])
+    assert.match(seen[0], /开局人物设定/)
+    assert.doesNotMatch(seen[1], /开局人物设定/)
+    assert.match(seen[1], /已确认的新版设定/)
+    assert.equal(seen[1], seen[2])
     assert.equal(session.events.filter(e => e.data?.source?.cardContextRevision === 1).length, 1)
   } finally { await runner.dispose() }
 })

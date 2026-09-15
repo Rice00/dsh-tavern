@@ -9198,12 +9198,20 @@ window.__ModuleLoader__.load({
 			const latestMessageId = props.useChat(latestTavernAssistantMessageId);
 			const state = useLiveTavernView(props.sessionId, "suppression:" + String(latestMessageId || "") + ":" + String(running));
 			const turns = state.view && state.view.suppressedDshErrorTurns || [];
-			const revision = turns.join(",");
+			const hiddenTurns = state.view && state.view.hiddenDshErrorTurns;
+			const revision = turns.join(",") + ":" + (Array.isArray(hiddenTurns) ? "saved:" + hiddenTurns.join(",") : "local");
 			React.useEffect(function () {
 				const root = marker.current && marker.current.closest("[data-conversation-scroll]");
 				if (!root) return;
 				const projection = createSupersededErrorProjection(root);
-				const controls = createTurnErrorControls(root, { sessionId: props.sessionId, storage: window.localStorage });
+				const controls = createTurnErrorControls(root, {
+                    sessionId: props.sessionId, storage: window.localStorage, hiddenTurns: hiddenTurns,
+                    onToggle: !Array.isArray(hiddenTurns) ? undefined : async function (turn, hidden) {
+                        const result = await rpc("setFailedErrorVisibility", { sessionId: props.sessionId, turn: turn, hidden: hidden });
+                        liveTavernView.setView(props.sessionId, result.view);
+                    },
+                    onError: function (error) { tavernErrorHub.report("保存错误提示状态失败", error); }
+                });
 				const apply = function () { projection.apply(turns); controls.apply(); };
 				apply();
 				const observer = new window.MutationObserver(apply);

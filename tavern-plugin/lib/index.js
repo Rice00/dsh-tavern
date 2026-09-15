@@ -1,3 +1,4 @@
+import { setFailedErrorVisibility } from './domain/failed-error-visibility.js'
 import { createManualCharacterDesign } from './domain/manual-character-design.js'
 import { prepareTemplateHistory, synchronizeTemplateHistory } from './domain/template-history.js'
 import { createFullTemplateRuntime } from './domain/full-template-runtime.js'
@@ -1371,6 +1372,7 @@ export async function apply(ctx) {
         commit: OFFICIAL_MVU_VERSION.commit,
         assetUrl: OFFICIAL_MVU_VERSION.assetUrl
       } : null,
+      hiddenDshErrorTurns: chat.hiddenDshErrorTurns || [],
       suppressedDshTurns,
       regeneratedDshTurns: Object.fromEntries(Object.entries(chat.regeneratedDshTurns && typeof chat.regeneratedDshTurns === 'object' && !Array.isArray(chat.regeneratedDshTurns)
         ? chat.regeneratedDshTurns : {}).map(function ([turn, visibleTurn]) { return [String(Number(turn)), Number(visibleTurn)] })
@@ -3044,6 +3046,16 @@ export async function apply(ctx) {
       case 'getBodyEdit': return { edit: await bodyEditor.read(args && args.sessionId) }
       case 'saveBodyEdit': return { view: await bodyEditor.save(args && args.sessionId, args) }
       case 'regenBody': return { view: await regenBody(args && args.chatId, args && args.guidance, args && args.sessionId) }
+      case 'setFailedErrorVisibility': {
+        const sessionId = str(args && args.sessionId)
+        const chat = await chatForSession(sessionId)
+        if (!chat) throw new Error('请先打开游玩会话')
+        const session = sessionStore.get(sessionId) || agentRegistry.get(sessionId)?.session
+        if (!session) throw new Error('会话尚未就绪，请刷新后重试')
+        const events = sessionEvents(session)
+        await updateChat(chat.id, current => setFailedErrorVisibility(current, events, args.turn, args.hidden), { source: 'ui.error-visibility' })
+        return { view: await sessionView(sessionId) }
+      }
       case 'rollbackTurn': return { view: await rollbackTurn(args && args.sessionId, args && args.chatId) }
       case 'stopBackground': return { view: await stopBackground(args && args.sessionId, args && args.operationId) }
       case 'retrySettlement': return { view: await retrySettlement(args && args.sessionId, args && args.turn, args && args.guidance) }

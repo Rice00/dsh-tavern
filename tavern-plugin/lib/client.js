@@ -9375,6 +9375,7 @@ window.__ModuleLoader__.load({
 		        const stored = JSON.parse(options.storage.getItem(key) || '[]');
 		        if (Array.isArray(stored)) hidden = new Set(stored.filter(value => typeof value === 'string'));
 		    } catch (_) {}
+		    if (Array.isArray(options.hiddenTurns)) hidden = new Set(options.hiddenTurns.map(String));
 		    const owned = new Map();
 		    function save() {
 		        try { options.storage.setItem(key, JSON.stringify([...hidden])); } catch (_) {}
@@ -9403,8 +9404,17 @@ window.__ModuleLoader__.load({
 		                owned.set(row, entry);
 		                details.onclick = function () { entry.expanded = !entry.expanded; apply(); };
 		                toggle.onclick = function () {
-		                    if (hidden.has(id)) hidden.delete(id); else hidden.add(id);
-		                    save(); apply();
+		                    const dismiss = !hidden.has(id);
+		                    function commit() {
+		                        if (dismiss) hidden.add(id); else hidden.delete(id);
+		                        save(); apply();
+		                    }
+		                    if (!options.onToggle) { commit(); return; }
+		                    if (toggle.disabled) return;
+		                    toggle.disabled = true;
+		                    return Promise.resolve().then(function () { return options.onToggle(Number(id), dismiss); })
+		                        .then(commit, function (error) { if (options.onError) options.onError(error); })
+		                        .finally(function () { toggle.disabled = false; });
 		                };
 		                row.insertAdjacentElement('afterend', panel);
 		            }
@@ -10707,12 +10717,20 @@ window.__ModuleLoader__.load({
 			const latestMessageId = props.useChat(latestTavernAssistantMessageId);
 			const state = useLiveTavernView(props.sessionId, "suppression:" + String(latestMessageId || "") + ":" + String(running));
 			const turns = state.view && state.view.suppressedDshErrorTurns || [];
-			const revision = turns.join(",");
+			const hiddenTurns = state.view && state.view.hiddenDshErrorTurns;
+			const revision = turns.join(",") + ":" + (Array.isArray(hiddenTurns) ? "saved:" + hiddenTurns.join(",") : "local");
 			React.useEffect(function () {
 				const root = marker.current && marker.current.closest("[data-conversation-scroll]");
 				if (!root) return;
 				const projection = createSupersededErrorProjection(root);
-				const controls = createTurnErrorControls(root, { sessionId: props.sessionId, storage: window.localStorage });
+				const controls = createTurnErrorControls(root, {
+                    sessionId: props.sessionId, storage: window.localStorage, hiddenTurns: hiddenTurns,
+                    onToggle: !Array.isArray(hiddenTurns) ? undefined : async function (turn, hidden) {
+                        const result = await rpc("setFailedErrorVisibility", { sessionId: props.sessionId, turn: turn, hidden: hidden });
+                        liveTavernView.setView(props.sessionId, result.view);
+                    },
+                    onError: function (error) { tavernErrorHub.report("保存错误提示状态失败", error); }
+                });
 				const apply = function () { projection.apply(turns); controls.apply(); };
 				apply();
 				const observer = new window.MutationObserver(apply);

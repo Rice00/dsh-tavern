@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "d11c2160dfd172f6936abb2a47ca2a10a0ee7c1f",
-  "releaseSequence": 211,
+  "revision": "8bc727b77d1f66462f7cc4ba8dae800bb3b24de6",
+  "releaseSequence": 212,
   "version": "1.8.0",
   "files": [
     {
@@ -256,8 +256,8 @@
     },
     {
       "path": "tavern-plugin/lib/client.js",
-      "sha256": "e4153adf9e0bb00ecb8d6a5f2587d0df10c2b14c54e04d9bbe91e4c9821f0e9e",
-      "size": 906388
+      "sha256": "4e549a6effa45ab6f8faebfa7aac6e30873a7d9d7dd851a0cff1f5b118f73a75",
+      "size": 906596
     },
     {
       "path": "tavern-plugin/lib/cordis-inspect.js",
@@ -501,8 +501,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/full-template-runtime.js",
-      "sha256": "23d528d5433417b09dc070ec2a165f76dfee39b96b52abba7a701d08d32c3eb7",
-      "size": 2386
+      "sha256": "33ad75f8a69882304137d805752d16c5e9ff9daf90eec2b1fa99ea24a08c5b69",
+      "size": 3401
     },
     {
       "path": "tavern-plugin/lib/domain/gameplay-settled-turn.js",
@@ -3526,8 +3526,8 @@
     },
     {
       "path": "tavern-plugin/src/client/full-template-executor.js",
-      "sha256": "200b1771dbcba78c6b5ef73a635bc1de4b015728ab467e01c545eacb5a2d2ed9",
-      "size": 6861
+      "sha256": "49bc1eeba8b2d3536c450c01d242325a7a18728502acf907cff6cf659a497433",
+      "size": 7061
     },
     {
       "path": "tavern-plugin/src/client/interaction-diagnostics.js",

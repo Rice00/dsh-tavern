@@ -15,7 +15,7 @@ test('1800 条长历史只传变化楼层，删除和环境变化与全量结果
   assert.ok(JSON.stringify(delta).length < fullBytes/100)
   received=applyTemplateSync(received,delta)
   assert.deepEqual(received.state,state.state)
-  state.state.chat[5].mes='编辑历史';state.state.chat.length=100
+  state.state.chat[5].mes='编辑历史';state.state.chat.length=100;state.state.stateRevision++
   delete state.environment.name1
   state.environment.extension_settings.enabled=false
   delta=sync(state,received.cursor);received=applyTemplateSync(received,delta)
@@ -25,4 +25,32 @@ test('1800 条长历史只传变化楼层，删除和环境变化与全量结果
   assert.throws(()=>applyTemplateSync({...received,cursor:'wrong'},delta),/cursor mismatch/)
   const reset=sync({...state,state:{...state.state,chatId:'other'}},received.cursor)
   assert.ok(reset.state)
+})
+
+test('空增量刷新不序列化历史，且仍能撤销上游未保存的本地改动', async t => {
+  const {createNativeTemplateConnection}=await import('../tavern-plugin/lib/vendor/st-prompt-template/host-build/native-connection.js')
+  const snapshot={cursor:'a',state:{chat:[{mes:'历史'.repeat(10000),variables:[{hp:7}]}],chat_metadata:{variables:{}}},environment:{extension_settings:{EjsTemplate:{},variables:{global:{}}}}}
+  let first=true
+  const connection=await createNativeTemplateConnection({sessionId:'s',rpc:async()=>first?(first=false,structuredClone(snapshot)):{cursor:'a',baseCursor:'a',delta:{chat:{length:1,set:[]},state:{set:{},remove:[]},environment:{set:{},remove:[]}}}})
+  const stringify=JSON.stringify;let calls=0
+  t.mock.method(JSON,'stringify',(...args)=>{calls++;return stringify(...args)})
+  await connection.refresh()
+  assert.equal(calls,0,'空增量不应把历史转成 JSON 再比较')
+  connection.snapshot.chat[0].variables[0].hp=99
+  await connection.refresh()
+  assert.equal(connection.snapshot.chat[0].variables[0].hp,7)
+})
+
+
+test('同一权威版本跳过整段历史指纹计算，独立环境变化仍同步',t=>{
+  const sync=createFullPromptTemplateSync()
+  const snapshot={state:{chatId:'c',sessionId:'s',stateRevision:1,chat:[{mes:'历史正文',variables:[{}]}]},environment:{settings:{n:1}}}
+  const first=sync(snapshot)
+  const stringify=JSON.stringify;let historyReads=0
+  t.mock.method(JSON,'stringify',(value,...args)=>{if(value?.mes==='历史正文')historyReads++;return stringify(value,...args)})
+  snapshot.environment.settings.n=2
+  const delta=sync(snapshot,first.cursor)
+  assert.equal(historyReads,0)
+  assert.deepEqual(delta.delta.chat.set,[])
+  assert.equal(delta.delta.environment.set.settings.n,2)
 })

@@ -38,7 +38,7 @@ export async function initializeTemplatePlugin({ snapshot, callbacks, libraries 
     }
     return {
       version: '1.17.9',
-      synchronize: snapshot => run(() => synchronize(snapshot)),
+      synchronize: (snapshot, changes) => run(() => synchronize(snapshot, changes)),
       project: (operation, input) => run(async () => (await import('./projection.js')).projectTemplate(operation, input)),
       refresh: snapshot => run(() => refreshTemplateSnapshot(snapshot)),
       api: globalThis.EjsTemplate,

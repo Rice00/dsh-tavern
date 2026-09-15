@@ -1,6 +1,7 @@
+import { sameTemplateValue as same, applyTemplateStateChanges } from '../../../domain/template-state-patch.js'
+import { diffJson } from '../../../domain/json-mutation.js'
 const clone = value => value === undefined ? undefined : structuredClone(value)
 const own = (value,key) => Object.prototype.hasOwnProperty.call(value,key)
-const same = (a,b) => JSON.stringify(a) === JSON.stringify(b)
 const record = value => value !== null && typeof value === 'object'
 
 /** Reconcile receipts without discarding edits made while a save was in flight. */
@@ -35,20 +36,22 @@ export function applyTemplateSync(previous, result) {
 
 // Upstream may mutate its context. Reconcile from the transport snapshot without
 // cloning unchanged historical rows or letting local writes corrupt the cursor.
-function restoreSnapshot(target, source) {
+function restoreSnapshot(target, source, changedRow) {
   for (const key of Object.keys(target)) if (!own(source,key)) delete target[key]
   for (const [key,value] of Object.entries(source)) {
-    if (same(target[key],value)) continue
     if (Array.isArray(target[key]) && Array.isArray(value)) {
-      value.forEach((row,index) => { if (!same(target[key][index],row)) target[key][index]=clone(row) })
+      value.forEach((row,index) => { if (!same(target[key][index],row)) {target[key][index]=clone(row);if(key==='chat')changedRow(index)} })
       target[key].length=value.length
-    } else target[key]=clone(value)
+    } else if (!same(target[key],value)) target[key]=clone(value)
   }
 }
 
 export async function createNativeTemplateConnection({ sessionId, rpc, services = {}, settingsHtml }) {
   let initial=await rpc('getFullPromptTemplateState',{sessionId})
-  let baseline=clone(initial.state), settingsBaseline=clone(initial.environment.extension_settings.EjsTemplate)
+  const supportsPatches=initial.capabilities?.statePatch === 1
+  let pendingRows=null
+  const changedRow=index=>pendingRows?.add(index)
+  let baseline=initial.state, settingsBaseline=clone(initial.environment.extension_settings.EjsTemplate)
   let globalBaseline=clone(initial.environment.extension_settings.variables?.global)
   const snapshot=clone({...initial.state,...initial.environment})
   let saves=Promise.resolve(), latest=saves
@@ -70,12 +73,15 @@ export async function createNativeTemplateConnection({ sessionId, rpc, services 
     saveChatConditional: data=>enqueue(async()=>{
       await saveGlobals(data.extension_settings)
       if (same(data.chat,baseline.chat) && same(data.chat_metadata,baseline.chat_metadata)) return { updated:false }
-      const submitted={...clone(baseline),chat:clone(data.chat),chat_metadata:clone(data.chat_metadata)}
-      const result=await rpc('saveFullPromptTemplateState',{sessionId,state:submitted})
-      if(result.updated!==true || !result.state) throw new Error('Template state save was not acknowledged')
-      reconcileTemplateReceipt(data.chat,submitted.chat,result.state.chat)
-      reconcileTemplateReceipt(data.chat_metadata,submitted.chat_metadata,result.state.chat_metadata)
-      baseline=clone(result.state)
+      const changes=diffJson({chat:baseline.chat,chat_metadata:baseline.chat_metadata},{chat:data.chat,chat_metadata:data.chat_metadata})
+      const submitted=applyTemplateStateChanges(baseline,changes)
+      const {chat:_chat,chat_metadata:_metadata,...header}=baseline
+      const result=await rpc('saveFullPromptTemplateState',{sessionId,state:supportsPatches?{...header,changes}:submitted})
+      if(result.updated!==true || (!result.state && !Array.isArray(result.statePatch))) throw new Error('Template state save was not acknowledged')
+      const saved=result.state || applyTemplateStateChanges(submitted,result.statePatch)
+      reconcileTemplateReceipt(data.chat,submitted.chat,saved.chat)
+      reconcileTemplateReceipt(data.chat_metadata,submitted.chat_metadata,saved.chat_metadata)
+      baseline=saved
       return result
     }),
     saveSettingsDebounced:settings=>enqueue(async()=>{
@@ -88,13 +94,16 @@ export async function createNativeTemplateConnection({ sessionId, rpc, services 
       return result
     })
   }
-  return {snapshot,callbacks,flush:()=>latest,async refresh() {
+  return {snapshot,callbacks,flush:()=>latest,displayChanges:()=>pendingRows,acknowledgeDisplay:()=>{pendingRows=new Set()},async refresh() {
     await latest
-    initial=applyTemplateSync(initial,await rpc('getFullPromptTemplateState',{sessionId,cursor:initial.cursor}))
+    const response=await rpc('getFullPromptTemplateState',{sessionId,cursor:initial.cursor})
+    if (!response.delta) pendingRows=null
+    else for(const [index] of response.delta.chat.set) changedRow(index)
+    initial=applyTemplateSync(initial,response)
     baseline=initial.state
     settingsBaseline=clone(initial.environment.extension_settings.EjsTemplate)
     globalBaseline=clone(initial.environment.extension_settings.variables?.global)
-    restoreSnapshot(snapshot,{...initial.state,...initial.environment})
+    restoreSnapshot(snapshot,{...initial.state,...initial.environment},changedRow)
     return snapshot
   }}
 }

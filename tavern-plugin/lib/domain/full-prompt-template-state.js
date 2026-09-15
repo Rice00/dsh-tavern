@@ -1,3 +1,4 @@
+import { applyTemplateStateChanges } from './template-state-patch.js'
 import { isDeepStrictEqual } from 'node:util'
 import { projectTavernHelperContext, replaceTavernHelperMessages } from './tavern-helper-context.js'
 import { assertPluginJson } from './tavern-chat-plugin-data.js'
@@ -104,4 +105,15 @@ export function applyFullPromptTemplateState(current, baseline, request) {
   next.tavernPluginMetadata=metadata
   if (next.promptTemplateInput?.message) next.promptTemplateInput.message = next.messages.pop()
   return next
+}
+
+
+export function expandFullPromptTemplatePatch(baseline, request) {
+  if (!Array.isArray(request?.changes) || Object.keys(request).some(key=>!['chatId','sessionId','stateRevision','lifecycleRevision','changes'].includes(key))) throw new Error('模板增量存档字段无效')
+  assertPluginJson(request,'模板增量存档')
+  if (request.changes.some(change=>!Array.isArray(change.path) || !['chat','chat_metadata'].includes(change.path[0]))) throw new Error('模板增量不能修改读取版本或聊天身份')
+  const {changes,...header}=request
+  const expanded={...applyTemplateStateChanges(projectFullPromptTemplateState(baseline),changes),...header}
+  validateFullPromptTemplateSave(expanded)
+  return expanded
 }

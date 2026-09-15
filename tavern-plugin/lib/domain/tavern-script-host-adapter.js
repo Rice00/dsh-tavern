@@ -1,6 +1,7 @@
+import { diffJson } from './json-mutation.js'
 import { createFullPromptTemplateSync } from './full-prompt-template-sync.js'
 import { resourceSaveSummary, observeResourceSave } from './resource-save-summary.js'
-import { projectFullPromptTemplateState, applyFullPromptTemplateState, validateFullPromptTemplateSave } from './full-prompt-template-state.js'
+import { projectFullPromptTemplateState, applyFullPromptTemplateState, validateFullPromptTemplateSave, expandFullPromptTemplatePatch } from './full-prompt-template-state.js'
 import { mutateScriptPrompts } from './tavern-script-prompts.js'
 import { exportSillyTavernWorldBook, inspectWorldBookDocument, updateWorldBookDocument } from './worldbook-resource.js'
 import { isDeepStrictEqual } from 'node:util'
@@ -333,6 +334,7 @@ export function createTavernScriptHostAdapter(options = {}) {
     if (!Array.isArray(extensionSettings.regex)) extensionSettings.regex = []
     const character = { ...card, data: { ...card, extensions: { ...card.extensions, ...(worldName ? { world: worldName } : {}) } } }
     return syncTemplateState({
+      capabilities: {statePatch:1},
       state: projectFullPromptTemplateState(chat),
       environment: { characters: [character], name1: str(chat.macroState?.userName) || '你', name2: str(card.name),
         this_chid: '0', extension_settings: extensionSettings,
@@ -364,12 +366,14 @@ export function createTavernScriptHostAdapter(options = {}) {
   }
 
   async function saveFullPromptTemplateState(sessionId, request) {
-    validateFullPromptTemplateSave(request)
+    const patch = Array.isArray(request?.changes)
+    if (!patch) validateFullPromptTemplateSave(request)
     const chat = await resolveChat(sessionId)
     assertTemplateChat(chat)
     if (!options.readChatRevision || !options.updateChat) throw new Error('模板原生存储未连接')
     if (settlementTransactions.has(str(sessionId))) throw new Error('MVU 结算进行中，模板存档不能覆盖结算事务')
     const baseline = await options.readChatRevision(chat.id, request.stateRevision)
+    if (patch) request = expandFullPromptTemplatePatch(baseline, request)
     const saved = await options.updateChat(chat.id, async latest => {
       assertTemplateChat(latest)
       if (settlementTransactions.has(str(sessionId))) throw new Error('MVU 结算进行中，模板存档不能覆盖结算事务')
@@ -379,7 +383,8 @@ export function createTavernScriptHostAdapter(options = {}) {
     }, { source: 'prompt-template.state' })
     if (!saved) throw new Error('模板聊天已不存在')
     await options.synchronizeTemplateHistory?.(saved)
-    return { updated: true, state: projectFullPromptTemplateState(saved) }
+    const state = projectFullPromptTemplateState(saved)
+    return patch ? {updated:true,statePatch:diffJson(request,state)} : {updated:true,state}
   }
 
   async function saveExtensionSettings(sessionId, settings, expectedSettings) {

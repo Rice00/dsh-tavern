@@ -215,3 +215,62 @@ test('增量同步经过原生 journal：追加、变量写入、回退、全局
   assert.ok(responses.at(-1).state)
   assert.deepEqual(connection.snapshot.chat[0],first)
 })
+
+test('修改单个变量仅传局部写入与回执，并保留并发的无关变量',async t=>{
+  const {adapter,persistence}=await fixture(t)
+  await persistence.update('chat',chat=>{chat.messages[0].text='长正文'.repeat(10000);return chat})
+  let request,receipt
+  const connection=await createNativeTemplateConnection({sessionId:'session',rpc:async(method,args)=>{
+    if(method==='getFullPromptTemplateState')return adapter.readFullPromptTemplateState(args.sessionId,args.cursor)
+    if(method==='saveFullPromptTemplateState'){
+      request=structuredClone(args.state)
+      await persistence.update('chat',chat=>{chat.variables.unrelated=9;return chat})
+      receipt=await adapter.saveFullPromptTemplateState(args.sessionId,args.state);return receipt
+    }
+    throw new Error(method)
+  }})
+  connection.snapshot.chat[0].variables[0].hp=11
+  await connection.callbacks.saveChatConditional(connection.snapshot)
+  assert.ok(Array.isArray(request.changes))
+  assert.equal(request.chat,undefined)
+  assert.ok(JSON.stringify(request).length<1000)
+  assert.ok(JSON.stringify(receipt).length<1000)
+  assert.equal(connection.snapshot.chat_metadata.variables.unrelated,9)
+  assert.equal((await persistence.read('chat')).messages[0].variables[0].hp,11)
+})
+
+test('局部模板写入不能绕过身份、楼层与回退校验',async t=>{
+  const {adapter,persistence}=await fixture(t)
+  const {state}=await adapter.readFullPromptTemplateState('session')
+  const {chat,chat_metadata,...header}=state
+  for(const changes of [
+    [{op:'set',path:['sessionId'],value:'other'}],
+    [{op:'set',path:['chat',0,'is_user'],value:true}],
+    [{op:'splice',path:['chat'],index:1,deleteCount:0,items:[chat[0]]}],
+    [{op:'set',path:['chat_metadata','__proto__'],value:{bad:true}}]
+  ]) await assert.rejects(adapter.saveFullPromptTemplateState('session',{...header,changes}))
+  assert.equal((await persistence.read('chat'))._storageRevision,state.stateRevision)
+  await persistence.update('chat',c=>{c.tavernHelperLifecycleRevision++;return c})
+  await assert.rejects(adapter.saveFullPromptTemplateState('session',{...header,changes:[{op:'set',path:['chat',0,'variables',0,'hp'],value:99}]}),/过期|切换/)
+  assert.equal((await persistence.read('chat')).messages[0].variables[0].hp,10)
+})
+
+test('局部保存回执不覆盖等待期间的后续编辑，下一次保存仍能提交',async t=>{
+  const {adapter,persistence}=await fixture(t)
+  let started,release
+  const entered=new Promise(r=>{started=r}),gate=new Promise(r=>{release=r})
+  let writes=0
+  const connection=await createNativeTemplateConnection({sessionId:'session',rpc:async(method,args)=>{
+    if(method==='getFullPromptTemplateState')return adapter.readFullPromptTemplateState(args.sessionId,args.cursor)
+    if(method==='saveFullPromptTemplateState'){if(++writes===1){started();await gate}return adapter.saveFullPromptTemplateState(args.sessionId,args.state)}
+    throw Error(method)
+  }})
+  connection.snapshot.chat[0].variables[0].hp=11
+  const saving=connection.callbacks.saveChatConditional(connection.snapshot)
+  await entered
+  connection.snapshot.chat[0].variables[0].hp=12
+  release();await saving
+  assert.equal(connection.snapshot.chat[0].variables[0].hp,12)
+  await connection.callbacks.saveChatConditional(connection.snapshot)
+  assert.equal((await persistence.read('chat')).messages[0].variables[0].hp,12)
+})

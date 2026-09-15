@@ -1,17 +1,17 @@
+import { sameTemplateValue as same } from '../../../domain/template-state-patch.js'
 import xxhash from 'xxhash-wasm'
 import { eventSource, chat, getCurrentChatId, saveChatConditional } from './host.js'
 import { mountTemplateMessages, captureTemplateDisplay } from './dom.js'
 import { settings } from '../upstream/src/modules/ui.ts'
 
 const copy = value => structuredClone(value)
-const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 const matches = (display, message) => display?.source === message.mes && display.swipe === (message.swipe_id || 0)
 
 /** Historical display belongs to its message version, not today's variables. */
 export function createTemplateLifecycle() {
   const hashing = xxhash()
   let previous, worlds, features, definition
-  return async function synchronize(snapshot) {
+  return async function synchronize(snapshot, changes) {
     if (snapshot.dsh?.settling) return { deferred: true }
     const currentDefinition = {characters:snapshot.characters,name1:snapshot.name1,name2:snapshot.name2}
     const changedDefinition = !same(definition,currentDefinition)
@@ -24,7 +24,8 @@ export function createTemplateLifecycle() {
     }
     const { h64ToString } = await hashing
     const pending = new Set()
-    for (let index = 0; index < chat.length; index++) {
+    for (const index of changes ?? chat.keys()) {
+      if (index >= chat.length) continue;
       const message = chat[index]
       if (!(message.template_rendered?.hash === h64ToString(message.mes) && message.template_rendered.swipe === (message.swipe_id || 0)) && !matches(message.template_display,message)) pending.add(index)
     }
@@ -50,9 +51,10 @@ export function createTemplateLifecycle() {
       }
     }
     if (pending.size) await saveChatConditional()
-    definition = copy(currentDefinition)
+    if (changedDefinition) definition = copy(currentDefinition)
     previous = chat.map(({mes,swipe_id,swipes}) => ({mes,swipe_id,swipes:[...(swipes || [])]}))
-    worlds = copy(snapshot.worldbooks); features = copy(snapshot.extension_settings.EjsTemplate)
+    if (changedWorlds) worlds = copy(snapshot.worldbooks)
+    if (changedSettings) features = copy(snapshot.extension_settings.EjsTemplate)
     return { synchronized: pending.size > 0 }
   }
 }

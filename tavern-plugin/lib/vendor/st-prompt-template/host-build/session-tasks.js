@@ -29,7 +29,9 @@ export function createTemplateSessionTasks({ connection, plugin, dispatch }) {
     project: (operation, input) => enqueue(() => project(operation, input)),
     synchronize: () => enqueue(async () => {
       const snapshot = await refreshed()
-      return settled(() => plugin.synchronize(snapshot))
+      const result=await settled(() => plugin.synchronize(snapshot,connection.displayChanges?.()))
+      if (!result?.deferred) connection.acknowledgeDisplay?.()
+      return result
     }),
     refresh: () => enqueue(refreshed),
     flush: () => enqueue(() => connection.flush()),

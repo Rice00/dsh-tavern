@@ -1690,6 +1690,10 @@ export async function apply(ctx) {
   const manualCharacterDesign = createManualCharacterDesign({
     store: { chatForSession, updateChat, readCard: readChatCard },
     runAgent: input => backgroundAgentRunner.run(input), selection: backgroundModelSelection,
+    beginTask: async (chat, sessionId) => {
+      if (agentRegistry.get(sessionId)?.phase?.kind === 'running' || chat.regenInProgress) throw new Error('前台正在生成，请完成后再设计人物。')
+      return await backgroundTasks.begin(chat, 'character-design')
+    },
     ensureSession: async sessionId => {
       if (!agentRegistry.get(sessionId)?.session) await agentRegistry.resume({ resumeSessionId: sessionId })
     }

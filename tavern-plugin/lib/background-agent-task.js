@@ -190,7 +190,7 @@ export function createBackgroundAgentTask(options) {
       })
       state.refreshConfiguredTools = function () {
         if (state.input.task === 'image') return
-        const key = JSON.stringify(state.input.backgroundTasksSnapshot || null)
+        const key = JSON.stringify([state.input.task, state.input.backgroundTasksSnapshot || null])
         if (state.configuredToolsKey === key) return
         for (const dispose of state.stableToolDisposers || []) dispose()
         state.configuredToolsKey = key

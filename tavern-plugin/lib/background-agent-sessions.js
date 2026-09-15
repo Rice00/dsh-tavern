@@ -68,7 +68,6 @@ export function createBackgroundAgentSessions(options, task) {
         persona: '维护本游戏的场景绘图方案，不续写故事、不修改变量。当前目标材料与保存的方案优先于旧任务。' } : {})
     })
     if (input.task === 'worldbook-filter') return snapshotSubagentDescriptor({ mode: 'one-shot', provider: LEGACY_BACKGROUND_PROVIDER, label: '世界书筛选原型' })
-    if (input.task === 'character-design') return snapshotSubagentDescriptor({ mode: 'one-shot', provider: LEGACY_BACKGROUND_PROVIDER, label: '人物设计' })
     if (input.task === 'phone') return snapshotSubagentDescriptor({
       mode: 'one-shot', provider: 'dsh-tavern-phone', label: '手机私聊',
       persona: '只扮演指定联系人回复一条手机私聊，不推进正文或修改游戏状态。'

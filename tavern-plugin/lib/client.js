@@ -5022,7 +5022,7 @@ window.__ModuleLoader__.load({
 		   try {
 		   const work=await rpc('claimFullTemplateWork',{runtimeId,ready:true});
 		   if(work.event){const event=work.event;const started=await rpc('startFullTemplateWork',{runtimeId,eventId:event.id,leaseToken:work.leaseToken});if(!started.started)continue;
-		    try{await plugin.refresh();context=plugin.context;if(event.args[0]?.request?.model)context.dsh.model=event.args[0].request.model;const result=await plugin.project(event.name,event.args[0]);await rpc('completeFullTemplateWork',{runtimeId,eventId:event.id,leaseToken:work.leaseToken,args:[result]});}
+		    try{const result=await plugin.project(event.name,event.args[0]);await rpc('completeFullTemplateWork',{runtimeId,eventId:event.id,leaseToken:work.leaseToken,args:[result]});}
 		    catch(error){await rpc('completeFullTemplateWork',{runtimeId,eventId:event.id,leaseToken:work.leaseToken,error:String(error.stack||error)});}
 		   }else {
 		    if(panelRequested){panelRequested=false;await panel.open()}

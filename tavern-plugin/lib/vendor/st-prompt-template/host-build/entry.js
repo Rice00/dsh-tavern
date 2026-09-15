@@ -76,7 +76,7 @@ export async function connectTemplateSession({ sessionId, rpc, services, setting
     return { ...plugin, context: connection.snapshot, flush: () => connected(() => connection.flush()),
       synchronize: () => connected(async () => { const snapshot = await connection.refresh(); await plugin.refresh(snapshot); return plugin.synchronize(snapshot) }),
       refresh: () => connected(async () => plugin.refresh(await connection.refresh())),
-      project: (operation, input) => connected(async () => { await plugin.refresh(await connection.refresh()); return plugin.project(operation, input) })
+      project: (operation, input) => connected(async () => { await plugin.refresh(await connection.refresh()); if (operation === 'request' && input?.request?.model) connection.snapshot.dsh.model = input.request.model; return plugin.project(operation, input) })
     }
   } catch(error) { await plugin.dispose(); throw error }
 }

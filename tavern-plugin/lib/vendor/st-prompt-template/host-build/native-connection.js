@@ -42,6 +42,7 @@ export async function createNativeTemplateConnection({ sessionId, rpc, services 
     loadWorldInfo:async name=>clone(initial.environment.worldbooks[name] || null),
     saveChatConditional: data=>enqueue(async()=>{
       await saveGlobals(data.extension_settings)
+      if (same(data.chat,baseline.chat) && same(data.chat_metadata,baseline.chat_metadata)) return { updated:false }
       const submitted={...clone(baseline),chat:clone(data.chat),chat_metadata:clone(data.chat_metadata)}
       const result=await rpc('saveFullPromptTemplateState',{sessionId,state:submitted})
       if(result.updated!==true || !result.state) throw new Error('Template state save was not acknowledged')

@@ -158,3 +158,23 @@ test('生成中的玩家模板变量保存到待提交输入，不覆盖上一�
   assert.equal(chat.promptTemplateInput.message.variables[0].hp,8)
   assert.notEqual(chat.messages[0].variables[0].hp,8)
 })
+
+test('无变化的模板保存不写完整聊天，变量变化只提交一次', async t => {
+  const {adapter}=await fixture(t)
+  let writes=0
+  const connection=await createNativeTemplateConnection({sessionId:'session',rpc:async(method,args)=>{
+    if(method==='getFullPromptTemplateState') return adapter.readFullPromptTemplateState(args.sessionId)
+    if(method==='saveFullPromptTemplateGlobals') return adapter.saveFullPromptTemplateGlobals(args.sessionId,args.variables,args.expectedVariables)
+    if(method==='saveFullPromptTemplateState') { writes++;return adapter.saveFullPromptTemplateState(args.sessionId,args.state) }
+    throw new Error(method)
+  }})
+  const state=connection.snapshot
+  await connection.callbacks.saveChatConditional(state)
+  await connection.callbacks.saveChatConditional(state)
+  assert.equal(writes,0)
+  state.chat[0].variables[0].hp=27
+  await connection.callbacks.saveChatConditional(state)
+  await connection.callbacks.saveChatConditional(state)
+  assert.equal(writes,1)
+  assert.equal((await adapter.readFullPromptTemplateState('session')).state.chat[0].variables[0].hp,27)
+})

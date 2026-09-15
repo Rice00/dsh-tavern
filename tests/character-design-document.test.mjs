@@ -100,7 +100,7 @@ test('人物档案模块提供不泄漏存储结构的只读状态面板投影',
   assert.equal(view.characters[0].identity, completeDesign.identity)
   assert.deepEqual(view.characters[0].aliases, ['阿栞'])
   assert.deepEqual(view.characters[0].sections.map(section => section.label), [
-    '身份', '剧情定位', '性格', '外貌', '说话方式', '人物关系'
+    '身份', '性格', '外貌', '说话方式', '剧情作用'
   ])
   assert.equal(Object.hasOwn(view.characters[0], 'design'), false)
   assert.equal(Object.hasOwn(view.characters[0], 'internal'), false)
@@ -156,9 +156,9 @@ test('当前后台 Agent 保存人物后立即独立落盘，无需人物设计�
   assert.equal(read.character.design.identity, completeDesign.identity)
 })
 
-test('新档案只需六项，旧动机、矛盾和行为方式不再输出', async () => {
+test('新档案只需五项，已删除字段不再输出', async () => {
   const session = createCharacterDesignDocumentSession()
-  const keys = ['identity', 'narrativeRole', 'personality', 'appearance', 'speechStyle', 'relationships']
+  const keys = ['identity', 'narrativeRole', 'personality', 'appearance', 'speechStyle']
   const args = { name: '新人物', ...Object.fromEntries(keys.map(key => [key, completeDesign[key]])) }
   assert.equal(JSON.parse(await session.execute({ name: CHARACTER_DESIGN_SAVE_TOOL_NAME, arguments: args })).ok, true)
   const result = JSON.parse(await session.execute({ name: CHARACTER_DESIGN_READ_TOOL_NAME, arguments: { name: '新人物' } }))

@@ -3,16 +3,14 @@ export const CHARACTER_DESIGN_SAVE_TOOL_NAME = 'character_design_save'
 
 const SPEC = 'dsh-tavern.character-design-document'
 const REQUIRED_DESIGN_FIELDS = Object.freeze([
-  'identity', 'narrativeRole', 'personality', 'appearance',
-  'speechStyle', 'relationships'
+  'identity', 'personality', 'appearance', 'speechStyle', 'narrativeRole'
 ])
 const PRESENTATION_FIELDS = Object.freeze([
   ['identity', '身份'],
-  ['narrativeRole', '剧情定位'],
   ['personality', '性格'],
   ['appearance', '外貌'],
   ['speechStyle', '说话方式'],
-  ['relationships', '人物关系'],
+  ['narrativeRole', '剧情作用'],
 ])
 const UNKNOWN_MARKER = /未明确|未知|待定|不详|尚未设定|暂未决定/
 
@@ -115,11 +113,10 @@ export const CHARACTER_DESIGN_SAVE_TOOL = Object.freeze({
       name: stringProperty('人物姓名。'),
       aliases: { type: 'array', description: '可选别名。', items: { type: 'string' } },
       identity: stringProperty('完整身份与社会位置。'),
-      narrativeRole: stringProperty('剧情定位：人物在故事中的作用及可能的发展方向，不预写既成剧情。'),
       personality: stringProperty('鲜明、可观察且彼此一致的性格。'),
       appearance: stringProperty('外貌、体型、辨识特征与日常穿着。'),
       speechStyle: stringProperty('语言习惯、语气与表达方式。'),
-      relationships: stringProperty('与现有人物或群体的关系立场。'),
+      narrativeRole: stringProperty('剧情作用：人物在故事中的作用及可能的发展方向，不预写既成剧情。'),
     },
     required: ['name', ...REQUIRED_DESIGN_FIELDS]
   })

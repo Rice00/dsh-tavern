@@ -186,6 +186,7 @@ export async function apply(ctx) {
   if (commands) ctx.effect(function* () {
     for (const name of ['ejs', 'ejs-refresh']) yield commands.register({
       name, description: name === 'ejs' ? '执行提示词模板' : '刷新提示词模板世界书',
+      ...(name === 'ejs' ? {input:{hint:'模板正文或 block=true JavaScript'}} : {}),
       handler: async invocation => {
         try {
           const result = await fullTemplateRuntime.forSession(invocation.agent.session.id).command('/' + name + ' ' + invocation.rawInput)

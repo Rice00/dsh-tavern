@@ -21,6 +21,7 @@ async function createRuntime() {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   const browser = await chromium.launch({ headless: true })
   const page = await browser.newPage()
+  await page.addInitScript(() => { delete globalThis.structuredClone; delete Array.prototype.at })
   if(process.env.TEMPLATE_DEBUG) page.on('console', message => console.log(message.text()))
   cleanup = async () => { await browser.close(); await new Promise(resolve => server.close(resolve)) }
   await page.goto('http://127.0.0.1:' + server.address().port)

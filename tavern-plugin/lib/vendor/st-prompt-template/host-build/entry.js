@@ -1,3 +1,5 @@
+// Dedicated frames do not inherit the Android host's JavaScript polyfills.
+import 'core-js/actual/index.js'
 import { createNativeTemplateConnection } from './native-connection.js'
 import { configureTemplateHost, refreshTemplateSnapshot, disposeTemplateHost, eventSource, runTemplateCommand, templateCommandNames } from './host.js'
 

@@ -36,7 +36,8 @@ import * as YAML from '${TAVERN_RUNTIME_ASSET_PREFIX}yaml/index.mjs';
 import {connectTemplateSession} from '${FULL_PROMPT_TEMPLATE_ASSET_PREFIX}index.js';
 const output=document.querySelector('#result');
 window.addEventListener('unhandledrejection',e=>{window.smoke={ok:false,error:String(e.reason)};output.textContent=JSON.stringify(window.smoke)});
-const rpc=async(method,args)=>{const r=await fetch('/api/'+method,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(args)});const result=await r.json();if(!r.ok)throw new Error(result.error);return result};
+const syncModes=[];
+const rpc=async(method,args)=>{const r=await fetch('/api/'+method,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(args)});const result=await r.json();if(!r.ok)throw new Error(result.error);if(method==='getFullPromptTemplateState')syncModes.push(result.delta?'delta':'full');return result};
 const assert=(v,label)=>{if(!v)throw new Error(label)};
 window.toastr=Object.fromEntries(['info','success','warning','error'].map(k=>[k,message=>console.log(k,message)]));
 let context;window.SillyTavern={getContext:()=>context};
@@ -55,7 +56,9 @@ try {
  await fetch('/enqueue-task');
  assert(await plugin.processNext(),'task not claimed');
  const task=await fetch('/task-result').then(r=>r.json());assert(task.text==='Task HP 9','dispatched template result');
- window.smoke={ok:true,first,request:request.messages[0].content,persisted,task};output.textContent=JSON.stringify(window.smoke);
+ await plugin.refresh();
+ assert(syncModes[0]==='full' && syncModes.slice(1).every(mode=>mode==='delta'),'sync did not use deltas');
+ window.smoke={ok:true,syncModes,first,request:request.messages[0].content,persisted,task};output.textContent=JSON.stringify(window.smoke);
 }catch(error){window.smoke={ok:false,error:String(error.stack||error)};output.textContent=JSON.stringify(window.smoke)}
 </script>`
 const server=createServer(async(req,res)=>{
@@ -77,7 +80,7 @@ const server=createServer(async(req,res)=>{
    else if(name==='startFullTemplateWork') result=runtime.dispatch.start('test-session',args.eventId,args.leaseToken,args.runtimeId)
    else if(name==='completeFullTemplateWork') result={completed:runtime.dispatch.complete('test-session',args.eventId,args.args,args.runtimeId,args.leaseToken,args.error)}
    else if(name==='saveFullPromptTemplateGlobals') result=await adapter.saveFullPromptTemplateGlobals(args.sessionId,args.variables,args.expectedVariables)
-   else if(name==='getFullPromptTemplateState') result=await adapter.readFullPromptTemplateState(args.sessionId)
+   else if(name==='getFullPromptTemplateState') result=await adapter.readFullPromptTemplateState(args.sessionId,args.cursor)
    else if(name==='saveFullPromptTemplateState') result=await adapter.saveFullPromptTemplateState(args.sessionId,args.state)
    else if(name==='saveFullPromptTemplateSettings') result=await adapter.saveFullPromptTemplateSettings(args.sessionId,args.settings,args.expectedSettings)
    else throw new Error('Unknown method')

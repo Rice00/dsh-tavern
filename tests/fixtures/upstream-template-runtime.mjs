@@ -40,6 +40,7 @@ async function createRuntime() {
     renderInput: (text,context={}) => run('input',{text,context}),
     prepareWorldbook: (entries,context={}) => run('worldbook', {entries,context}),
     lifecycle: context => run('lifecycle', { context }),
+    history: (context,steps) => run('history',{context,steps}),
     command: (text, context={}) => run('command', { text, context }),
     render: (template, context = {}) => run('render', { template, context }),
     renderMessages: (messages, context = {}) => run('messages', { messages, context }),
@@ -76,6 +77,21 @@ const rpc=async(method,args)=>{
 try {
  current=snapshot();const settingsHtml=await fetch('${FULL_PROMPT_TEMPLATE_ASSET_PREFIX}settings.html').then(r=>r.text());
  plugin=await connectTemplateSession({sessionId:'fixture',rpc,settingsHtml,libraries:{yaml:YAML},services:createTemplateServices(()=>plugin?.context,rpc)});
- window.testProject=async(operation,input)=>{current=snapshot(input.context);await plugin.refresh();await plugin.emit('SETTINGS_LOADED');if(operation==='panel'){await plugin.emit('SETTINGS_LOADED');window.testPanel=createTemplatePanel({rpc,plugin,close:()=>{}});await window.testPanel.open();return true}if(operation==='lifecycle'){await plugin.synchronize();const first=structuredClone(current.state);await plugin.synchronize();return {first,second:structuredClone(current.state)}}return plugin.project(operation,input)};
+ window.testProject=async(operation,input)=>{current=snapshot(input.context);await plugin.refresh();await plugin.emit('SETTINGS_LOADED');if(operation==='history'){
+ const states=[];window.historyRenderCounts=[];let rendered=0;
+ const count=()=>rendered++;templateHost.eventSource.on('CHARACTER_MESSAGE_RENDERED',count);
+ await plugin.synchronize();states.push(structuredClone(current.state));window.historyRenderCounts.push(rendered);
+ for(const step of input.steps){
+  if(step.global)current.environment.extension_settings.variables.global=step.global;
+  if(step.settings)Object.assign(current.environment.extension_settings.EjsTemplate,step.settings);
+  if(step.append)current.state.chat.push(snapshot({transcript:[step.append]}).state.chat[0]);
+  if(step.edit){const row=current.state.chat[step.edit.index];row.mes=step.edit.text;row.swipes[row.swipe_id]=step.edit.text;}
+  if(step.length!==undefined)current.state.chat.length=step.length;
+  if(step.restore)current.state.chat=structuredClone(states[step.restore.from].chat);
+  await plugin.synchronize();states.push(structuredClone(current.state));window.historyRenderCounts.push(rendered);
+ }
+ templateHost.eventSource.removeListener('CHARACTER_MESSAGE_RENDERED',count);
+ return states;
+ }if(operation==='panel'){await plugin.emit('SETTINGS_LOADED');window.testPanel=createTemplatePanel({rpc,plugin,close:()=>{}});await window.testPanel.open();return true}if(operation==='lifecycle'){await plugin.synchronize();const first=structuredClone(current.state);await plugin.synchronize();return {first,second:structuredClone(current.state)}}return plugin.project(operation,input)};
 }catch(error){window.bootError=String(error.stack||error)}
 </script>`

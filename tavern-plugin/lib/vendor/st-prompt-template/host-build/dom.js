@@ -20,7 +20,8 @@ export function formatTemplateMessage(text, _name, isSystem = false, isUser = fa
 export function captureTemplateDisplay(message, index) {
   const html = templateMessageHTML(document.querySelector(`.mes[mesid="${index}"] .mes_text`))
   if (html === formatTemplateSource(message.mes)) return undefined
-  const root = document.createElement('div'); root.innerHTML = html
+  const parsed = document.createElement('template'); parsed.innerHTML = html
+  const root = parsed.content
   const parts = []
   const append = content => { if (content.trim()) parts.push({kind:'html',content}) }
   // Keep declared status panels and fenced HTML separate from surrounding prose.
@@ -30,12 +31,12 @@ export function captureTemplateDisplay(message, index) {
     const status = element.hasAttribute('data-dsh-template-status')
     const target = status ? element : element.parentElement
     const range = document.createRange(); range.setStart(root,0); range.setEndBefore(target)
-    const prefix = document.createElement('div'); prefix.append(range.extractContents()); append(prefix.innerHTML)
+    const prefix = document.createElement('template'); prefix.content.append(range.extractContents()); append(prefix.innerHTML)
     if (status) parts.push({kind:'html',content:element.innerHTML,statusRule:Number(element.getAttribute('data-dsh-template-status'))})
     else append(element.textContent)
     target.remove()
   }
-  append(root.innerHTML)
+  append(parsed.innerHTML)
   return {source:message.mes,swipe:message.swipe_id || 0,html,parts}
 }
 
@@ -75,14 +76,22 @@ function installMirrorFormatting() {
   html.templateMirror = true; window.$.fn.html = html
 }
 
-export function mountTemplateMessages() {
+export function mountTemplateMessages({renderIndices = new Set()} = {}) {
   let root = document.getElementById('chat')
   if (!root) { root = document.createElement('div'); root.id = 'chat'; root.hidden = true; document.body.append(root) }
-  root.replaceChildren()
+  while (root.children.length > chat.length) root.lastElementChild.remove()
   chat.forEach((message, index) => {
-    const row = document.createElement('div'); row.className = 'mes'; row.setAttribute('mesid', String(index))
-    const content = document.createElement('div'); content.className = 'mes_text'; content.innerHTML = inertMarkup(formatTemplateMessage(message.mes, message.name, message.is_system, message.is_user, index))
-    row.append(content); root.append(row)
+    const display = message.template_display
+    const saved = display?.source === message.mes && display.swipe === (message.swipe_id || 0) ? display.html : undefined
+    const source = saved ?? message.mes
+    let row = root.children[index]
+    if (!row) {
+      row = document.createElement('div'); row.className = 'mes'; row.setAttribute('mesid', String(index))
+      const content = document.createElement('div'); content.className = 'mes_text'; row.append(content); root.append(row)
+    }
+    if (!renderIndices.has(index) && row.templateSource === source && row.templateSwipe === (message.swipe_id || 0)) return
+    row.firstElementChild.innerHTML = inertMarkup(!renderIndices.has(index) && saved !== undefined ? saved : formatTemplateMessage(message.mes, message.name, message.is_system, message.is_user, index))
+    row.templateSource = source; row.templateSwipe = message.swipe_id || 0
   })
 }
 

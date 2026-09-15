@@ -1,3 +1,4 @@
+import { createFullPromptTemplateSync } from './full-prompt-template-sync.js'
 import { resourceSaveSummary, observeResourceSave } from './resource-save-summary.js'
 import { projectFullPromptTemplateState, applyFullPromptTemplateState, validateFullPromptTemplateSave } from './full-prompt-template-state.js'
 import { mutateScriptPrompts } from './tavern-script-prompts.js'
@@ -35,6 +36,7 @@ const MVU_RETRY_AFTER_MS = 3100
  * of dsh-tavern's authoritative chat and worldbook state.
  */
 export function createTavernScriptHostAdapter(options = {}) {
+  const syncTemplateState = createFullPromptTemplateSync()
   const mutationTails = new Map()
   const settlementTransactions = new Map()
 
@@ -319,7 +321,7 @@ export function createTavernScriptHostAdapter(options = {}) {
     if (!chat || !['story', 'script'].includes(chat.mode) || (typeof options.isPlayChat === 'function' && !options.isPlayChat(chat))) throw new Error('当前会话没有绑定游玩对话')
   }
 
-  async function readFullPromptTemplateState(sessionId) {
+  async function readFullPromptTemplateState(sessionId, cursor) {
     const chat = await resolveChat(sessionId)
     assertTemplateChat(chat)
     const card = await options.readCard(chat)
@@ -330,14 +332,14 @@ export function createTavernScriptHostAdapter(options = {}) {
     extensionSettings.variables = { ...extensionSettings.variables, global: options.globalVariables ? await options.globalVariables.read() : {} }
     if (!Array.isArray(extensionSettings.regex)) extensionSettings.regex = []
     const character = { ...card, data: { ...card, extensions: { ...card.extensions, ...(worldName ? { world: worldName } : {}) } } }
-    return {
+    return syncTemplateState({
       state: projectFullPromptTemplateState(chat),
       environment: { characters: [character], name1: str(chat.macroState?.userName) || '你', name2: str(card.name),
         this_chid: '0', extension_settings: extensionSettings,
         world_names: worldName ? [worldName] : [], selected_world_info: [],
         worldbooks: worldName && book ? { [worldName]: book } : {},
         dsh: { settling: settlementTransactions.has(str(sessionId)) || ['pending', 'running'].includes(chat.settleStatus), cardPath: chat.cardPath, model: options.modelFor ? await options.modelFor(chat) : chat.model?.model || chat.model || '', regexScripts: card.extensions?.regex_scripts || [] } }
-    }
+    }, cursor)
   }
 
   async function saveFullPromptTemplateGlobals(sessionId, variables, expectedVariables) {

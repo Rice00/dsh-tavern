@@ -19,11 +19,38 @@ export function reconcileTemplateReceipt(current, submitted, saved) {
   if(unchangedArray) current.length=saved.length
 }
 
+function applyFields(previous, patch) {
+  const next = {...previous, ...patch.set}
+  for (const key of patch.remove) delete next[key]
+  return next
+}
+export function applyTemplateSync(previous, result) {
+  if (!result.delta) return result
+  if (!previous?.cursor || result.baseCursor !== previous.cursor) throw new Error('Template sync cursor mismatch')
+  const chat = previous.state.chat.slice(0, result.delta.chat.length)
+  for (const [index, row] of result.delta.chat.set) chat[index] = row
+  return { cursor: result.cursor, state: {...applyFields(previous.state, result.delta.state), chat},
+    environment: applyFields(previous.environment, result.delta.environment) }
+}
+
+// Upstream may mutate its context. Reconcile from the transport snapshot without
+// cloning unchanged historical rows or letting local writes corrupt the cursor.
+function restoreSnapshot(target, source) {
+  for (const key of Object.keys(target)) if (!own(source,key)) delete target[key]
+  for (const [key,value] of Object.entries(source)) {
+    if (same(target[key],value)) continue
+    if (Array.isArray(target[key]) && Array.isArray(value)) {
+      value.forEach((row,index) => { if (!same(target[key][index],row)) target[key][index]=clone(row) })
+      target[key].length=value.length
+    } else target[key]=clone(value)
+  }
+}
+
 export async function createNativeTemplateConnection({ sessionId, rpc, services = {}, settingsHtml }) {
   let initial=await rpc('getFullPromptTemplateState',{sessionId})
   let baseline=clone(initial.state), settingsBaseline=clone(initial.environment.extension_settings.EjsTemplate)
   let globalBaseline=clone(initial.environment.extension_settings.variables?.global)
-  const snapshot={...initial.state,...initial.environment}
+  const snapshot=clone({...initial.state,...initial.environment})
   let saves=Promise.resolve(), latest=saves
   function enqueue(operation) { const next=saves.then(operation); latest=next; saves=next.catch(error=>{ if(services.onPersistenceError) services.onPersistenceError(error); else console.error('Template persistence failed',error) }); return next }
   async function saveGlobals(settings) {
@@ -63,11 +90,11 @@ export async function createNativeTemplateConnection({ sessionId, rpc, services 
   }
   return {snapshot,callbacks,flush:()=>latest,async refresh() {
     await latest
-    initial=await rpc('getFullPromptTemplateState',{sessionId})
-    baseline=clone(initial.state)
+    initial=applyTemplateSync(initial,await rpc('getFullPromptTemplateState',{sessionId,cursor:initial.cursor}))
+    baseline=initial.state
     settingsBaseline=clone(initial.environment.extension_settings.EjsTemplate)
     globalBaseline=clone(initial.environment.extension_settings.variables?.global)
-    Object.assign(snapshot,clone(initial.state),clone(initial.environment))
+    restoreSnapshot(snapshot,{...initial.state,...initial.environment})
     return snapshot
   }}
 }

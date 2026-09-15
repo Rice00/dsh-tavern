@@ -86,7 +86,7 @@ test('浏览器连接使用实际宿主接口保存设置与变量，回执推�
   const {adapter,open}=await fixture(t)
   const rpc=async(method,args)=>{
     if(method==='saveFullPromptTemplateGlobals') return adapter.saveFullPromptTemplateGlobals(args.sessionId,args.variables,args.expectedVariables)
-    if(method==='getFullPromptTemplateState') return adapter.readFullPromptTemplateState(args.sessionId)
+    if(method==='getFullPromptTemplateState') return adapter.readFullPromptTemplateState(args.sessionId,args.cursor)
     if(method==='saveFullPromptTemplateState') return adapter.saveFullPromptTemplateState(args.sessionId,args.state)
     if(method==='saveFullPromptTemplateSettings') return adapter.saveFullPromptTemplateSettings(args.sessionId,args.settings,args.expectedSettings)
     throw new Error('unexpected method')
@@ -163,7 +163,7 @@ test('无变化的模板保存不写完整聊天，变量变化只提交一次',
   const {adapter}=await fixture(t)
   let writes=0
   const connection=await createNativeTemplateConnection({sessionId:'session',rpc:async(method,args)=>{
-    if(method==='getFullPromptTemplateState') return adapter.readFullPromptTemplateState(args.sessionId)
+    if(method==='getFullPromptTemplateState') return adapter.readFullPromptTemplateState(args.sessionId,args.cursor)
     if(method==='saveFullPromptTemplateGlobals') return adapter.saveFullPromptTemplateGlobals(args.sessionId,args.variables,args.expectedVariables)
     if(method==='saveFullPromptTemplateState') { writes++;return adapter.saveFullPromptTemplateState(args.sessionId,args.state) }
     throw new Error(method)
@@ -177,4 +177,41 @@ test('无变化的模板保存不写完整聊天，变量变化只提交一次',
   await connection.callbacks.saveChatConditional(state)
   assert.equal(writes,1)
   assert.equal((await adapter.readFullPromptTemplateState('session')).state.chat[0].variables[0].hp,27)
+})
+
+
+test('增量同步经过原生 journal：追加、变量写入、回退、全局配置及过期游标恢复',async t=>{
+  const {adapter,persistence}=await fixture(t)
+  const responses=[]
+  const connection=await createNativeTemplateConnection({sessionId:'session',rpc:async(method,args)=>{
+    if(method==='getFullPromptTemplateState') {const result=await adapter.readFullPromptTemplateState(args.sessionId,args.cursor);responses.push(structuredClone(result));return result}
+    if(method==='saveFullPromptTemplateGlobals') return adapter.saveFullPromptTemplateGlobals(args.sessionId,args.variables,args.expectedVariables)
+    if(method==='saveFullPromptTemplateState') return adapter.saveFullPromptTemplateState(args.sessionId,args.state)
+    throw new Error(method)
+  }})
+  const first=structuredClone(connection.snapshot.chat[0])
+  await connection.refresh()
+  assert.deepEqual(responses.at(-1).delta.chat.set,[])
+  await persistence.update('chat',chat=>{chat.messages.push({role:'user',text:'新动作',variables:[{hp:10}]});return chat})
+  await connection.refresh()
+  assert.deepEqual(responses.at(-1).delta.chat.set.map(([i])=>i),[1])
+  assert.deepEqual(connection.snapshot.chat[0],first)
+  connection.snapshot.chat[1].variables[0].hp=13
+  await connection.callbacks.saveChatConditional(connection.snapshot)
+  await connection.refresh()
+  assert.equal(connection.snapshot.chat[1].variables[0].hp,13)
+  const before=await adapter.readFullPromptTemplateState('session')
+  await adapter.saveFullPromptTemplateGlobals('session',{live:9},before.environment.extension_settings.variables.global)
+  await connection.refresh()
+  assert.equal(connection.snapshot.extension_settings.variables.global.live,9)
+  assert.deepEqual(responses.at(-1).delta.chat.set,[])
+  await persistence.update('chat',chat=>{chat.messages.length=1;chat.tavernHelperLifecycleRevision++;return chat})
+  await connection.refresh()
+  assert.equal(connection.snapshot.chat.length,1)
+  assert.deepEqual(connection.snapshot.chat[0],first)
+  // Other readers can evict our fingerprint; recovery must still be exact.
+  for(let i=0;i<33;i++)await adapter.readFullPromptTemplateState('session')
+  await connection.refresh()
+  assert.ok(responses.at(-1).state)
+  assert.deepEqual(connection.snapshot.chat[0],first)
 })

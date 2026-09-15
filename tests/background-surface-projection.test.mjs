@@ -26,3 +26,12 @@ test('reset reuses the session and retains its fixed prefix while removing task 
   assert.equal(rewindBackgroundSurface(session, -1), 2)
   assert.deepEqual(replacement, { op: 'replace', start: 1, end: 2 })
 })
+
+test('large background history scans event sequences once instead of once per rollback',()=>{
+ let reads=0
+ const events=Array.from({length:31564},(_,seq)=>({get seq(){reads++;return seq},type:'tool/call',data:{turn:Math.floor(seq/100)+1}}))
+ for(let i=0;i<249;i++)events.push({seq:31564+i,type:'assistant/message',data:{message:{content:[]}},surfaceOp:{op:'replace',startSeq:i*100,endSeq:i*100+99}})
+ const result=backgroundSuppressedTurns(events)
+ assert.equal(result.length,249)
+ assert.ok(reads<31564*4,`sequence inspected ${reads} times`)
+})

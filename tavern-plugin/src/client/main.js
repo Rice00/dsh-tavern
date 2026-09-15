@@ -9215,24 +9215,19 @@ window.__ModuleLoader__.load({
 			}, [props.sessionId, revision]);
 			return React.createElement("span", { ref: marker, hidden: true, "data-tavern-error-projection": props.sessionId });
 		}
+		// @include background-suppression.js
+		const pollBackgroundSuppression = createBackgroundSuppressionPoller(rpc);
 		function TurnHistoryProjection(props) {
 			const running = props.useSession(function (snapshot) { return snapshot.running; });
 			const latestMessageId = props.useChat(latestTavernAssistantMessageId);
 			const suppressionState = useLiveTavernView(props.sessionId, "suppression:" + String(latestMessageId || "") + ":" + String(running));
 			const [backgroundTurns, setBackgroundTurns] = React.useState([]);
+			React.useEffect(function () { setBackgroundTurns([]); }, [props.sessionId]);
 			React.useEffect(function () {
-				let disposed = false;
-				setBackgroundTurns([]);
 				if (!String(props.sessionId || "").startsWith("background-")) return;
-				async function refresh() {
-					try {
-						const result = await rpc("getBackgroundSuppressedTurns", { sessionId: props.sessionId });
-						if (!disposed) setBackgroundTurns(result.turns || []);
-					} catch (error) { console.warn("后台回退显示刷新失败", error); }
-				}
-				refresh();
-				const timer = window.setInterval(refresh, 3000);
-				return function () { disposed = true; window.clearInterval(timer); };
+				return pollBackgroundSuppression(props.sessionId, running,
+					result => setBackgroundTurns(result.turns || []),
+					error => console.warn("后台回退显示刷新失败", error));
 			}, [props.sessionId, latestMessageId, running]);
 			const foregroundTurns = suppressionState.view && Array.isArray(suppressionState.view.suppressedDshTurns) ? suppressionState.view.suppressedDshTurns : [];
 			const suppressedDshTurns = foregroundTurns.concat(backgroundTurns);

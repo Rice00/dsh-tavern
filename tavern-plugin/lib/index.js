@@ -19,7 +19,7 @@ import { resolveAgentCompaction } from './agent-compaction.js'
 import { createAutoCompaction, installCompactionPolicy } from './domain/auto-compaction.js'
 import { observeHttpRequests } from './domain/http-performance-diagnostics.js'
 import { createPerformanceDiagnostics } from './domain/performance-diagnostics.js'
-import { backgroundSuppressedTurns } from './domain/background-surface.js'
+import { createBackgroundSuppressionReader } from './domain/background-surface.js'
 import { ensureCardWorkspaceMessage } from './domain/card-workspace-message.js'
 import { createPromptTemplateGlobalVariables } from './domain/prompt-template-global-variables.js'
 import { FULL_PROMPT_TEMPLATE_ASSET_PREFIX, readFullPromptTemplateAsset, fullPromptTemplateRuntimeInfo } from './domain/full-prompt-template-assets.js'
@@ -1215,7 +1215,7 @@ export async function apply(ctx) {
     isPlayChat: function (chat) { return groupOfMode(chat.mode) === 'play' }
   })
 
-  function sessionDebugEvidence(sessionId) {
+  function sessionDebugEvidence(sessionId, includeSession = false) {
     const id = str(sessionId)
     if (id === '') return { sessionId: '', loaded: false, events: [] }
     let session = null
@@ -1229,8 +1229,10 @@ export async function apply(ctx) {
         session = agent && agent.session
       } catch {}
     }
-    return { sessionId: id, loaded: Boolean(session && (typeof session.snapshotEvents === 'function' || Array.isArray(session.events))), events: sessionEvents(session) }
+    return { sessionId: id, loaded: Boolean(session && (typeof session.snapshotEvents === 'function' || Array.isArray(session.events))), events: sessionEvents(session), ...(includeSession ? {session} : {}) }
   }
+
+  const readBackgroundSuppression = createBackgroundSuppressionReader(id => sessionDebugEvidence(id, true))
 
   // ---------- 聊天 ----------
   function cardViewOf(card, chat) {
@@ -3012,11 +3014,7 @@ export async function apply(ctx) {
       case 'getBackgroundSuppressedTurns': {
         const id = str(args && args.sessionId)
         if (!id.startsWith('background-')) return { turns: [] }
-        const evidence = sessionDebugEvidence(id)
-        if (evidence.loaded) return { turns: backgroundSuppressedTurns(evidence.events) }
-        const handle = await agentRegistry.resume({ resumeSessionId: id })
-        try { return { turns: backgroundSuppressedTurns(sessionEvents(handle.agent.session)) } }
-        finally { await handle.dispose() }
+        return readBackgroundSuppression(id)
       }
       case 'applyUpdatedCard': {
         const sessionId = str(args && args.sessionId)

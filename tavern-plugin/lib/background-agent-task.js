@@ -37,7 +37,7 @@ function backgroundPrompt(messages, turnContext, task, taskProtocol, input = {})
       : (message && message.role === 'assistant' ? '正文' : '用户')
     return '[' + role + ']\n' + messageText(message)
   }).filter(function (text) { return text.trim() !== '' }).join('\n\n')
-  const taskName = task === 'image' ? '场景生图' : task === 'settlement' ? '状态结算' : task === 'phone' ? '手机私聊' : '候选生成'
+  const taskName = task === 'worldbook-filter' ? '世界书筛选原型' : task === 'image' ? '场景生图' : task === 'settlement' ? '状态结算' : task === 'phone' ? '手机私聊' : '候选生成'
   sections.push('【最近剧情与本次任务】\n任务类型：' + taskName + '\n' + recent)
   const protocol = str(taskProtocol).trim()
   if (protocol !== '') sections.push('【DSH 后台任务协议（最终指令）】\n' + protocol)
@@ -195,6 +195,8 @@ export function createBackgroundAgentTask(options) {
         for (const dispose of state.stableToolDisposers || []) dispose()
         state.configuredToolsKey = key
         state.stableToolDisposers = stableBackgroundTools.filter(function (tool) {
+          if (state.input.task === 'worldbook-filter') return tool.name.startsWith('worldbook_')
+          if (tool.name.startsWith('worldbook_')) return false
           const tasks = state.input.backgroundTasksSnapshot
           if (tool.name === 'ledger_submit') return false // Retired, including legacy task snapshots.
           if (!tasks) return true
@@ -226,6 +228,7 @@ export function createBackgroundAgentTask(options) {
         const input = state.input || {}
         const inherited = await next()
         const { maxTokens: _oldLimit, ...request } = inherited
+        if (input.task === 'worldbook-filter' && request.tools) request.tools = request.tools.filter(tool => ['worldbook_candidate_read', 'worldbook_filter_submit'].includes(tool.name))
         const limit = Number.isSafeInteger(input.maxTokens) && input.maxTokens > 0 ? input.maxTokens : maximumBackgroundTokens(input.selection)
         if (limit !== undefined) request.maxTokens = limit
         const temperature = state.characterDesignStage
@@ -261,7 +264,7 @@ export function createBackgroundAgentTask(options) {
     if (stableBackgroundTools.length > 0 && input.task !== 'image') {
       state.activeToolTask = {
         async execute(tool, args, execution) {
-          const shared = sharedByName.get(tool.name)
+          const shared = input.task === 'worldbook-filter' ? undefined : sharedByName.get(tool.name)
           const current = allowed.get(tool.name) || (shared && shared.tool)
           if (current === undefined) {
             return JSON.stringify({

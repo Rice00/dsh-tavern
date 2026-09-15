@@ -4,7 +4,7 @@ import { isMvuUpdateEntry } from './worldbook-recall.js'
 import { prepareWorldBookRecall, projectWorldBookTemplates } from './worldbook-recall.js'
 
 /** One request uses one bound-book snapshot for both selection and rendering. */
-export function createForegroundWorldbook({ bound, runtime, globalVariables, scanText = () => '' }) {
+export function createForegroundWorldbook({ bound, runtime, globalVariables, scanText = () => '', filterCandidates }) {
   return async function project({ chat, card, userText, userTextInHistory = false, worldBook: snapshot }) {
     try {
       const worldBook = snapshot || await bound(chat.cardPath, card, chat)
@@ -20,6 +20,8 @@ export function createForegroundWorldbook({ bound, runtime, globalVariables, sca
       const templateRuntime = await runtime(), globals = await globalVariables()
       let activationRequests = [], recalled, projected
       const tokenCosts = {}
+      let screeningDone = !filterCandidates, screening, allowedRefs
+      const protectedRefs = () => new Set(activationRequests.flatMap(request => [request.ref, request.sourceRef]))
       // Rebuild from the same snapshot and original scopes; speculative passes never mutate Chat.
       // Only requests from controllers still selected survive to the next pass.
       const randomValues = []
@@ -28,7 +30,7 @@ export function createForegroundWorldbook({ bound, runtime, globalVariables, sca
         let randomIndex = 0
         const random = () => { const index = randomIndex++; return randomValues[index] ?? (randomValues[index] = Math.random()) }
         recalled = prepareWorldBookRecall({ worldBook, chat: { ...chat, worldBookReads: reads }, card, turn, userText, userTextInHistory,
-          scanText: scanText(chat), activationRequests, random, tokenCosts, ignoreBudget: pass === 0 })
+          scanText: scanText(chat), activationRequests, random, tokenCosts, ignoreBudget: pass === 0 || !screeningDone, allowedRefs, protectedRefs: protectedRefs() })
         projected = projectWorldBookTemplates({ worldBook, selectedEntries: recalled.entries || [], includeConstants: true,
           runtime: templateRuntime, globalVariables: globals, chat, card, activationRequests, random })
         let costsChanged = false
@@ -40,7 +42,21 @@ export function createForegroundWorldbook({ bound, runtime, globalVariables, sca
         }
         const next = projected.activationRequests || []
         const key = requests => JSON.stringify(requests.map(request => [request.sourceRef, request.ref, request.force]).sort())
-        if (pass > 0 && !costsChanged && key(next) === key(activationRequests)) { converged = true; break }
+        if (pass > 0 && !costsChanged && key(next) === key(activationRequests)) {
+          if (!screeningDone) {
+            const protectedSet = protectedRefs()
+            const candidates = (recalled.entries || []).filter(entry => !entry.constant && !protectedSet.has(entry.ref) && tokenCosts[entry.ref] > 0).map(entry => ({
+              ref: entry.ref, title: entry.title || entry.comment, tokenCost: tokenCosts[entry.ref],
+              text: projected.renderedEntries.find(output => output.ref === entry.ref).text,
+              match: recalled.diagnostics.find(item => item.ref === entry.ref)?.match
+            }))
+            screening = await filterCandidates({ chat, card, userText, candidates })
+            allowedRefs = new Set(screening.selected)
+            screeningDone = true
+            continue
+          }
+          converged = true; break
+        }
         activationRequests = next
       }
       if (!converged) throw new Error('世界书脚本激活未在 16 次投影内收敛')
@@ -60,7 +76,7 @@ export function createForegroundWorldbook({ bound, runtime, globalVariables, sca
         return { ...entry, outputOrder: outputIndex >= 0 ? outputIndex + 1 : null,
           rendering: outputIndex >= 0 ? 'rendered' : failure ? failure.code : entry.reason === 'selected' ? 'empty-output' : 'not-selected' }
       })
-      const log = { settings: { ...recalled.settings, cooldownTurns: 10 }, budget: recalled.budget, scanSources: recalled.scanSources || [],
+      const log = { settings: { ...recalled.settings, cooldownTurns: 10 }, budget: recalled.budget, screening, scanSources: recalled.scanSources || [],
         counts: entries.reduce((result, entry) => { result[entry.reason] = (result[entry.reason] || 0) + 1; return result }, {}), entries, outputs,
         dynamicRefs: accepted, activationRequests, templateDiagnostics: projected.diagnostics }
       return { ...projected, log, context: projected.foregroundContext, refs: accepted, reads: nextReads,

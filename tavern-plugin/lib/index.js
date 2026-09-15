@@ -1,3 +1,4 @@
+import { createWorldbookFilterPrototype, WORLD_BOOK_FILTER_TOOLS } from './domain/worldbook-filter-prototype.js'
 import { adoptConversationFeatures, adoptConversationBackground, patchConversationBackground } from './domain/conversation-background.js'
 import { clearLegacyTavernDefault } from './domain/legacy-agent-default.js'
 import { conversationStateAtTurn, conversationForkBoundary } from './domain/conversation-fork-point.js'
@@ -1537,7 +1538,8 @@ export async function apply(ctx) {
     bound: (...args) => worldBooks.bound(...args),
     runtime: promptTemplateRuntime,
     globalVariables: readPromptTemplateGlobalVariables,
-    scanText: scriptPromptScanText
+    scanText: scriptPromptScanText,
+    filterCandidates: input => worldbookFilterPrototype(input)
   })
   const chatHistoryImporter = createChatHistoryImportService({
     projectWorldBookTemplates: nativeWorldBookTemplateContext,
@@ -1585,7 +1587,7 @@ export async function apply(ctx) {
     resolveModelSelection: async input => backgroundModelSelection(await chatForSession(input.sessionId)) || input.selection,
     resolveWebSearch: async input => (await chatForSession(input.sessionId))?.webSearchEnabled === true,
     resolveBackgroundTasks: async input => input.backgroundTasks || normalizeBackgroundTasks((await chatForSession(input.sessionId))?.backgroundTasks),
-    backgroundTools: [POSTURE_SUBMIT_TOOL, CHARACTER_DESIGN_READ_TOOL, CHARACTER_DESIGN_SAVE_TOOL, MVU_SUBMIT_UPDATE_TOOL, CANDIDATE_SUBMIT_TOOL, SCRIPT_READ_TOOL, SCRIPT_POINT_TOOL],
+    backgroundTools: [...WORLD_BOOK_FILTER_TOOLS, POSTURE_SUBMIT_TOOL, CHARACTER_DESIGN_READ_TOOL, CHARACTER_DESIGN_SAVE_TOOL, MVU_SUBMIT_UPDATE_TOOL, CANDIDATE_SUBMIT_TOOL, SCRIPT_READ_TOOL, SCRIPT_POINT_TOOL],
     sharedTools: [{
       tool: HISTORY_RECALL_TOOL,
       async execute({ input, args }) {
@@ -1600,12 +1602,14 @@ export async function apply(ctx) {
       return chat?.timeline?.participants?.background?.status === 'needs-session'
     },
     resolveCurrentWorldbook: async function (input) {
+      if (input.task === 'worldbook-filter') return ''
       if (input.task === 'image') return undefined
       const chat = await chatForSession(input.sessionId)
       return chat ? (await nativeWorldBookTemplateContext(chat, await readChatCard(chat))).context : undefined
     },
     resolveStablePrefixRevision: async input => Number((await chatForSession(input.sessionId))?.cardContextRevision) || 0,
     resolveStablePrefix: async function (input) {
+      if (input.task === 'worldbook-filter') return ''
       // Image tasks share the opening snapshot; current-worldbook replacement stays disabled above
       // because a requested illustration may target an earlier story turn.
       const chat = await chatForSession(input.sessionId)
@@ -1634,6 +1638,7 @@ export async function apply(ctx) {
       })
     }
   })
+  const worldbookFilterPrototype = createWorldbookFilterPrototype({ runAgent: input => backgroundAgentRunner.run(input), selection: backgroundModelSelection })
   const characterDesignDocuments = createCharacterDesignDocumentTools({
     store: { readChat, updateChat },
     now: Date.now

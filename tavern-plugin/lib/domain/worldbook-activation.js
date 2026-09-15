@@ -221,6 +221,7 @@ export function activateWorldBook(input) {
         reject(entry, 'matched', { match, stage: iteration ? 'recursion' : 'initial', recursionLevel: level, scanSources: sourcesFor(entry).map(({ text, ...source }) => ({ ...source, chars: text.length })) })
         if (!match.matched) { reject(entry, 'keywords'); continue }
       }
+      if (!entry.constant && input.allowedRefs && !input.allowedRefs.has(entry.ref) && !input.protectedRefs?.has(entry.ref)) { reject(entry, 'semantic'); continue }
       candidates.push(entry)
     }
     const winners = filterGroups(candidates, activated, textFor, random, (entry, reason, extra) => {

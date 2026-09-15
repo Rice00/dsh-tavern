@@ -2131,6 +2131,10 @@ export async function apply(ctx) {
           text = str(mvuResult.text) || JSON.stringify({ posture: mvuResult.posture })
           backgroundSessionId = str(mvuResult.traceSessionId) || backgroundSessionId
           backgroundBoundary = Number.isSafeInteger(mvuResult.traceBoundary) ? mvuResult.traceBoundary : null
+          if (mvuResult.receipt?.status === 'pending') {
+            const runtimeState = tavernScriptDispatch.status(snapshot.sessionId)
+            throw new Error(runtimeState.initializationError || 'MVU 变量执行器连接中断，本轮变量未更新。请刷新酒馆页面，待加载完成后点击“重试变量结算”。')
+          }
           if (['error', 'partial'].includes(mvuResult.receipt?.status)) {
             const error = new Error(mvuResult.receipt.summary || mvuResult.receipt.failures?.[0]?.message || '变量结算失败，请重试结算')
             error.mvuReceipt = mvuResult.receipt
@@ -2206,7 +2210,6 @@ export async function apply(ctx) {
         }
         signal?.throwIfAborted()
         let stat = { postureUpdated: false }
-        const waitingRuntime = Boolean(mvuResult && mvuResult.receipt && mvuResult.receipt.status === 'pending')
         const completion = {
           stateChanged: Boolean(mvuResult?.effect?.changes?.length) || Boolean(mvuResult && mvuResult.receipt && mvuResult.receipt.status === 'updated') ||
             str(result && result.posture).trim() !== '',
@@ -2224,36 +2227,25 @@ export async function apply(ctx) {
               const target = draft.messages[mvuTarget.messageId]
               if (target && target.role === 'assistant' && Math.max(0, Number(target.swipeId) || 0) === mvuTarget.swipeId) {
                 const receipt = structuredClone(mvuResult.receipt)
-                const waitingRuntime = receipt.status === 'pending'
                 target.mvu = {
-                  pending: waitingRuntime,
-                  ...(waitingRuntime ? { variableRetry, guidance: mvuTarget.message.mvu.guidance || '' } : {}),
+                  pending: false,
                   modified: receipt.status === 'updated',
                   diagnostics: receipt.status === 'stale' ? [{ message: receipt.summary }] : [],
                   events: receipt.status === 'stale' ? [] : ['MESSAGE_RECEIVED'],
-                  receipt,
-                  ...(waitingRuntime ? { pendingSubmission: structuredClone(mvuResult.submission) } : {})
+                  receipt
                 }
               }
             }
-            draft.settleStatus = waitingRuntime ? 'waiting-runtime' : 'done'
+            draft.settleStatus = 'done'
             draft.settleError = null
             draft.lastSettle = { ts: Date.now(), posture: stat.postureUpdated, raw: text.slice(0, 200) }
           }
         }
-        const completed = waitingRuntime ? await taskRun.defer(completion) : await taskRun.commit(completion)
+        const completed = await taskRun.commit(completion)
         if (completed.status === 'missing') return
         if (completed.status === 'stale') {
           const activity = backgroundTasks.activity(completed.chat)
           if (activity.role === 'settlement' && (activity.phase === 'pending' || activity.phase === 'running')) continue
-          return
-        }
-        if (completed.status === 'deferred') {
-          // Initialization may settle while the pending submission is being saved.
-          // Recheck here so a ready/failure notification cannot be lost in that gap.
-          const runtimeState = tavernScriptDispatch.status(snapshot.sessionId)
-          if (runtimeState.ready || runtimeState.initializationError) continue
-          console.log('dsh-tavern: 变量结算等待 MVU 运行时接续', chatId)
           return
         }
         console.log('dsh-tavern: 结算完成', chatId, '姿势', stat.postureUpdated ? '已更新' : '未更新')
@@ -2323,8 +2315,8 @@ export async function apply(ctx) {
         && backgroundTasks.activity(chat).phase === 'pending')
     },
     isReady: function (sessionId) {
-      const state = tavernScriptDispatch.status(sessionId)
-      return state.ready || Boolean(state.initializationError)
+      // Legacy deferred submissions must also leave pending when the executor is offline.
+      return true
     },
     resume: chatId => queueSettlement(chatId),
     onError: function (error) {

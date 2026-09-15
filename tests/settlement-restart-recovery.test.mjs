@@ -219,7 +219,7 @@ test('执行中断即使留有旧提交也不会在浏览器就绪时自动重�
   assert.equal(run.tasks.activity(run.get()).reason, 'interrupted')
 })
 
-test('保存 pending 期间 MVU 已加载失败，不丢失通知或永久等待，也不重开模型', async () => {
+test('MVU 已加载失败直接结束，不永久等待或重开模型', async () => {
   const run = await harness()
   await run.tasks.recover(run.get())
   let generated = 0, resumed = 0
@@ -235,7 +235,7 @@ test('保存 pending 期间 MVU 已加载失败，不丢失通知或永久等待
   await run.sandbox.retrySettlement('session', 2)
   await run.sandbox.queueSettlement('chat')
   assert.equal(generated, 1)
-  assert.equal(resumed, 1)
+  assert.equal(resumed, 0)
   assert.equal(run.tasks.activity(run.get()).phase, 'failed')
   assert.match(run.get().settleError, /MVU 模块加载失败/)
   assert.equal(run.get().timeline.checkpoints.length, 1)
@@ -378,4 +378,37 @@ test('成功后带意见重新结算：复用原始快照，只更新变量，�
   assert.equal(run.get().messages[1].text, '门开了')
   assert.equal(run.get().settleStatus, 'done')
   await assert.rejects(run.sandbox.retrySettlement('session', 1), /只能重试当前最新正文/)
+})
+
+test('MVU 执行器失联结束为失败，正文与变量保留，用户可重新结算', async () => {
+  const run = await harness({ beginRunning: false })
+  const before = run.get().messages[1]
+  run.sandbox.tavernScriptDispatch.status = () => ({ ready: false })
+  run.sandbox.mvuSettlement.settleVariables = async () => ({
+    submission: { operations: [] }, receipt: { status: 'pending', changes: [] }
+  })
+  await run.sandbox.queueSettlement('chat')
+  const failed = run.get()
+  assert.equal(failed.settleStatus, 'failed')
+  assert.equal(failed.messages[1].mvu.pending, false)
+  assert.equal(failed.messages[1].text, before.text)
+  assert.deepEqual(failed.messages[1].variables, before.variables)
+  assert.equal(run.tasks.activity(failed).phase, 'failed')
+  assert.match(failed.settleError, /重试变量结算/)
+  run.sandbox.mvuSettlement.settleVariables = async () => ({ receipt: { status: 'unchanged', changes: [] } })
+  await run.sandbox.retrySettlement('session', 2)
+  await run.sandbox.queueSettlement('chat')
+  assert.equal(run.get().settleStatus, 'done')
+})
+
+test('旧版挂起任务在执行器离线时也退出等待并允许手动重试', async () => {
+  const run = await harness()
+  await run.running.defer({ apply(chat) { chat.messages[1].mvu.pendingSubmission = { operations: [] } } })
+  run.sandbox.tavernScriptDispatch.status = () => ({ ready: false })
+  run.sandbox.mvuSettlement.resumeVariables = async () => ({ receipt: { status: 'pending', changes: [] } })
+  run.onReady('session')
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(run.get().settleStatus, 'failed')
+  assert.equal(run.get().messages[1].mvu.pending, false)
+  assert.equal(run.get().messages[1].mvu.pendingSubmission, undefined)
 })

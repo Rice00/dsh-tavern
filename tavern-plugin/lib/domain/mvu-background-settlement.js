@@ -514,7 +514,7 @@ export function createMvuSettlementModule(options = {}) {
       }
       if (applied.applied.deferred === true) {
         await record('deferred')
-        feedback = { ok: false, retryable: false, deferred: true, error: '本地 MVU 执行器暂时不可用，已保存本次结算，恢复后自动继续。' }
+        feedback = { ok: false, retryable: false, deferred: true, error: '本地 MVU 执行器暂时不可用，本轮变量未更新，请恢复页面连接后手动重试变量结算。' }
         result = { variables: clone(input.currentVariables), submission,
           receipt: { version: 1, status: 'pending', summary: '等待本地 MVU 执行器恢复', diagnosticId, changes: [], sideEffects: [], failures: [] } }
         return JSON.stringify(feedback)

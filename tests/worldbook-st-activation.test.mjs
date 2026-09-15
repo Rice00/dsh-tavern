@@ -100,3 +100,17 @@ test('失败的绿灯 EJS 不泄露源码、不消耗冷却；脚本扫描与玩
   assert.doesNotMatch(result.context, /<%/)
   assert.equal(result.diagnostics[0].code, 'syntax-error')
 })
+
+test('开场白不触发关键词，当前输入和后续正文仍触发', () => {
+  const entries = [e(0, '武当'), e(1, '少林'), e(2, '', { constant: true })]
+  const chat = { messages: [{ role: 'assistant', greeting: true, text: '武当、少林任选出身' }] }
+  const before = JSON.stringify(chat)
+  const opening = recall(entries, { chat })
+  assert.deepEqual(opening.refs, [])
+  assert.ok(opening.entries.some(entry => entry.constant))
+  assert.deepEqual(opening.scanSources, [])
+  assert.deepEqual(recall(entries, { chat, userText: '去少林' }).refs, ['entry:1'])
+  assert.equal(JSON.stringify(chat), before)
+  chat.messages.push({ role: 'user', text: '继续' }, { role: 'assistant', text: '武当来客到了' })
+  assert.deepEqual(recall(entries, { chat }).refs, ['entry:0'])
+})

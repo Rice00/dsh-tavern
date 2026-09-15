@@ -108,7 +108,7 @@ function keywordEvaluation(entry, body, sources) {
 function scanMessages(input) {
   const messages = (input.chat?.messages || []).map((message, messageIndex) => ({ ...message, messageIndex }))
     .filter(message => ['user', 'assistant'].includes(message?.role))
-    .map(message => ({ text: str(message.sourceText || message.text), source: 'history', messageIndex: message.messageIndex, role: message.role, turn: message.turn }))
+    .map(message => ({ text: str(message.sourceText || message.text), source: 'history', messageIndex: message.messageIndex, role: message.role, turn: message.turn, greeting: message.greeting === true }))
   if (input.latestBody !== undefined) {
     const last = messages.length - 1
     const source = { text: str(input.latestBody), source: 'latest-body', role: 'assistant' }
@@ -116,7 +116,9 @@ function scanMessages(input) {
     else messages.push(source)
   }
   if (!input.userTextInHistory && str(input.userText).trim()) messages.push({ text: str(input.userText), source: 'current-input', role: 'user' })
-  return messages.reverse()
+  // Greetings often contain setup menus and initial variables, not the active scene.
+  // Filter after latestBody replacement so that legacy previews cannot reintroduce them.
+  return messages.filter(message => !message.greeting).map(({ greeting, ...source }) => source).reverse()
 }
 function groupNames(entry) { return str(entry.group).split(/,\s*/).map(value => value.trim()).filter(Boolean) }
 function option(entry, key, fallback) { return entry[key] ?? entry.rawEntry?.[key] ?? fallback }

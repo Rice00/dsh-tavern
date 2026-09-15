@@ -38,6 +38,12 @@ export function projectPersistentStatusView(messages, projections, options = {})
         const index = parts.findIndex(part => part.kind === 'html' && contentOf(part) === content)
         if (index >= 0) origin = { sourceTurn: projection.turn, sourcePartIndex: index }
       }
+      if (!origin) {
+        for (const message of sourceMessages) {
+          const frame = message.displayRuntime?.frames?.find(frame => frame.placement === 'sidebar' && frame.panelId === 'status-' + revision)
+          if (frame) origin = { sourceTurn: Number(message.turn) || 1, sourcePartIndex: Number(frame.partIndex) || 0 }
+        }
+      }
       if (latestTurn <= 1 && !origin) continue
       templates.set(revision, {
         version: 1, viewId: 'status-' + revision,

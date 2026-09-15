@@ -74,3 +74,14 @@ test('persistent templates resolve identity macros like inline replies and remov
   assert.equal(next.statusView.viewId, result.statusView.viewId)
   assert.match(next.statusView.content, /\{\{random::a::b\}\}/)
 })
+
+test('开场状态入口被模板同步移除后，已显示过的同一声明状态栏仍保留', () => {
+  const content = '<script>loadRealStatus()</script>'
+  const rule = { enabled: true, placement: [2], markdownOnly: true, findRegex: '<StatusPlaceHolderImpl/>', replaceString: content }
+  const initial = projectPersistentStatusView([{ role: 'assistant', turn: 1 }], [projection(1, [{ kind: 'html', content }])], { regexScripts: [rule] })
+  const messages = [{ role: 'assistant', turn: 1, text: '开场正文', displayRuntime: { frames: [{ placement: 'sidebar', panelId: initial.statusView.viewId, partIndex: 1 }] } }]
+  const next = projectPersistentStatusView(messages, [], { regexScripts: [rule] })
+  assert.equal(next.statusView.viewId, initial.statusView.viewId)
+  assert.equal(projectPersistentStatusView(messages, [], { regexScripts: [{ ...rule, enabled: false }] }).statusView, null)
+  assert.equal(projectPersistentStatusView(messages, [], { regexScripts: [{ ...rule, replaceString: '<script>other()</script>' }] }).statusView, null)
+})

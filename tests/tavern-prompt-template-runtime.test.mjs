@@ -94,3 +94,15 @@ test('模板历史读取支持前 N 条、末 N 条及角色过滤，不把负�
   assert.equal(result.ok, true)
   assert.deepEqual(JSON.parse(result.text), [['3','4','5','6','7'], ['0','1'], ['4','6'], ['1','2'], []])
 })
+
+test('完整 Lodash 支持状态筛选与地图索引，并留在沙箱内', () => {
+  const result = runtime.render(`<% const data = _.omit(_.cloneDeep(source), '事件');
+    data.people = _.mapValues(_.omitBy(data.people, p => p._隐藏), p => _.omit(p, '_隐藏'));
+    const visible = _.chain([{level: 13, fields: ['要素']}, {level: 17, fields: ['权能']}]).filter(t => t.level <= 13).flatMap('fields').value();
+    const places = _.keyBy([{id: 'inn', name: '旅店'}], 'id');
+    print(JSON.stringify({data, visible, place: places.inn.name, process: typeof process, require: typeof require})); %>`, {
+    locals: { source: { 事件: '内部', people: { visible: { name: '甲', _隐藏: false }, hidden: { name: '乙', _隐藏: true } } } }
+  })
+  assert.equal(result.ok, true)
+  assert.deepEqual(JSON.parse(result.text), { data: { people: { visible: { name: '甲' } } }, visible: ['要素'], place: '旅店', process: 'undefined', require: 'undefined' })
+})

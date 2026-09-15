@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { selectScriptWorldbookEntries } from './worldbook-activation.js'
 import variant from '@jitl/quickjs-singlefile-mjs-release-sync'
 import ejs from 'ejs'
@@ -11,6 +13,8 @@ const MAX_STACK_BYTES = 512 * 1024
 const MAX_INTERRUPT_POLLS = 512
 const MAX_PENDING_JOBS = 1024
 const APPEND_SOURCE = 'function __append(s) { if (s !== undefined && s !== null) __output += s }'
+
+const lodashSource = readFileSync(createRequire(import.meta.url).resolve('lodash'), 'utf8')
 
 let quickjsModule
 
@@ -241,20 +245,7 @@ function sandboxSource(compiled, context) {
     };
     const __insScoped = scope => (name, value, index = undefined, options = {}) => insvar(name, value, index, Object.assign({}, __options(options), { scope }));
     const insertLocalVar = __insScoped('local'), insertGlobalVar = __insScoped('global'), insertMessageVar = __insScoped('message');
-    const _ = Object.freeze({
-      get: __get, set: __set, has: __has, unset: __unset, cloneDeep: __clone,
-      merge: (...values) => values.slice(1).reduce((result, value) => __merge(result, value), values[0] || {}),
-      mergeWith: (...values) => values.filter(value => typeof value !== 'function').slice(1).reduce((result, value) => __merge(result, value), values[0] || {}),
-      isArray: Array.isArray, isObject: value => value !== null && typeof value === 'object', isPlainObject: __plain,
-      isString: value => typeof value === 'string', isNumber: value => typeof value === 'number', isBoolean: value => typeof value === 'boolean',
-      keys: Object.keys, values: Object.values, entries: Object.entries, assign: Object.assign,
-      concat: (...values) => values.flat(), map: (values, fn) => Object.keys(Object(values)).map(key => fn(values[key], key, values)),
-      mapValues: (values, fn) => Object.fromEntries(Object.keys(Object(values)).map(key => [key, fn(values[key], key, values)])),
-      isEmpty: value => value == null || (typeof value === 'string' || Array.isArray(value) ? value.length === 0 : Object.keys(Object(value)).length === 0),
-      range: (start, end = undefined) => { if (end === undefined) { end = start; start = 0; } return Array.from({ length: Math.max(0, end - start) }, (_, index) => start + index); },
-      times: (count, fn) => Array.from({ length: Math.max(0, Number(count) || 0) }, (_, index) => fn(index)),
-      constant: value => () => value
-    });
+    const _ = globalThis._;
     const __transcript = __input.transcript;
     const __messageIndex = value => { const id = Number(value); return Number.isInteger(id) ? (id < 0 ? __transcript.length + id : id) : -1; };
     const getChatMessage = id => { const item = __transcript[__messageIndex(id)]; return item ? item.content : ''; };
@@ -361,6 +352,10 @@ export class TavernPromptTemplateRuntime {
       })
       vm.setProp(vm.global, '__dshYamlStringify', stringify)
       stringify.dispose()
+      // Load the real library inside QuickJS; no host functions or objects cross over.
+      const library = vm.evalCode(lodashSource, 'lodash.js')
+      if (library.error) { library.error.dispose(); return { ok: false, kind: 'runtime-error' } }
+      library.value.dispose()
       const result = vm.evalCode(sandboxSource(compiled, context), 'dsh-tavern:prompt-template')
       if (result.error !== undefined) {
         const error = vm.dump(result.error)

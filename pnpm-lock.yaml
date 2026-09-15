@@ -35,6 +35,9 @@ importers:
       ejs:
         specifier: 3.1.9
         version: 3.1.9
+      lodash:
+        specifier: 4.18.1
+        version: 4.18.1
       mathjs:
         specifier: 12.4.3
         version: 12.4.3
@@ -669,6 +672,9 @@ packages:
 
   lodash-es@4.18.1:
     resolution: {integrity: sha512-J8xewKD/Gk22OZbhpOVSwcs60zhd95ESDwezOFuA3/099925PdHJ7OFHNTGtajL3AlZkykD32HykiMo+BIBI8A==}
+
+  lodash@4.18.1:
+    resolution: {integrity: sha512-dMInicTPVE8d1e5otfwmmjlxkZoUpiVLwyeTdUsi/Caj/gfzzblBcCE5sRHV/AsjuCmxWrte2TNGSYuCeCq+0Q==}
 
   marked@16.3.0:
     resolution: {integrity: sha512-K3UxuKu6l6bmA5FUwYho8CfJBlsUWAooKtdGgMcERSpF7gcBUrCGsLH7wDaaNOzwq18JzSUDyoEb/YsrqMac3w==}
@@ -1589,6 +1595,8 @@ snapshots:
   lodash-es@4.17.23: {}
 
   lodash-es@4.18.1: {}
+
+  lodash@4.18.1: {}
 
   marked@16.3.0: {}
 

@@ -49,3 +49,26 @@ test('只迁移实际包裹区间，同位置独立固定段不随绿灯或随�
   ].map(([ref, content, constant], index) => ({ ref, content, constant, order: index, position: 0, enabled: true }))
   assert.deepEqual([...foregroundWorldbookRefs(entries)].sort(), ['close', 'open', 'random', 'role'])
 })
+
+test('固定概览留在完整前缀中，本轮只重复标签和随机正文', () => {
+  const entries = [
+    ['open', '<种族>'], ['overview', '固定种族概览'],
+    ['inner', '<角色库>'], ['fixed-role', '固定角色说明'],
+    ['random', '{{roll 1d20}}'], ['end-inner', '</角色库>'], ['close', '</种族>']
+  ].map(([ref, content], order) => ({ ref, content, order, constant: true, enabled: true }))
+  const project = seed => projectWorldBookTemplates({ worldBook: { view: { entries } }, runtime, includeConstants: true, randomSeed: seed })
+  const a = project('a'), b = project('b')
+  assert.equal(a.prefixContext, '<种族>\n\n固定种族概览\n\n<角色库>\n\n固定角色说明\n\n</角色库>\n\n</种族>')
+  assert.equal(a.prefixContext, b.prefixContext)
+  assert.match(a.foregroundContext, /^<种族>\n\n<角色库>\n\n\d+\n\n<\/角色库>\n\n<\/种族>$/)
+  assert.equal(a.renderedEntries.find(e => e.ref === 'open').alsoInPrefix, true)
+})
+
+test('标签与说明混写的边界不强行拆分', async () => {
+  const { worldbookPlacement } = await import('../tavern-plugin/lib/domain/worldbook-placement.js')
+  const entries = [['open', '<种族>以下规则适用于本组'], ['fixed', '固定说明'], ['random', '{{roll 1d20}}'], ['close', '</种族>']]
+    .map(([ref, content], order) => ({ ref, content, order, constant: true, enabled: true }))
+  const placement = worldbookPlacement(entries)
+  assert.equal(placement.prefixRefs.size, 0)
+  assert.equal(placement.foregroundRefs.size, 4)
+})

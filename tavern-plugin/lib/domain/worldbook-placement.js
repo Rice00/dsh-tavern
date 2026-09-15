@@ -1,8 +1,8 @@
 import { placementKey, promptOrder } from './worldbook-activation.js'
 import { hasWorldbookRandom } from './worldbook-random.js'
 
-// Move only changing entries and complete cross-entry tag spans that contain them.
-export function foregroundWorldbookRefs(entries) {
+// Separate fixed bodies from changing bodies while keeping both projections wrapped.
+export function worldbookPlacement(entries) {
   const ordered = promptOrder(entries.filter(entry => entry.enabled !== false))
   const refs = new Set(ordered.filter(entry => !entry.constant || entry.group || hasWorldbookRandom(entry.content)).map(entry => entry.ref))
   const buckets = new Map()
@@ -11,6 +11,7 @@ export function foregroundWorldbookRefs(entries) {
     if (!buckets.has(key)) buckets.set(key, [])
     buckets.get(key).push(entry)
   }
+  const wrapperSpans = []
   for (const bucket of buckets.values()) {
     const stack = [], spans = []
     bucket.forEach((entry, index) => {
@@ -25,10 +26,25 @@ export function foregroundWorldbookRefs(entries) {
         }
       }
     })
-    // Inner spans complete before outer spans; whole nested wrappers stay together.
+    // Only split standalone tag entries; prose or executable boundary templates
+    // remain intact with their span rather than losing their original scope.
     for (const [start, end] of spans) if (bucket.slice(start, end + 1).some(entry => refs.has(entry.ref))) {
-      for (const entry of bucket.slice(start, end + 1)) refs.add(entry.ref)
+      const boundary = [bucket[start], bucket[end]]
+      const tagsOnly = boundary.every(entry => entry.constant && !entry.group && !hasWorldbookRandom(entry.content) && !String(entry.content).replace(/<\/?[\p{L}_][\p{L}\p{N}_:.-]*\s*>/gu, '').trim())
+      if (tagsOnly) {
+        boundary.forEach(entry => refs.add(entry.ref))
+        wrapperSpans.push(bucket.slice(start, end + 1))
+      } else for (const entry of bucket.slice(start, end + 1)) refs.add(entry.ref)
     }
   }
-  return refs
+  const prefixRefs = new Set(ordered.filter(entry => !refs.has(entry.ref)).map(entry => entry.ref))
+  for (const span of wrapperSpans) if (span.some(entry => prefixRefs.has(entry.ref))) {
+    prefixRefs.add(span[0].ref)
+    prefixRefs.add(span.at(-1).ref)
+  }
+  return { foregroundRefs: refs, prefixRefs }
+}
+
+export function foregroundWorldbookRefs(entries) {
+  return worldbookPlacement(entries).foregroundRefs
 }

@@ -1,4 +1,4 @@
-import { foregroundWorldbookRefs } from './worldbook-placement.js'
+import { worldbookPlacement } from './worldbook-placement.js'
 import { entryRandom, renderWorldbookRandom } from './worldbook-random.js'
 import { projectAgentContent } from './runtime-content-projection.js'
 import { lastTavernHelperVariables } from './tavern-helper-context.js'
@@ -139,7 +139,7 @@ export function projectWorldBookTemplates(input = {}) {
   const controllers = promptOrder((input.selectedEntries || resources).filter(function (entry) {
     return (entry.enabled !== false || (input.activationRequests || []).some(request => request.ref === entry.ref && request.force)) && (input.selectedEntries || entry.constant === true) && !isMvuUpdateEntry(entry) && (input.includeConstants === true || isWorldBookTemplateEntry(entry))
   }))
-  const foregroundRefs = foregroundWorldbookRefs([...resources.filter(entry => !isMvuUpdateEntry(entry)), ...controllers.filter(entry => entry.enabled === false).map(entry => ({ ...entry, enabled: true }))])
+  const { foregroundRefs, prefixRefs } = worldbookPlacement([...resources.filter(entry => !isMvuUpdateEntry(entry)), ...controllers.filter(entry => entry.enabled === false).map(entry => ({ ...entry, enabled: true }))])
   const projectedEntries = []
   let scopes = {
     global: clone(input.globalVariables || {}),
@@ -186,8 +186,8 @@ export function projectWorldBookTemplates(input = {}) {
   }
   return {
     context: context.join('\n\n'),
-    renderedEntries: projectedEntries.map(entry => ({ ref: entry.ref, text: entry.content, location: foregroundRefs.has(entry.ref) ? 'foreground' : 'prefix' })),
-    prefixContext: projectedEntries.filter(entry => !foregroundRefs.has(entry.ref)).map(entry => entry.content).join('\n\n'),
+    renderedEntries: projectedEntries.map(entry => ({ ref: entry.ref, text: entry.content, location: foregroundRefs.has(entry.ref) ? 'foreground' : 'prefix', ...(foregroundRefs.has(entry.ref) && prefixRefs.has(entry.ref) ? { alsoInPrefix: true } : {}) })),
+    prefixContext: projectedEntries.filter(entry => prefixRefs.has(entry.ref)).map(entry => entry.content).join('\n\n'),
     foregroundContext: projectedEntries.filter(entry => foregroundRefs.has(entry.ref)).map(entry => entry.content).join('\n\n'),
     refs,
     diagnostics,

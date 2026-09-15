@@ -70,12 +70,11 @@ async function harness({ beginRunning = true, mvu = true } = {}) {
   return { tasks, timeline, store, running, body, sandbox, history, onReady, get: () => structuredClone(current) }
 }
 
-test('普通卡由当前后台 Agent 按需加载 Skill 并使用人物设计工具', async () => {
+test('普通卡忽略旧人物设计开关，只执行姿势结算', async () => {
   const run = await harness({ beginRunning: false, mvu: false })
   run.sandbox.backgroundAgentRunner.run = async input => {
-    assert.deepEqual(Array.from(input.tools, tool => tool.name), [POSTURE_SUBMIT_TOOL_NAME, 'character_design_read', 'character_design_save'])
-    assert.match(input.system, /skill 加载 character-design/)
-    assert.match(input.system, /不得创建另一个 Agent/)
+    assert.deepEqual(Array.from(input.tools, tool => tool.name), [POSTURE_SUBMIT_TOOL_NAME])
+    assert.doesNotMatch(input.system, /skill 加载 character-design/)
     await input.onToolCall({ name: POSTURE_SUBMIT_TOOL_NAME, arguments: { posture: '站在门边' } })
     return { text: '', traceSessionId: 'background-settlement', traceBoundary: 4 }
   }
@@ -266,15 +265,13 @@ test('普通卡全部自动任务关闭时不请求模型，仍完成原生结�
   assert.equal(run.get().timeline.operations[run.body.value.operationId].status, 'completed')
 })
 
-test('普通卡只开人物设计无需提交姿势', async () => {
+test('旧设置只开人物设计时不再自动请求后台模型', async () => {
   const run = await harness({ beginRunning: false, mvu: false })
   await run.store.updateChat('chat', chat => ({ ...chat, backgroundTasks: { posture: false, characterDesign: true } }))
-  run.sandbox.backgroundAgentRunner.run = async input => {
-    assert.deepEqual(Array.from(input.tools, tool => tool.name), ['character_design_read', 'character_design_save'])
-    assert.doesNotMatch(input.system, /posture_submit/)
-    return { text: '已完成', traceSessionId: 'background' }
-  }
+  let calls = 0
+  run.sandbox.backgroundAgentRunner.run = async () => { calls++; return { text: '' } }
   await run.sandbox.queueSettlement('chat')
+  assert.equal(calls, 0)
   assert.equal(run.get().settleStatus, 'done')
 })
 

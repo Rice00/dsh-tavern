@@ -37,7 +37,7 @@ function backgroundPrompt(messages, turnContext, task, taskProtocol, input = {})
       : (message && message.role === 'assistant' ? '正文' : '用户')
     return '[' + role + ']\n' + messageText(message)
   }).filter(function (text) { return text.trim() !== '' }).join('\n\n')
-  const taskName = task === 'worldbook-filter' ? '世界书筛选原型' : task === 'image' ? '场景生图' : task === 'settlement' ? '状态结算' : task === 'phone' ? '手机私聊' : '候选生成'
+  const taskName = task === 'worldbook-filter' ? '世界书筛选原型' : task === 'image' ? '场景生图' : task === 'settlement' ? '状态结算' : task === 'phone' ? '手机私聊' : task === 'character-design' ? '人物设计' : '候选生成'
   sections.push('【最近剧情与本次任务】\n任务类型：' + taskName + '\n' + recent)
   const protocol = str(taskProtocol).trim()
   if (protocol !== '') sections.push('【DSH 后台任务协议（最终指令）】\n' + protocol)
@@ -121,7 +121,7 @@ export function createBackgroundAgentTask(options) {
   function setupFor(state, descriptor, appendDescriptor) {
     const backgroundPersona = state.input.task === 'phone'
       ? '你是与故事正文隔离的手机私聊 Agent。你只代表指定联系人回复当前手机消息，不推进正文、不修改状态，也不把私聊虚构成已经发生的现场剧情。'
-      : '你是与前台正文生成隔离的酒馆后台 Agent。你会在同一个剧情分支中依次承担状态结算与候选生成，并可在任务确有需要时加载人物设计 Skill；严格按每轮末尾追加的任务协议输出，不得把某类任务的输出格式混入另一类任务。最新权威状态优先于 Session 中的旧动态状态。'
+      : '你是与前台正文生成隔离的酒馆后台 Agent。你会在同一个剧情分支中依次承担状态结算与候选生成，人物设计仅在用户明确发起人物设计任务时执行；严格按每轮末尾追加的任务协议输出，不得把某类任务的输出格式混入另一类任务。最新权威状态优先于 Session 中的旧动态状态。'
     let descriptorAppended = !appendDescriptor
     return async function (childCtx) {
       if (setupAgent !== null) await setupAgent(childCtx)
@@ -195,6 +195,7 @@ export function createBackgroundAgentTask(options) {
         for (const dispose of state.stableToolDisposers || []) dispose()
         state.configuredToolsKey = key
         state.stableToolDisposers = stableBackgroundTools.filter(function (tool) {
+          if (state.input.task === 'character-design') return tool.name.startsWith('character_design_')
           if (state.input.task === 'worldbook-filter') return tool.name.startsWith('worldbook_')
           if (tool.name.startsWith('worldbook_')) return false
           const tasks = state.input.backgroundTasksSnapshot

@@ -8550,6 +8550,16 @@ window.__ModuleLoader__.load({
 				} catch (retryError) { tavernErrorHub.report("重试后台结算", retryError); }
 				finally { setSettlementRetryBusy(false); }
 			}
+			async function designCharacter(initialValue = "") {
+                await askTavernText({ title: "设计人物", description: "填写人物和设计要求，可创建新档案或修改已有档案。", initialValue, maxLength: 4000, confirmLabel: "开始设计",
+                    onSubmit: async guidance => { await rpc("designCharacter", { guidance }, props.sessionId); liveTavernView.invalidate(props.sessionId); }
+                });
+            }
+            React.useEffect(function () {
+                if (view?.characterDesignTask?.status !== "running") return;
+                const timer = setInterval(() => liveTavernView.invalidate(props.sessionId), 2000);
+                return () => clearInterval(timer);
+            }, [props.sessionId, view?.characterDesignTask?.status]);
 			function characterDesignTime(ts) {
 				if (!ts) return "";
 				const date = new Date(ts);
@@ -8630,7 +8640,10 @@ window.__ModuleLoader__.load({
 						guideError ? h("div", { className: "dsh-card-error" }, guideError) : null
 					),
 					h("section", { className: "dsh-tavern-status-section" },
-						h("div", { className: "dsh-tavern-status-label" }, "人物设计档案（" + ((view.characterDesigns && view.characterDesigns.characters || []).length) + "）"),
+						h("div", { className: "dsh-tavern-character-design-head" },
+                            h("div", { className: "dsh-tavern-status-label" }, "人物设计档案（" + ((view.characterDesigns && view.characterDesigns.characters || []).length) + "）"),
+                            h("button", { className: "dsh-tavern-btn", disabled: view.characterDesignTask?.status === "running", onClick: () => designCharacter(view.characterDesignTask?.status === "failed" ? view.characterDesignTask.guidance : "") }, view.characterDesignTask?.status === "running" ? "设计中…" : view.characterDesignTask?.status === "failed" ? "重试设计" : "设计人物")),
+                        view.characterDesignTask?.status === "failed" ? h("div", { className: "dsh-card-error", role: "alert" }, view.characterDesignTask.error) : null,
 						h("div", { className: "dsh-tavern-character-designs" },
 							(view.characterDesigns && view.characterDesigns.characters || []).length ? view.characterDesigns.characters.map(function (character, index) {
 								const summary = character.identity || character.narrativeRole || "已建立完整人物设计";
@@ -8650,7 +8663,7 @@ window.__ModuleLoader__.load({
 										})
 									)
 								);
-							}) : h("div", { className: "dsh-tavern-status-empty" }, "后台发现重要人物需要补全设计后，档案会自动出现在这里。")
+							}) : h("div", { className: "dsh-tavern-status-empty" }, "点击“设计人物”，按你的要求创建或补充档案。")
 						)
 					),
 					h("section", { className: "dsh-tavern-status-section" },
@@ -9126,7 +9139,7 @@ window.__ModuleLoader__.load({
                     h("label", null, "推理强度", h("select", { "aria-label": "本局后台推理强度", className: "dsh-tavern-settings-select", value: selection?.reasoningEffort || "", disabled: !key || !efforts.length || busy, onChange: event => { const next = { ...selection }; if (event.target.value) next.reasoningEffort = event.target.value; else delete next.reasoningEffort; return save({ backgroundModel: next }); } },
                         h("option", { value: "" }, key ? "模型默认" : "跟随前台"), efforts.map(item => h("option", { key: item.id, value: item.id }, item.name || item.id)))),
                     ), h("section", { className: "dsh-local-section" }, h("h3", null, "后台结算"), h("p", { className: "dsh-local-help" }, "从下一次后台任务生效，正在运行的任务不变。"),
-                    [["variables", "变量结算", "MVU 卡建议开启，否则变量和状态栏可能不再同步。普通卡不执行此任务。"], ["posture", "人物姿势结算", "总结本轮结束时人物的位置、动作和姿势。"], ["characterDesign", "人物设计档案", "按需建立和补充人物档案，可能增加等待时间和 Token 用量。"]].map(([name, title, description]) => h("label", { key: name, className: "dsh-tavern-background-task" },
+                    [["variables", "变量结算", "MVU 卡建议开启，否则变量和状态栏可能不再同步。普通卡不执行此任务。"], ["posture", "人物姿势结算", "总结本轮结束时人物的位置、动作和姿势。"]].map(([name, title, description]) => h("label", { key: name, className: "dsh-tavern-background-task" },
                         h("span", null, title, h("span", { className: "dsh-tavern-settings-desc" }, description)),
                         h("input", { type: "checkbox", role: "switch", "aria-label": title, checked: tasks[name], disabled: !loaded || busy, onChange: event => { return save({ backgroundTasks: { [name]: event.target.checked } }); } }))),
                     h("p", { className: "dsh-local-warning" }, "调整结算任务会使缓存失效，首次请求会增加耗时和费用。")), h("section", { className: "dsh-local-section" }, h("h3", null, "扩展功能"),

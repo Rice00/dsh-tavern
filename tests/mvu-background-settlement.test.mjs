@@ -69,7 +69,7 @@ test('深模块强制一次工具调用并以官方 Runtime 的实际差异生�
   assert.deepEqual(result.receipt.changes, [{ operation: 'set', path: '/stat_data/体力', before: '10', after: '9' }])
 })
 
-test('MVU 后台 Agent 在同一回合加载人物设计工具后继续完成姿势和变量结算', async function () {
+test('MVU 后台拒绝人物设计调用，仅完成姿势和变量结算', async function () {
   const designCalls = []
   const module = createMvuSettlementModule({
     characterDesign: {
@@ -79,9 +79,9 @@ test('MVU 后台 Agent 在同一回合加载人物设计工具后继续完成姿
       }
     },
     model: { async run(input) {
-      assert.deepEqual(input.tools.map(tool => tool.name), ['posture_submit', 'character_design_read', 'character_design_save', 'mvu_submit_update'])
+      assert.deepEqual(input.tools.map(tool => tool.name), ['posture_submit', 'mvu_submit_update'])
       await input.onToolCall({ name: 'character_design_read', arguments: {} })
-      await input.onToolCall({ name: 'character_design_save', arguments: completeDesignFixture() })
+      assert.equal(JSON.parse(await input.onToolCall({ name: 'character_design_save', arguments: completeDesignFixture() })).ok, false)
       await input.onToolCall({ name: 'posture_submit', arguments: { posture: '站在门边' } })
       await input.onToolCall({ name: 'mvu_submit_update', arguments: { operations: [] } })
       return { text: '' }
@@ -93,10 +93,7 @@ test('MVU 后台 Agent 在同一回合加载人物设计工具后继续完成姿
     operationId: 'operation-design', chatId: 'chat-design', branchId: 'branch-1', basedOnRevision: 1,
     sessionId: 'session-1', messageId: 0, swipeId: 0, storyText: '她走进门内。', currentVariables: { hp: 10 }
   })
-  assert.deepEqual(designCalls, [
-    { chatId: 'chat-design', name: 'character_design_read' },
-    { chatId: 'chat-design', name: 'character_design_save' }
-  ])
+  assert.deepEqual(designCalls, [])
   assert.equal(result.posture, '站在门边')
   assert.equal(result.receipt.status, 'unchanged')
 })

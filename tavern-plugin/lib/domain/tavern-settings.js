@@ -12,7 +12,7 @@ function promptOverride(document, name) {
 
 export function normalizeBackgroundTasks(value) {
   const tasks = object(value)
-  return { posture: tasks.posture !== false, characterDesign: tasks.characterDesign === true, variables: tasks.variables !== false, ledger: false }
+  return { posture: tasks.posture !== false, characterDesign: false, variables: tasks.variables !== false, ledger: false }
 }
 
 export function applyTavernSettingsPatch(current, patch) {

@@ -927,3 +927,6 @@ body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
 .dsh-tavern-group-add-list label:hover { background: var(--dsw-specific-input-major, #ffffff12); }
 .dsh-tavern-group-add-list span { min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
 .dsh-tavern-group-add-list small { display: block; margin-top: 3px; color: var(--dsw-alias-label-secondary); font-size: 11px; }
+
+.dsh-tavern-character-design-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.dsh-tavern-character-design-head .dsh-tavern-status-label { margin: 0; }

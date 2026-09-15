@@ -1,3 +1,4 @@
+import { createManualCharacterDesign } from './domain/manual-character-design.js'
 import { prepareTemplateHistory, synchronizeTemplateHistory } from './domain/template-history.js'
 import { createFullTemplateRuntime } from './domain/full-template-runtime.js'
 import { estimateWorldBookTokens } from './domain/worldbook-activation.js'
@@ -1348,6 +1349,7 @@ export async function apply(ctx) {
       posture: chat.posture || '',
       ledger: readLedger(chat.ledger),
       characterDesigns: projectCharacterDesignDocument(chat.characterDesignDocument),
+      characterDesignTask: manualCharacterDesign.project(chat),
       phoneChat: phoneChat.project(chat, card),
       guides: Array.isArray(chat.guides) ? chat.guides : [],
       debugTurns: debugTurns.slice(-12).reverse(),
@@ -1684,6 +1686,10 @@ export async function apply(ctx) {
   const characterDesignDocuments = createCharacterDesignDocumentTools({
     store: { readChat, updateChat },
     now: Date.now
+  })
+  const manualCharacterDesign = createManualCharacterDesign({
+    store: { chatForSession, updateChat, readCard: readChatCard },
+    runAgent: input => backgroundAgentRunner.run(input), selection: backgroundModelSelection
   })
   const phoneChat = createPhoneChat({
     store: { chatForSession, readCard, updateChat },
@@ -2991,6 +2997,7 @@ export async function apply(ctx) {
         return { view: await view(saved, card) }
       }
       case 'getSession': return { view: await sessionView(args && args.sessionId) }
+      case 'designCharacter': return await manualCharacterDesign.start(args || {})
       case 'sendPhoneMessage': return { phoneChat: await phoneChat.send(args || {}) }
       case 'runCompaction': {
         const id = str(args && args.sessionId), chat = await chatForSession(id)

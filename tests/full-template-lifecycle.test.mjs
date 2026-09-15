@@ -1,7 +1,22 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { UpstreamTemplateRuntime } from './fixtures/upstream-template-runtime.mjs'
+import { projectReplyHistory } from '../tavern-plugin/lib/domain/reply-presentation.js'
+import { projectPersistentStatusView } from '../tavern-plugin/lib/domain/persistent-status-view.js'
 const runtime = await UpstreamTemplateRuntime.create()
+
+test('浏览器规范化状态占位标签不应生成覆盖正则的显示快照', async () => {
+  const source = '开场正文\n<StatusPlaceHolderImpl/>'
+  const result = await runtime.lifecycle({settings:{preload_worldinfo_enabled:false},transcript:[{role:'assistant',content:source}]})
+  for (const state of [result.first, result.second]) {
+    assert.equal(state.chat[0].mes, source)
+    assert.equal(state.chat[0].template_display, undefined)
+    const messages = [{role:'assistant',turn:1,text:source,sourceText:source,tavernPluginData:state.chat[0]}]
+    const regexScripts = [{enabled:true,placement:[2],markdownOnly:true,findRegex:'/<StatusPlaceHolderImpl\\s*\\/>/g',replaceString:'<html><body><script>loadStatus()</script></body></html>'}]
+    const history = projectReplyHistory(messages, {regexScripts})
+    assert.ok(projectPersistentStatusView(messages, history.projections, {regexScripts}).statusView)
+  }
+})
 
 test('官方永久渲染写入正文，刷新快照不会再次运行变量副作用', async () => {
   const result = await runtime.lifecycle({settings:{preload_worldinfo_enabled:false},transcript:[{role:'assistant',content:'<% setMessageVar("count", (getMessageVar("count") || 0) + 1) %>值 <%= getMessageVar("count") %>'}]})

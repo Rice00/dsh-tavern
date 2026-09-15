@@ -1,7 +1,13 @@
 import { marked } from 'marked'
 import { chat } from './host.js'
 
-export function formatTemplateMessage(text) { return marked.parse(String(text ?? ''), { gfm: true }) }
+export function formatTemplateMessage(text) {
+  // Compare DOM serialization on both sides: parsing alone lowercases custom
+  // tags and expands self-closing tags without any template display change.
+  const template = document.createElement('template')
+  template.innerHTML = marked.parse(String(text ?? ''), { gfm: true })
+  return template.innerHTML
+}
 
 // The mirror is only for upstream formatting. Card HTML executes in its visible DSH frame.
 function inertMarkup(html) {

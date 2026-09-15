@@ -74,6 +74,7 @@ export function createChatHistoryImportService({ initialization, cards, worldBoo
           if (projectForegroundWorldbook) {
             const projected = await projectForegroundWorldbook({ chat, card, userText, userTextInHistory: true, worldBook })
             if (projected.reads) chat.worldBookReads = projected.reads
+            if (projected.randomState) chat.worldBookRandomState = projected.randomState
             return planner.plan({ purpose: 'body', card, chat: projected.macroState ? { ...chat, macroState: projected.macroState } : chat,
               userText, sessionId: input.sessionId, nativeTurn: turn, scriptReference: null, worldBookContext: projected.context })
           }

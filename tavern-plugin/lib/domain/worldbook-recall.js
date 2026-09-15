@@ -1,3 +1,4 @@
+import { hasWorldbookRandom, entryRandom, renderWorldbookRandom } from './worldbook-random.js'
 import { projectAgentContent } from './runtime-content-projection.js'
 import { lastTavernHelperVariables } from './tavern-helper-context.js'
 import { activateWorldBook, promptOrder, placementKey, dynamicPlacementKeys, worldBookSettings } from './worldbook-activation.js'
@@ -138,6 +139,7 @@ export function projectWorldBookTemplates(input = {}) {
     return (entry.enabled !== false || (input.activationRequests || []).some(request => request.ref === entry.ref && request.force)) && (input.selectedEntries || entry.constant === true) && !isMvuUpdateEntry(entry) && (input.includeConstants === true || isWorldBookTemplateEntry(entry))
   }))
   const dynamicKeys = dynamicPlacementKeys([...resources.filter(entry => !isMvuUpdateEntry(entry)), ...controllers.filter(entry => !entry.constant).map(entry => ({ ...entry, enabled: true }))])
+  for (const entry of resources) if (entry.enabled !== false && hasWorldbookRandom(entry.content)) dynamicKeys.add(placementKey(entry))
   const projectedEntries = []
   let scopes = {
     global: clone(input.globalVariables || {}),
@@ -163,8 +165,9 @@ export function projectWorldBookTemplates(input = {}) {
     })
   }
   for (const entry of controllers) {
+    const random = input.randomSeed ? entryRandom(input.randomSeed, entry.ref) : (input.random || Math.random)
     const result = isWorldBookTemplateEntry(entry)
-      ? runtime.render(templateBody(entry.content), Object.assign({}, templateContext, { scopes }))
+      ? runtime.render(templateBody(entry.content), Object.assign({}, templateContext, { scopes, random }))
       : { ok: true, text: entry.content, scopes }
     if (!result.ok) {
       diagnostics.push({ kind: 'worldbook-template', code: result.kind, ref: str(entry.ref) })
@@ -173,9 +176,9 @@ export function projectWorldBookTemplates(input = {}) {
     activationRequests.push(...(result.activationRequests || []).map(request => ({ ...request, sourceRef: entry.ref })))
     scopes = clone(result.scopes)
     const projected = input.includeConstants === true
-      ? projectAgentContent(result.text, { charName: str(input.card?.name), macroState }) : null
+      ? projectAgentContent(renderWorldbookRandom(result.text, random), { charName: str(input.card?.name), macroState }) : null
     if (projected) macroState = projected.macroState
-    const text = str(projected ? projected.agentText : result.text).trim()
+    const text = str(input.randomOutputs?.[entry.ref] ?? (projected ? projected.agentText : result.text)).trim()
     if (text === '') continue
     context.push(text)
     projectedEntries.push({ ...entry, content: text })

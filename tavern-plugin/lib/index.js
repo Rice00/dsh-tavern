@@ -1605,7 +1605,7 @@ export async function apply(ctx) {
       if (input.task === 'worldbook-filter') return ''
       if (input.task === 'image') return undefined
       const chat = await chatForSession(input.sessionId)
-      return chat ? (await nativeWorldBookTemplateContext(chat, await readChatCard(chat))).context : undefined
+      return chat ? await nativeWorldBookTemplateContext(chat, await readChatCard(chat)) : undefined
     },
     resolveStablePrefixRevision: async input => Number((await chatForSession(input.sessionId))?.cardContextRevision) || 0,
     resolveStablePrefix: async function (input) {
@@ -1806,6 +1806,8 @@ export async function apply(ctx) {
     try {
       return projectWorldBookTemplates({
         includeConstants: true,
+        randomSeed: chat.worldBookRandomState?.seed,
+        randomOutputs: chat.worldBookRandomState?.outputs,
         worldBook,
         runtime: await promptTemplateRuntime(),
         globalVariables: await readPromptTemplateGlobalVariables(),

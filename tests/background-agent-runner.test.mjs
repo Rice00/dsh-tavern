@@ -1299,7 +1299,7 @@ test('persistent background tools change with configuration without creating ano
 
 test('常驻后台会话在下一任务替换世界书，任务内固定且不改历史', async () => {
   let assemble, pending, current = '当前DLC', creates = 0
-  const seen = []
+  const seen = [], prompts = []
   const session = { id: 'dynamic-book-background', header: {}, events: [], append(type, data) { const event = { type, data, seq: this.events.length }; this.events.push(event); return event } }
   const runner = createBackgroundAgentRunner({
     id: () => session.id,
@@ -1308,7 +1308,7 @@ test('常驻后台会话在下一任务替换世界书，任务内固定且不�
     agents: { get: () => ({ session: { header: {} } }), async create(options) {
       creates++
       await options.setup({ systemPrompt: { section() {}, suppressRuntimeContext() {} }, tools: { restrict() {}, register() {} }, on(name, callback) { if (name === 'system-prompt/assemble') assemble = callback } })
-      return { agent: { session, followup() { pending = (async () => {
+      return { agent: { session, followup(message) { prompts.push(message.content[0].text); pending = (async () => {
         current = '任务中途变化'
         const result = await assemble({}, { agent: { session } }, async () => ({ sections: [], tools: [] }))
         seen.push(result.sections.map(s => s.text).join('\n'))
@@ -1317,11 +1317,16 @@ test('常驻后台会话在下一任务替换世界书，任务内固定且不�
     } }
   })
   try {
-    for (const text of ['当前DLC', '']) {
+    for (const text of ['当前DLC', '', { prefixContext: '固定规则', foregroundContext: '本轮骰子17' }, { prefixContext: '固定规则', foregroundContext: '本轮骰子8' }]) {
       current = text
       await runner.run({ sessionId: 'parent', persistent: true, task: 'candidate', selection: { provider: 'test', model: 'test' }, messages: [], tools: [] })
     }
     assert.equal(creates, 1)
+    assert.equal(seen[2], seen[3])
+    assert.doesNotMatch(seen.join('\n'), /本轮骰子/)
+    assert.match(prompts[2], /本轮骰子17/)
+    assert.match(prompts[3], /本轮骰子8/)
+    assert.doesNotMatch(prompts[3], /本轮骰子17/)
     assert.match(seen[0], /当前DLC/)
     assert.doesNotMatch(seen.join('\n'), /开局DLC|任务中途变化/)
     assert.doesNotMatch(seen[1], /当前DLC/)

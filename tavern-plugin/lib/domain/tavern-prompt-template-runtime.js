@@ -344,6 +344,10 @@ export class TavernPromptTemplateRuntime {
     runtime.setInterruptHandler(function () { return ++polls > MAX_INTERRUPT_POLLS })
     const vm = runtime.newContext()
     try {
+      const random = vm.newFunction('__dshRandom', () => vm.newNumber((context.random || Math.random)()))
+      const math = vm.getProp(vm.global, 'Math')
+      vm.setProp(math, 'random', random)
+      math.dispose(); random.dispose()
       const select = vm.newFunction('__dshSelectWorldbook', handle => {
         const query = JSON.parse(vm.getString(handle))
         const candidates = (context.worldBookEntries || []).filter(entry => query.refs.includes(entry.ref))

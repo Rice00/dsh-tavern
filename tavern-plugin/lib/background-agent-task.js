@@ -364,13 +364,15 @@ export function createBackgroundAgentTask(options) {
         const prefix = await ensureSessionStablePrefix(agent.session, background, options.stablePrefixStorage, revision)
         if (prefix && prefix.event !== existing?.event && typeof options.flushSession === 'function') await options.flushSession(agent.session)
       }
-      state.currentWorldbook = typeof options.resolveCurrentWorldbook === 'function'
+      const worldbook = typeof options.resolveCurrentWorldbook === 'function'
         ? await options.resolveCurrentWorldbook(input) : undefined
+      state.currentWorldbook = worldbook && typeof worldbook === 'object' ? worldbook.prefixContext : worldbook
+      const turnWorldbook = worldbook && typeof worldbook === 'object' ? str(worldbook.foregroundContext).trim() : ''
       const eventStart = sessionEvents(agent.session).length
       agent.followup({
         id: randomUUID(),
         role: 'user',
-        content: [{ type: 'text', text: backgroundPrompt(input.messages, input.turnContext, input.task, input.system, input) }],
+        content: [{ type: 'text', text: [turnWorldbook ? '【本轮世界书上下文】\n' + turnWorldbook : '', backgroundPrompt(input.messages, input.turnContext, input.task, input.system, input)].filter(Boolean).join('\n\n') }],
         source: { kind: 'plugin', plugin: 'dsh-tavern' }
       })
       await agent.whenIdle()

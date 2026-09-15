@@ -1,3 +1,4 @@
+import { worldbookRandomState, hasWorldbookRandom } from './worldbook-random.js'
 import { estimateWorldBookTokens } from './worldbook-activation.js'
 import { compactRecallDiagnostics, describeRecallEntries } from './worldbook-recall-log.js'
 import { isMvuUpdateEntry } from './worldbook-recall.js'
@@ -9,6 +10,7 @@ export function createForegroundWorldbook({ bound, runtime, globalVariables, sca
     try {
       const worldBook = snapshot || await bound(chat.cardPath, card, chat)
       const turn = Number([...(chat.messages || [])].reverse().find(message => message.role === 'assistant')?.turn) || 0
+      const randomState = worldbookRandomState(chat, turn)
       // Older versions recorded the next-turn preview as a read. Let the first
       // real request re-evaluate that preview without suppressing its entries.
       const reads = { ...chat.worldBookReads }
@@ -32,7 +34,7 @@ export function createForegroundWorldbook({ bound, runtime, globalVariables, sca
         recalled = prepareWorldBookRecall({ worldBook, chat: { ...chat, worldBookReads: reads }, card, turn, userText, userTextInHistory,
           scanText: scanText(chat), activationRequests, random, tokenCosts, ignoreBudget: pass === 0 || !screeningDone, allowedRefs, protectedRefs: protectedRefs() })
         projected = projectWorldBookTemplates({ worldBook, selectedEntries: recalled.entries || [], includeConstants: true,
-          runtime: templateRuntime, globalVariables: globals, chat, card, activationRequests, random })
+          runtime: templateRuntime, globalVariables: globals, chat, card, activationRequests, random, randomSeed: randomState.seed })
         let costsChanged = false
         for (const entry of recalled.entries || []) {
           const output = projected.renderedEntries.find(output => output.ref === entry.ref)
@@ -79,7 +81,7 @@ export function createForegroundWorldbook({ bound, runtime, globalVariables, sca
       const log = { settings: { ...recalled.settings, cooldownTurns: 10 }, budget: recalled.budget, screening, scanSources: recalled.scanSources || [],
         counts: entries.reduce((result, entry) => { result[entry.reason] = (result[entry.reason] || 0) + 1; return result }, {}), entries, outputs,
         dynamicRefs: accepted, activationRequests, templateDiagnostics: projected.diagnostics }
-      return { ...projected, log, context: projected.foregroundContext, refs: accepted, reads: nextReads,
+      return { ...projected, randomState: { ...randomState, outputs: Object.fromEntries(outputs.filter(output => hasWorldbookRandom(worldBook.view.entries.find(entry => entry.ref === output.ref)?.content)).map(output => [output.ref, output.text])) }, log, context: projected.foregroundContext, refs: accepted, reads: nextReads,
         activation: { schemaVersion: 2, turn, refs: accepted, diagnostics: compactRecallDiagnostics(recalled.diagnostics), mode: recalled.kind }, error: null }
     } catch (error) {
       return { log: { error: String(error?.message || error), entries: [], outputs: [], counts: {} }, context: '', refs: [], diagnostics: [], activation: { schemaVersion: 2, refs: [], mode: 'error' }, error: String(error?.message || error) }

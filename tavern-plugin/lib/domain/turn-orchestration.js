@@ -348,6 +348,7 @@ export function createTurnOrchestrator(options) {
     const scriptWorldBook = !foregroundWorldBook && typeof options.projectScriptPromptWorldbook === 'function' ? await options.projectScriptPromptWorldbook({ chat, card, turn }) : null
     const worldBookContext = foregroundWorldBook ? str(foregroundWorldBook.context) : [str(chat.preparedWorldBookContext).trim(), str(scriptWorldBook && scriptWorldBook.context).trim(), templateWorldBook?.dynamicConstants ? '' : str(templateWorldBook && templateWorldBook.context).trim()].filter(Boolean).join('\n\n')
     if (foregroundWorldBook) {
+      if (foregroundWorldBook.randomState) chat.worldBookRandomState = foregroundWorldBook.randomState
       if (foregroundWorldBook.reads) chat.worldBookReads = foregroundWorldBook.reads
       chat.preparedWorldBookContext = worldBookContext
       chat.preparedWorldBook = { ...foregroundWorldBook.activation, branchId: foregroundOperation.basedOn.branchId, revision: foregroundOperation.basedOn.revision }

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "173b644e9ca1dc72ec252d022ef5a3e14b40975d",
-  "releaseSequence": 209,
+  "revision": "21b742b0bb6b88e2ddc913eb0d3538fecca51ebc",
+  "releaseSequence": 210,
   "version": "1.8.0",
   "files": [
     {
@@ -576,8 +576,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/mvu-background-settlement.js",
-      "sha256": "f40b4fef673a14eae83df36aaf8b7a763b4b29967d082280f032afca5b3aaca6",
-      "size": 29618
+      "sha256": "34c3d14a68373f64516de4f027dd9ab3a32d66a647c76506452e5fec992a96e2",
+      "size": 29645
     },
     {
       "path": "tavern-plugin/lib/domain/mvu-diagnostics.js",
@@ -1136,8 +1136,8 @@
     },
     {
       "path": "tavern-plugin/lib/index.js",
-      "sha256": "0db6162f25ce4a4739aabae2ae853cd93b5f26ab609b081fcacd9a99ea710511",
-      "size": 271956
+      "sha256": "70f67c6d0bb17e1a431f5a1e441d9e6546cc09a97cfea061384b65f1111d71aa",
+      "size": 271311
     },
     {
       "path": "tavern-plugin/lib/profile-data-store.js",

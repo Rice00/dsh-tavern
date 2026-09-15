@@ -900,8 +900,8 @@ test('官方 MVU 与人物卡脚本共用沙箱时仍先提供全局 Zod 与 YAM
   const loader = Buffer.from(encoded[1], 'base64').toString('utf8')
 
   assert.match(document, /const officialMvuEnabled = metadata\.officialMvu === true/)
-  assert.match(document, /import\("\/api\/dsh-tavern\/vendor\/runtime-assets\/zod\/index\.mjs"\)/)
-  assert.match(document, /import\("\/api\/dsh-tavern\/vendor\/runtime-assets\/yaml\/index\.mjs"\)/)
+  assert.match(document, /import\(new URL\("\/api\/dsh-tavern\/vendor\/runtime-assets\/zod\/index\.mjs",document\.baseURI\)\.href\)/)
+  assert.match(document, /import\(new URL\("\/api\/dsh-tavern\/vendor\/runtime-assets\/yaml\/index\.mjs",document\.baseURI\)\.href\)/)
   assert.match(document, /window\.z = modules\[0\]/)
   assert.match(document, /window\.YAML = modules\[1\]/)
   assert.doesNotMatch(document, /officialMvuEnabled\s*\?\s*Promise\.resolve/)

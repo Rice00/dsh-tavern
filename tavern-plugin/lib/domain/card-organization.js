@@ -55,9 +55,8 @@ export function createCardOrganization(store) {
   }
   async function project(cards) {
     const state = await read()
-    const rank = card => card.starred ? -2 : !card.group ? -1 : state.groups.indexOf(card.group)
     return cards.map(card => ({ ...card, ...(state.cards[card.path] || { starred: false, group: '' }) }))
-      .sort((a, b) => rank(a) - rank(b))
+      .sort((a, b) => Number(b.starred) - Number(a.starred))
   }
   return { read, update, movePath, project }
 }

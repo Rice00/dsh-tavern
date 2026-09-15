@@ -444,11 +444,22 @@ export function createTavernScriptHostAdapter(options = {}) {
       swipeId,
       mutations: 0
     }
+    if (input.baselineVariables) {
+      const target = transaction.draft.messages[messageId]
+      if (!Array.isArray(target.variables)) target.variables = []
+      target.variables[swipeId] = structuredClone(input.baselineVariables)
+    }
     settlementTransactions.set(sessionId, transaction)
     try {
       const eventContext = await context(sessionId, transaction.draft)
       const projected = eventContext.messages[messageId]
       if (!projected) throw new Error('MVU 变量结算投影楼层不存在')
+      // Upstream MVU reads the previous valid floor as its update baseline.
+      // Override only the dispatch projection; historical floors stay untouched.
+      if (input.baselineVariables) {
+        const prior = eventContext.messages.slice(0, messageId).findLast(item => item.variables?.stat_data !== undefined && item.variables?.schema !== undefined)
+        if (prior) prior.variables = structuredClone(input.baselineVariables)
+      }
       const internalText = str(input.storyText).trim() + '\n\n' + command
       projected.message = internalText
       if (!Array.isArray(projected.swipes)) projected.swipes = [originalText]
@@ -504,7 +515,13 @@ export function createTavernScriptHostAdapter(options = {}) {
       settled.text = originalText
       settled.sessionText = originalText
       settled.displayText = originalText
-      const beforeVariables = projectTavernHelperContext(current).messages[messageId].variables
+      if (input.preserveForeground === true) {
+        for (const key of ['swipes', 'sourceText', 'projectionText', 'text', 'sessionText', 'displayText']) {
+          if (Object.hasOwn(message, key)) settled[key] = structuredClone(message[key])
+          else delete settled[key]
+        }
+      }
+      const beforeVariables = input.baselineVariables || projectTavernHelperContext(current).messages[messageId].variables
       const proposedContext = projectTavernHelperContext(transaction.draft)
       const validation = typeof input.validate === 'function'
         ? await input.validate({ before: beforeVariables, after: proposedContext.messages[messageId].variables })

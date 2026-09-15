@@ -347,8 +347,6 @@ export function createReplyHistoryProjector({ maxCacheBytes = 16 * 1024 * 1024, 
       const projectionText = Object.prototype.hasOwnProperty.call(message, 'projectionText')
         ? str(message.projectionText)
         : sourceText
-      const projected = projectCached(sourceText, projectionText, options, signature)
-      const sessionText = str(message.text)
 
       const templateDisplay = message.tavernPluginData?.template_display
       if (templateDisplay && templateDisplay.source === sourceText && templateDisplay.swipe === (message.swipeId || 0)) {
@@ -356,6 +354,8 @@ export function createReplyHistoryProjector({ maxCacheBytes = 16 * 1024 * 1024, 
         latestSourceBacked = hasSource
         continue
       }
+      const projected = projectCached(sourceText, projectionText, options, signature)
+      const sessionText = str(message.text)
       if (message.bodyEdit || !isNativeMarkdownProjection(projected.displayParts, sessionText) || (Array.isArray(message.swipes) && message.swipes.length > 1)) {
         projections.push({
           version: 2,

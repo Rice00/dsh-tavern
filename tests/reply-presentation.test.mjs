@@ -426,3 +426,10 @@ test('缓存按容量淘汰，超大内容不驻留', () => {
   assert.equal(project.cacheStats().entries, 2)
   assert.ok(project.cacheStats().estimatedBytes <= 2048)
 })
+
+test('已有模板展示时跳过不会使用的普通投影',()=>{
+  const project=createReplyHistoryProjector()
+  const message={role:'assistant',turn:1,text:'原始正文',tavernPluginData:{template_display:{source:'原始正文',swipe:0,html:'已渲染',parts:[{kind:'html',content:'已渲染'}]}}}
+  assert.equal(project([message]).projections[0].text,'已渲染')
+  assert.equal(project.cacheStats().misses,0)
+})

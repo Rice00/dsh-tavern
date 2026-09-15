@@ -166,6 +166,9 @@ window.__ModuleLoader__.load({
 			} catch (_) {}
 		}
 
+		// @include modules/session-view-sync.js
+		const beginSessionViewRead = createSessionViewReader();
+
 		function rpc(method, args, sessionId, requestOptions) {
 			const started = Date.now();
 			const payload = Object.assign({}, args || {});
@@ -175,6 +178,8 @@ window.__ModuleLoader__.load({
 				performanceReportAt = started;
 			}
 			if (sessionId) payload.sessionId = sessionId;
+			const viewRead = method === "getSession" ? beginSessionViewRead(payload.sessionId) : null;
+			if (viewRead) { payload.viewSync = 1; payload.viewCursor = viewRead.cursor; }
 			const request = {
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
@@ -186,7 +191,7 @@ window.__ModuleLoader__.load({
 			return fetch("/api/dsh-tavern/" + method, request).then(readTavernJsonResponse).then(function (result) {
 				tavernRuntimeGenerationMonitor.observe(result && result.runtimeGeneration);
 				if (!result || !result.ok) throw new Error(result && result.error ? result.error : "操作失败");
-				return result;
+				return viewRead ? viewRead.accept(result) : result;
 			}).catch(function (error) {
 				if (method === "generateSceneImage") recordImageInteraction(payload.sessionId, payload.turn, payload.requestId, "failed", "rpc-error");
 				throw error;

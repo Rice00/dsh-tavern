@@ -1,3 +1,4 @@
+import { createSessionViewSync } from './domain/session-view-sync.js'
 import { setFailedErrorVisibility } from './domain/failed-error-visibility.js'
 import { createManualCharacterDesign } from './domain/manual-character-design.js'
 import { prepareTemplateHistory, synchronizeTemplateHistory } from './domain/template-history.js'
@@ -1518,6 +1519,8 @@ export async function apply(ctx) {
     if (candidates === null || candidates.operationId !== operation.operationId || candidates.requestId !== operation.requestId) return operation
     return Object.assign({}, operation, { result: { candidates } })
   }
+  const synchronizeSessionView = createSessionViewSync()
+
   async function sessionView(sessionId) {
     const chat = await chatForSession(sessionId)
     if (chat === undefined) return null
@@ -3005,7 +3008,10 @@ export async function apply(ctx) {
         }, { source: 'card-context.apply-update' })
         return { view: await view(saved, card) }
       }
-      case 'getSession': return { view: await sessionView(args && args.sessionId) }
+      case 'getSession': {
+        const view = await sessionView(args && args.sessionId)
+        return args?.viewSync === 1 ? synchronizeSessionView(args.sessionId, view, args.viewCursor) : { view }
+      }
       case 'designCharacter': return await manualCharacterDesign.start(args || {})
       case 'sendPhoneMessage': return { phoneChat: await phoneChat.send(args || {}) }
       case 'runCompaction': {

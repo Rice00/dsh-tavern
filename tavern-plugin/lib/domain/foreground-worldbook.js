@@ -19,7 +19,7 @@ export function createForegroundWorldbook({ bound, runtime, globalVariables, sca
           if (Number(reads[ref]?.turn) === Number(chat.preparedWorldBook.turn)) delete reads[ref]
         }
       }
-      const templateRuntime = await runtime(), globals = await globalVariables()
+      const templateRuntime = await runtime(chat.sessionId), globals = await globalVariables()
       let activationRequests = [], recalled, projected
       const tokenCosts = {}
       let screeningDone = !filterCandidates, screening, allowedRefs
@@ -33,7 +33,7 @@ export function createForegroundWorldbook({ bound, runtime, globalVariables, sca
         const random = () => { const index = randomIndex++; return randomValues[index] ?? (randomValues[index] = Math.random()) }
         recalled = prepareWorldBookRecall({ worldBook, chat: { ...chat, worldBookReads: reads }, card, turn, userText, userTextInHistory,
           scanText: scanText(chat), activationRequests, random, tokenCosts, ignoreBudget: pass === 0 || !screeningDone, allowedRefs, protectedRefs: protectedRefs() })
-        projected = projectWorldBookTemplates({ worldBook, selectedEntries: recalled.entries || [], includeConstants: true,
+        projected = await projectWorldBookTemplates({ worldBook, selectedEntries: recalled.entries || [], includeConstants: true,
           runtime: templateRuntime, globalVariables: globals, chat, card, activationRequests, random, randomSeed: randomState.seed })
         let costsChanged = false
         for (const entry of recalled.entries || []) {
@@ -84,6 +84,7 @@ export function createForegroundWorldbook({ bound, runtime, globalVariables, sca
       return { ...projected, randomState: { ...randomState, outputs: Object.fromEntries(outputs.filter(output => hasWorldbookRandom(worldBook.view.entries.find(entry => entry.ref === output.ref)?.content)).map(output => [output.ref, output.text])) }, log, context: projected.foregroundContext, refs: accepted, reads: nextReads,
         activation: { schemaVersion: 2, turn, refs: accepted, diagnostics: compactRecallDiagnostics(recalled.diagnostics), mode: recalled.kind }, error: null }
     } catch (error) {
+      if (error.code === 'FULL_TEMPLATE_UNAVAILABLE') throw error
       return { log: { error: String(error?.message || error), entries: [], outputs: [], counts: {} }, context: '', refs: [], diagnostics: [], activation: { schemaVersion: 2, refs: [], mode: 'error' }, error: String(error?.message || error) }
     }
   }

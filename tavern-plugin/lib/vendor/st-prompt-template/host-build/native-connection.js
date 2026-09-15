@@ -20,7 +20,7 @@ export function reconcileTemplateReceipt(current, submitted, saved) {
 }
 
 export async function createNativeTemplateConnection({ sessionId, rpc, services = {}, settingsHtml }) {
-  const initial=await rpc('getFullPromptTemplateState',{sessionId})
+  let initial=await rpc('getFullPromptTemplateState',{sessionId})
   let baseline=clone(initial.state), settingsBaseline=clone(initial.environment.extension_settings.EjsTemplate)
   let globalBaseline=clone(initial.environment.extension_settings.variables?.global)
   const snapshot={...initial.state,...initial.environment}
@@ -60,5 +60,13 @@ export async function createNativeTemplateConnection({ sessionId, rpc, services 
       return result
     })
   }
-  return {snapshot,callbacks,flush:()=>latest}
+  return {snapshot,callbacks,flush:()=>latest,async refresh() {
+    await latest
+    initial=await rpc('getFullPromptTemplateState',{sessionId})
+    baseline=clone(initial.state)
+    settingsBaseline=clone(initial.environment.extension_settings.EjsTemplate)
+    globalBaseline=clone(initial.environment.extension_settings.variables?.global)
+    Object.assign(snapshot,clone(initial.state),clone(initial.environment))
+    return snapshot
+  }}
 }

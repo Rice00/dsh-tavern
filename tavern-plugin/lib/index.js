@@ -1,3 +1,5 @@
+import { createFullTemplateRuntime } from './domain/full-template-runtime.js'
+import { estimateWorldBookTokens } from './domain/worldbook-activation.js'
 import { createWorldbookFilterPrototype, WORLD_BOOK_FILTER_TOOLS } from './domain/worldbook-filter-prototype.js'
 import { adoptConversationFeatures, adoptConversationBackground, patchConversationBackground } from './domain/conversation-background.js'
 import { clearLegacyTavernDefault } from './domain/legacy-agent-default.js'
@@ -105,7 +107,6 @@ import { createTavernStaticResourceCache, projectCachedResourceBody } from './do
 import { SILLYTAVERN_CSS_COMPAT_URLS } from './domain/sillytavern-css-compatibility.js'
 import { createRoundHistory } from './domain/round-history.js'
 import { createResourceWorkspaceProjection } from './domain/resource-workspace-projection.js'
-import { TavernPromptTemplateRuntime } from './domain/tavern-prompt-template-runtime.js'
 import {
   preserveRuntimeSource,
   projectAgentContent,
@@ -177,11 +178,9 @@ export async function apply(ctx) {
 	const tavernScriptDispatch = createTavernScriptDispatch({
     publishSignal: function (sessionId, signal) { sessionSignals.publish(sessionId, signal) }
   })
-  let tavernPromptTemplateRuntime
-  async function promptTemplateRuntime() {
-    tavernPromptTemplateRuntime ??= TavernPromptTemplateRuntime.create()
-    return await tavernPromptTemplateRuntime
-  }
+  const fullTemplateRuntime = createFullTemplateRuntime({ publishSignal: (id, signal) => sessionSignals.publish(id, signal) })
+  ctx.effect(() => () => fullTemplateRuntime.dispose())
+  async function promptTemplateRuntime(sessionId) { return fullTemplateRuntime.forSession(sessionId) }
   const sourceRoot = fileURLToPath(new URL('../../', import.meta.url))
   const dataRoot = resolveTavernDataRoot()
   const stablePrefixStorage = createSessionStablePrefixStorage(dataRoot + '/session-prefixes')
@@ -201,7 +200,7 @@ export async function apply(ctx) {
       return null
     }
   }
-  const tavernExtensionSettings = createTavernExtensionSettings(profileData, { templateRuntime: promptTemplateRuntime })
+  const tavernExtensionSettings = createTavernExtensionSettings(profileData)
   const mvuDiagnostics = createMvuDiagnosticStore(profileData)
   const apiDiagnostics = createTavernApiDiagnostics(profileData)
   const compatibilityDiagnostics = createTavernCompatibilityDiagnosticStore(profileData)
@@ -820,7 +819,7 @@ export async function apply(ctx) {
       diagnostics: await resourceDiagnosticProjection(chat)
     })
   }
-  const openingPreparation = createOpeningPreparation({ readCard, worldBooks, readRuntimeExtensions: async cardPath => tavernRemoteAssets.pinExtensions(await readCardExtensions(cardPath)), templateRuntime: promptTemplateRuntime, generateRaw: (config, context) => generateHelperRaw(config, { ...context, callModel }) })
+  const openingPreparation = createOpeningPreparation({ readCard, worldBooks, readRuntimeExtensions: async cardPath => tavernRemoteAssets.pinExtensions(await readCardExtensions(cardPath)), generateRaw: (config, context) => generateHelperRaw(config, { ...context, callModel }) })
   async function getCardOpenings(cardPath, userName, requestMode) {
     const startedAt = performance.now(), stages = {}
     let success = false
@@ -1141,6 +1140,7 @@ export async function apply(ctx) {
     updateChat,
     readChatRevision,
     readCard: readChatCard,
+    modelFor: chat => modelSelection(chat.sessionId)?.model || '',
     worldBooks,
     scriptDispatch: tavernScriptDispatch,
     extensionSettings: tavernExtensionSettings,
@@ -1809,12 +1809,13 @@ export async function apply(ctx) {
         randomSeed: chat.worldBookRandomState?.seed,
         randomOutputs: chat.worldBookRandomState?.outputs,
         worldBook,
-        runtime: await promptTemplateRuntime(),
+        runtime: await promptTemplateRuntime(chat.sessionId),
         globalVariables: await readPromptTemplateGlobalVariables(),
         card,
         chat
       })
     } catch (error) {
+      if (error.code === 'FULL_TEMPLATE_UNAVAILABLE') throw error
       console.warn('dsh-tavern: 动态世界书解析失败，已跳过:', str(error && error.message || error))
       return { context: '', refs: [], diagnostics: [{ kind: 'worldbook-template', code: 'projection-failed' }] }
     }
@@ -2555,6 +2556,7 @@ export async function apply(ctx) {
       }
       case 'callOpeningRuntime': return await openingPreparation.callRuntime(args && args.id, args && args.method, args && args.args)
       case 'saveOpeningSelection': return openingPreparation.select(args && args.id, args && args.openingId)
+      case 'initializeOpeningTemplate': return openingPreparation.applyTemplateInitial(args.id, await fullTemplateRuntime.forSession('opening:' + args.id).initializeVariables([]))
       case 'createOpeningPreparation': return await openingPreparation.create(args && args.path)
       case 'getOpeningPreparation': return openingPreparation.get(args && args.id)
       case 'replaceOpeningWorldbook': return await openingPreparation.replaceWorldbook(args && args.id, args && args.entries, args && args.expectedEntries)
@@ -2864,10 +2866,15 @@ export async function apply(ctx) {
 	      case 'updateTavernHelperVariables': return await tavernScriptHostAdapter.updateVariables(args && args.sessionId, args && args.option, args && args.variables, args && args.expectedLifecycleRevision, args && args.eventId)
 	      case 'updateTavernHelperMessages': return await tavernScriptHostAdapter.updateMessages(args && args.sessionId, args && args.messages, args && args.expectedLifecycleRevision, args && args.eventId)
 	      case 'createTavernHelperMessages': return await tavernScriptHostAdapter.createMessages(args && args.sessionId, args && args.messages, args && args.option, args && args.expectedLifecycleRevision, args && args.eventId)
-      case 'getFullPromptTemplateState': return await tavernScriptHostAdapter.readFullPromptTemplateState(args && args.sessionId)
-      case 'saveFullPromptTemplateGlobals': return await tavernScriptHostAdapter.saveFullPromptTemplateGlobals(args && args.sessionId, args && args.variables, args && args.expectedVariables)
-      case 'saveFullPromptTemplateSettings': return await tavernScriptHostAdapter.saveFullPromptTemplateSettings(args && args.sessionId, args && args.settings, args && args.expectedSettings)
-      case 'saveFullPromptTemplateState': return await tavernScriptHostAdapter.saveFullPromptTemplateState(args && args.sessionId, args && args.state)
+      case 'releaseFullTemplateRuntime': return { released: fullTemplateRuntime.dispatch.dispose(args.sessionId, args.runtimeId) }
+      case 'claimFullTemplateWork': return fullTemplateRuntime.dispatch.claim(args.sessionId, args.runtimeId, args.ready, args.initializationError)
+      case 'startFullTemplateWork': return fullTemplateRuntime.dispatch.start(args.sessionId, args.eventId, args.leaseToken, args.runtimeId)
+      case 'completeFullTemplateWork': return { completed: fullTemplateRuntime.dispatch.complete(args.sessionId, args.eventId, args.args, args.runtimeId, args.leaseToken, args.error) }
+      case 'countFullTemplateTokens': return { tokens: estimateWorldBookTokens(args.text), estimator: 'unicode-estimate' }
+      case 'getFullPromptTemplateState': if (args.sessionId?.startsWith('opening:')) return openingPreparation.templateState(args.sessionId.slice(8)); return await tavernScriptHostAdapter.readFullPromptTemplateState(args && args.sessionId)
+      case 'saveFullPromptTemplateGlobals': if (args.sessionId?.startsWith('opening:')) return openingPreparation.saveTemplateGlobals(args.sessionId.slice(8), args.variables); return await tavernScriptHostAdapter.saveFullPromptTemplateGlobals(args && args.sessionId, args && args.variables, args && args.expectedVariables)
+      case 'saveFullPromptTemplateSettings': if (args.sessionId?.startsWith('opening:')) return openingPreparation.saveTemplateSettings(args.sessionId.slice(8), args.settings); return await tavernScriptHostAdapter.saveFullPromptTemplateSettings(args && args.sessionId, args && args.settings, args && args.expectedSettings)
+      case 'saveFullPromptTemplateState': if (args.sessionId?.startsWith('opening:')) return openingPreparation.saveTemplateState(args.sessionId.slice(8), args.state); return await tavernScriptHostAdapter.saveFullPromptTemplateState(args && args.sessionId, args && args.state)
       case 'saveTavernChatData': return await tavernScriptHostAdapter.saveChatData(args && args.sessionId, args && args.request)
       case 'saveTavernExtensionSettings': return await tavernScriptHostAdapter.saveExtensionSettings(args && args.sessionId, args && args.settings, args && args.expectedSettings)
       case 'loadTavernWorldInfo': return await tavernScriptHostAdapter.loadWorldInfo(args && args.sessionId, args && args.name)
@@ -3400,7 +3407,7 @@ export async function apply(ctx) {
     })
     compiled.messages = helperMacros.messages
     compiled.trace.tavernHelperVariableMacroCount = helperMacros.replacements
-    const promptTemplates = await promptTemplateRuntime()
+    const promptTemplates = await promptTemplateRuntime(chat.sessionId)
     const transcript = (chat.messages || []).map(function (item) {
       return { role: item.role === 'user' ? 'user' : 'assistant', content: str(item.sourceText || item.text) }
     })
@@ -3417,8 +3424,8 @@ export async function apply(ctx) {
         message: lastTavernHelperVariables(chat.messages)
       }
     }
-    const initialized = promptTemplates.initializeVariables(worldInfo.entries, templateContext)
-    const templated = promptTemplates.renderMessages(compiled.messages, Object.assign({}, templateContext, { scopes: initialized.scopes }))
+    const initialized = await promptTemplates.initializeVariables(worldInfo.entries, templateContext)
+    const templated = await promptTemplates.renderMessages(compiled.messages, Object.assign({}, templateContext, { scopes: initialized.scopes }))
     compiled.messages = templated.messages
     compiled.promptTemplateState = {
       scopes: templated.scopes,
@@ -3590,6 +3597,7 @@ export async function apply(ctx) {
       return Math.max(native, Math.ceil((text.length - nonAscii) / 4) + nonAscii * 2 + 8)
     }
   })
+  const fullTemplateRequests = new WeakMap()
   ctx.on('llm/stream', function (options, next) {
     const sessionId = str(options && options.sessionId)
     const coordinates = requestCoordinates.get(sessionId)
@@ -3616,7 +3624,7 @@ export async function apply(ctx) {
         yield * ctx.llm.stream(request)
       })()
     }
-    const projectedRequest = importContextPreparation.isPrepared(options) ? null : foregroundStrategies.projectRequest(options, coordinates)
+    const projectedRequest = (fullTemplateRequests.has(options) || importContextPreparation.isPrepared(options)) ? null : foregroundStrategies.projectRequest(options, coordinates)
     if (projectedRequest !== null) return ctx.llm.stream(projectedRequest)
     const stream = next()
     const backgroundContext = backgroundAgentRunner.requestContext(sessionId)
@@ -3625,6 +3633,13 @@ export async function apply(ctx) {
       const prepared = await importContextPreparation.prepare(options)
       if (prepared !== options) { yield * ctx.llm.stream(prepared); return }
       const chat = ownerSessionId === '' ? undefined : await chatForSession(ownerSessionId)
+      if (chat && ['story', 'script'].includes(chat.mode) && options.purpose === undefined && chat.requestMode !== 'sillytavern' && !fullTemplateRequests.has(options)) {
+        const projected = await fullTemplateRuntime.forSession(ownerSessionId).projectRequest({ messages: options.messages, system: options.system, model: options.model })
+        const templated = { ...options, ...projected }
+        fullTemplateRequests.set(templated, options)
+        yield * ctx.llm.stream(templated)
+        return
+      }
       let requestRecord = null
       if (options.purpose === undefined && chat !== undefined && (chat.mode === 'story' || chat.mode === 'script')) {
         const coordinates = requestCoordinates.get(sessionId) || {}
@@ -3649,7 +3664,7 @@ export async function apply(ctx) {
         throw displayedError
       } finally {
         const completed = finish && finish.kind !== 'error' && finish.kind !== 'aborted'
-        foregroundStrategies.completeRequest(options, completed)
+        foregroundStrategies.completeRequest(fullTemplateRequests.get(options) || options, completed)
         if (chat && requestRecord) {
           try { await modelRequestLog.complete({ chatId: chat.id, id: requestRecord.id, text: responseText, finish, error: failure }) }
           catch (error) { console.error('dsh-tavern: 模型结果日志写入失败', str(error && error.message || error)) }

@@ -1,4 +1,5 @@
-import { createHash, randomBytes } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
+export { entryRandom } from './worldbook-random-sequence.js'
 
 export function hasWorldbookRandom(content) {
   return /\{\{\s*(?:random|roll)\b|\bMath\s*(?:\.\s*random|\[\s*['"]random['"]\s*\])/i.test(String(content || ''))
@@ -6,12 +7,6 @@ export function hasWorldbookRandom(content) {
 
 export function worldbookRandomState(chat, turn) {
   return chat.worldBookRandomState?.turn === turn ? chat.worldBookRandomState : { turn, seed: randomBytes(16).toString('hex') }
-}
-
-// Each entry owns a stream: admission order and repeated projection passes cannot reroll it.
-export function entryRandom(seed, ref) {
-  let counter = 0
-  return () => createHash('sha256').update(`${seed}:${ref}:${counter++}`).digest().readUInt32BE(0) / 0x100000000
 }
 
 export function renderWorldbookRandom(text, random) {

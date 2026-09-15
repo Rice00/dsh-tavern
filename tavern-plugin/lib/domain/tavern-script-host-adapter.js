@@ -335,7 +335,8 @@ export function createTavernScriptHostAdapter(options = {}) {
       environment: { characters: [character], name1: str(chat.macroState?.userName) || '你', name2: str(card.name),
         this_chid: 0, extension_settings: extensionSettings,
         world_names: worldName ? [worldName] : [], selected_world_info: [],
-        worldbooks: worldName && book ? { [worldName]: book } : {} }
+        worldbooks: worldName && book ? { [worldName]: book } : {},
+        dsh: { cardPath: chat.cardPath, model: options.modelFor ? await options.modelFor(chat) : chat.model?.model || chat.model || '', regexScripts: card.extensions?.regex_scripts || [] } }
     }
   }
 

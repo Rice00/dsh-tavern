@@ -7,7 +7,7 @@ import {
   projectWorldBookTemplates,
   prepareWorldBookRecall
 } from '../tavern-plugin/lib/domain/worldbook-recall.js'
-import { TavernPromptTemplateRuntime } from '../tavern-plugin/lib/domain/tavern-prompt-template-runtime.js'
+import { UpstreamTemplateRuntime } from './fixtures/upstream-template-runtime.mjs'
 
 function entry(ref, content, options = {}) {
   return {
@@ -37,7 +37,7 @@ function chat(body = '两人正在旅店大厅交谈。') {
   }
 }
 
-test('常驻条目按 Tavern order 进入稳定前缀，不受动态 token 预算和冷却影响', function () {
+test('常驻条目按 Tavern order 进入稳定前缀，不受动态 token 预算和冷却影响', async function () {
   const worldBook = { view: { entries: [
     entry('entry:0', '{{char}} 的故乡常年下雨。', { constant: true, order: 100 }),
     entry('entry:1', '王室法律优先执行。', { constant: true, order: 300 }),
@@ -52,7 +52,7 @@ test('常驻条目按 Tavern order 进入稳定前缀，不受动态 token 预�
   assert.doesNotMatch(result.context, /停用|钟楼秘密/)
 })
 
-test('非常驻条目默认扫描最近两条消息，优先选大 order 并按小 order 在前编排', function () {
+test('非常驻条目默认扫描最近两条消息，优先选大 order 并按小 order 在前编排', async function () {
   const current = chat('众人抵达钟楼，并在雨夜发现一扇暗门。')
   current.messages.unshift(
     { role: 'assistant', text: '更早以前曾去过矿井。', turn: 1 },
@@ -75,7 +75,7 @@ test('非常驻条目默认扫描最近两条消息，优先选大 order 并按�
   assert.doesNotMatch(prepared.context, /矿井/)
 })
 
-test('主副关键词遵守 Tavern 四种 selectiveLogic，正则关键词可参与匹配', function () {
+test('主副关键词遵守 Tavern 四种 selectiveLogic，正则关键词可参与匹配', async function () {
   const worldBook = { view: { entries: [
     entry('entry:0', 'AND_ANY', { primaryKeys: ['钟楼'], secondaryKeys: ['午夜', '正午'], selective: true, selectiveLogic: 0, order: 400 }),
     entry('entry:1', 'NOT_ALL', { primaryKeys: ['钟楼'], secondaryKeys: ['午夜', '正午'], selective: true, selectiveLogic: 1, order: 300 }),
@@ -91,7 +91,7 @@ test('主副关键词遵守 Tavern 四种 selectiveLogic，正则关键词可参
   assert.doesNotMatch(prepared.context, /AND_ALL/)
 })
 
-test('预算内实际注入的条目进入十轮冷却，未入选条目下一轮仍可竞争', function () {
+test('预算内实际注入的条目进入十轮冷却，未入选条目下一轮仍可竞争', async function () {
   const entries = [0, 1, 2, 3, 4, 5].map(function (index) {
     return entry('entry:' + index, '设定 ' + index, { primaryKeys: ['钟楼'], order: 400 - index * 100 })
   })
@@ -112,7 +112,7 @@ test('预算内实际注入的条目进入十轮冷却，未入选条目下一�
   assert.deepEqual(afterEleven.refs, ['entry:4', 'entry:3', 'entry:2', 'entry:1', 'entry:0'])
 })
 
-test('条目正文改变后立即解除冷却，空世界书直接跳过', function () {
+test('条目正文改变后立即解除冷却，空世界书直接跳过', async function () {
   const skipped = prepareWorldBookRecall({ card: card(), chat: chat(), worldBook: null })
   assert.equal(skipped.kind, 'skip')
   assert.equal(skipped.context, '')
@@ -129,7 +129,7 @@ test('条目正文改变后立即解除冷却，空世界书直接跳过', funct
   assert.equal(prepared.context, '修改后的新设定。')
 })
 
-test('[mvu_update] 只进入后台变量规则，不再要求前台剧情模型输出协议', function () {
+test('[mvu_update] 只进入后台变量规则，不再要求前台剧情模型输出协议', async function () {
   const update = entry('entry:0', '每轮按正文更新体力。', { constant: true, title: '[mvu_update]变量更新' })
   const plot = entry('entry:1', '古殿深处传来水声。', { constant: true, title: '[mvu_plot]剧情规则' })
   const worldBook = { view: { entries: [update, plot] } }
@@ -139,7 +139,7 @@ test('[mvu_update] 只进入后台变量规则，不再要求前台剧情模型�
 })
 
 test('原生世界书把 EJS 控制器移出稳定前缀，并可按最新 MVU 变量读取停用资料条目', async function () {
-  const runtime = await TavernPromptTemplateRuntime.create()
+  const runtime = await UpstreamTemplateRuntime.create()
   const worldBook = { view: { displayName: '测试世界书', entries: [
     entry('entry:0', '始终可见的静态规则。', { constant: true, order: 300 }),
     {
@@ -153,7 +153,7 @@ test('原生世界书把 EJS 控制器移出稳定前缀，并可按最新 MVU �
   ] } }
 
   const stable = constantWorldBookContext({ worldBook })
-  const projected = projectWorldBookTemplates({
+  const projected = await projectWorldBookTemplates({
     worldBook,
     runtime,
     card: { name: '阿芙拉' },
@@ -173,21 +173,21 @@ test('原生世界书把 EJS 控制器移出稳定前缀，并可按最新 MVU �
 })
 
 test('原生世界书控制器失败时局部跳过，不把模板源码发送给正文模型', async function () {
-  const runtime = await TavernPromptTemplateRuntime.create()
+  const runtime = await UpstreamTemplateRuntime.create()
   const worldBook = { view: { entries: [
     entry('entry:0', '静态规则。', { constant: true }),
     entry('entry:1', '@@preprocessing\n<% if ( %>泄漏源码', { constant: true })
   ] } }
 
   const stable = constantWorldBookContext({ worldBook })
-  const projected = projectWorldBookTemplates({ worldBook, runtime, card: card(), chat: chat() })
+  const projected = await projectWorldBookTemplates({ worldBook, runtime, card: card(), chat: chat() })
 
   assert.equal(stable.context, '静态规则。')
   assert.equal(projected.context, '')
   assert.deepEqual(projected.diagnostics, [{ kind: 'worldbook-template', code: 'syntax-error', ref: 'entry:1' }])
 })
 
- test('数字编号 MVU 条目进入后台且不占正文额度', () => {
+ test('数字编号 MVU 条目进入后台且不占正文额度', async () => {
   const updates = ['11d_[mvu_update]官党投效登记', '30b_[mvu_update]本命兵刃登记', '31b_[mvu_update]炼制成品登记'].map((title, i) => entry('entry:' + i, '登记' + i, { title, primaryKeys: ['少林'] }))
   const plot = entry('entry:3', '正文设定', { primaryKeys: ['少林'], title: '说明[mvu_update]并非标签' })
   const worldBook = { view: { entries: [...updates, plot] } }

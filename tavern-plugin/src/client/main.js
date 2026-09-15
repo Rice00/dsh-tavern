@@ -3919,10 +3919,13 @@ window.__ModuleLoader__.load({
 
 		// The selected game's executor belongs to the plugin, not its disposable header.
 		// Descendant navigation shares its owner; unrelated games never share a sandbox.
+		// @include full-template-executor.js
+
 		function createTavernScriptSessionOwner(options) {
 			const hostWindow = options.window || window;
 			const sessions = options.sessions;
 			const views = options.liveView || liveTavernView;
+            const template = createFullTemplateExecutor({ window: hostWindow, rpc: options.rpc || rpc });
 			const transition = options.transition || tavernSessionTransition;
 			const listeners = new Set();
 			let snapshot = { sessionId: "", loadState: null };
@@ -3957,12 +3960,13 @@ window.__ModuleLoader__.load({
 				if (stopView) stopView();
 				stopView = null;
 				execution.dispose();
+                template.dispose();
 				publish("", null);
 			}
 			function syncView() {
 				if (!current || transition.getSnapshot()) return;
 				const state = current.viewState;
-				if (state && state.phase === "ready") execution.sync(current.sessionId, state.view || {});
+				if (state && state.phase === "ready") { execution.sync(current.sessionId, state.view || {}); template.sync(current.sessionId, state.view || {}); }
 			}
 			function select() {
 				if (!observing) return;
@@ -5451,7 +5455,7 @@ window.__ModuleLoader__.load({
 				if (openingPicker.preparedKey === preparedKey) return;
 				const timer = window.setTimeout(async function () {
 					try {
-						const response = await call("getCardOpenings", { path: cardPath, userName: userName, requestMode: compatibilityAvailable && requestMode === "sillytavern" ? "sillytavern" : "dsh" });
+						const response = await initializeFullOpeningTemplate(await call("getCardOpenings", { path: cardPath, userName: userName, requestMode: compatibilityAvailable && requestMode === "sillytavern" ? "sillytavern" : "dsh" }));
 						if (stopped) return;
 						setOpeningPicker(function (current) {
 							if (!current || current.card.path !== cardPath || (String(current.userName || "你").trim() || "你") !== userName) return current;
@@ -5693,7 +5697,7 @@ window.__ModuleLoader__.load({
 					const userName = String(window.localStorage.getItem("dsh-tavern-player-name") || "你").trim() || "你";
 					const preparedKey = JSON.stringify([userName, compatibilityAvailable && requestMode === "sillytavern" ? "sillytavern" : "dsh"]);
 					setOpeningPicker({ card: card, openings: [], index: 0, userName: userName, preparing: true });
-					const response = await call("getCardOpenings", { path: card.path, userName: userName, requestMode: compatibilityAvailable && requestMode === "sillytavern" ? "sillytavern" : "dsh" });
+					const response = await initializeFullOpeningTemplate(await call("getCardOpenings", { path: card.path, userName: userName, requestMode: compatibilityAvailable && requestMode === "sillytavern" ? "sillytavern" : "dsh" }));
 					const openings = response.openings || [];
 					setOpeningPicker({ card: card, preparing: false, preparedKey: preparedKey, preparationId: response.preparationId || "", openings: openings, index: 0, userName: userName, trustedCardMode: response.trustedCardMode });
 				} catch (err) { setOpeningPicker(null); playPrewarmRef.current.cancel(); setError(String(err && err.message || err)); }

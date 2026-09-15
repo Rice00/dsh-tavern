@@ -13,6 +13,7 @@ function harness() {
   const state = { openingPicker: null, busy: false, error: "", calls: 0, timers: [] };
   const context = vm.createContext({
     window: { localStorage: { getItem: () => " 你 " }, setTimeout: fn => { state.timers.push(fn); return 1; }, clearTimeout() {} },
+    initializeFullOpeningTemplate: async response => response,
     compatibilityAvailable: false, requestMode: "dsh",
     playPrewarmRef: { current: { begin() {}, cancel() {} } },
     setBusy: value => { state.busy = value; },

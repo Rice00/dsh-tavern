@@ -1,9 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createForegroundWorldbook } from '../tavern-plugin/lib/domain/foreground-worldbook.js'
-import { TavernPromptTemplateRuntime } from '../tavern-plugin/lib/domain/tavern-prompt-template-runtime.js'
+import { UpstreamTemplateRuntime } from './fixtures/upstream-template-runtime.mjs'
 import { inspectWorldBookDocument, updateWorldBookDocument, exportCharacterBook, exportSillyTavernWorldBook } from '../tavern-plugin/lib/domain/worldbook-resource.js'
-const runtime = await TavernPromptTemplateRuntime.create()
+const runtime = await UpstreamTemplateRuntime.create()
 const e = (ref, content, order = 100, extra = {}) => ({ ref, content, order, enabled: true, primaryKeys: ['地点'], ...extra })
 const project = (entries, token_budget) => createForegroundWorldbook({ bound: async () => ({ view: { entries, raw: { token_budget } } }), runtime: async () => runtime, globalVariables: async () => ({}) })({ chat: { messages: [] }, card: {}, userText: '地点' })
 
@@ -33,7 +33,7 @@ test('零预算关闭非常驻召回，常驻标签保持原有路径', async ()
   assert.equal(result.log.budget.used, 0)
   assert.equal(result.log.entries.find(e => e.ref === '动态').reason, 'budget')
 })
-test('预算设置在嵌入与独立格式编辑导出后仍生效，非法输入不静默截断', () => {
+test('预算设置在嵌入与独立格式编辑导出后仍生效，非法输入不静默截断', async () => {
   const original = { entries: { 0: {uid:0, key:['地点'],content:'正文'} } }
   const updated = updateWorldBookDocument(original, {tokenBudget:1234,scanDepth:1}).document
   const exported = exportSillyTavernWorldBook(exportCharacterBook(updated))

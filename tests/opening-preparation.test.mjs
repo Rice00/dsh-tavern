@@ -89,10 +89,9 @@ test('原样宿主调用：更新世界书、保存 swipe、重新加载，实�
   await assert.rejects(host.waitGlobalInitialized('Mvu'), /尚未初始化/, 'must not claim an unloaded MVU is ready')
 })
 
-import { TavernPromptTemplateRuntime } from '../tavern-plugin/lib/domain/tavern-prompt-template-runtime.js'
-test('准备页加载真实模板引擎，运行时变量和插件设置均隔离保存', async () => {
+test('准备页运行时变量和插件设置均隔离保存', async () => {
   const { record } = fixture()
-  const service = createOpeningPreparation({ readCard: async () => card, worldBooks: { bound: async () => record }, templateRuntime: () => TavernPromptTemplateRuntime.create() })
+  const service = createOpeningPreparation({ readCard: async () => card, worldBooks: { bound: async () => record } })
   const draft = await service.create('card', { runtime: true })
   assert.equal(draft.runtime.context.extensionSettings.EjsTemplate.enabled, true)
   assert.equal(draft.runtime.scripts[0].system, 'official-mvu')
@@ -211,4 +210,16 @@ test('所选开场使用自己的 MVU 初值，切换后默认变量写入也落
   const result = service.resolve(draft.id, 'card', 'alternate:0')
   assert.deepEqual(result.messageVariables, updated)
   assert.deepEqual(result.openingVariables.primary, first)
+})
+
+test('完整模板初始化结果进入私有开场草稿，随后脚本能读取变量', async () => {
+  const { service } = fixture()
+  const draft = await service.create('card', { runtime: true })
+  const snapshot = service.templateState(draft.id)
+  assert.equal(snapshot.state.sessionId, 'opening:' + draft.id)
+  assert.equal(snapshot.environment.characters[0].data.extensions.world, card.name)
+  service.applyTemplateInitial(draft.id, { initial: { hp: 10 }, diagnostics: [] })
+  assert.equal(service.resolve(draft.id, 'card', 'primary').variables.hp, 10)
+  assert.equal(service.get(draft.id).runtime.context.chatVariables.hp, 10)
+  assert.deepEqual(service.resolve((await service.create('card')).id, 'card', 'primary').variables, {})
 })

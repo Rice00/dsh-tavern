@@ -1,5 +1,5 @@
 import { createNativeTemplateConnection } from './native-connection.js'
-import { configureTemplateHost, disposeTemplateHost, eventSource, runTemplateCommand, templateCommandNames } from './host.js'
+import { configureTemplateHost, refreshTemplateSnapshot, disposeTemplateHost, eventSource, runTemplateCommand, templateCommandNames } from './host.js'
 
 /** This must be loaded in a dedicated disposable frame, once per session. */
 export async function initializeTemplatePlugin({ snapshot, callbacks, libraries }) {
@@ -21,6 +21,8 @@ export async function initializeTemplatePlugin({ snapshot, callbacks, libraries 
     }
     return {
       version: '1.17.9',
+      project: (operation, input) => run(async () => (await import('./projection.js')).projectTemplate(operation, input)),
+      refresh: snapshot => run(() => refreshTemplateSnapshot(snapshot)),
       api: globalThis.EjsTemplate,
       commands: templateCommandNames(),
       emit: (...args) => run(() => eventSource.emit(...args)),
@@ -50,5 +52,7 @@ export async function initializeTemplatePlugin({ snapshot, callbacks, libraries 
 export async function connectTemplateSession({ sessionId, rpc, services, settingsHtml, libraries }) {
   const connection = await createNativeTemplateConnection({ sessionId, rpc, services, settingsHtml })
   const plugin = await initializeTemplatePlugin({ ...connection, libraries })
-  try { await connection.flush(); return { ...plugin, context: connection.snapshot } } catch(error) { await plugin.dispose(); throw error }
+  try { await connection.flush(); return { ...plugin, context: connection.snapshot, refresh: async () => plugin.refresh(await connection.refresh()) } } catch(error) { await plugin.dispose(); throw error }
 }
+
+export { createTemplateServices } from './services.js'

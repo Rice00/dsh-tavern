@@ -5,9 +5,8 @@ import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { inspectWorldBookDocument, updateWorldBookDocument } from '../../tavern-plugin/lib/domain/worldbook-resource.js'
 import { createForegroundWorldbook } from '../../tavern-plugin/lib/domain/foreground-worldbook.js'
-import { TavernPromptTemplateRuntime } from '../../tavern-plugin/lib/domain/tavern-prompt-template-runtime.js'
 const require = createRequire(join(process.env.DSH_ROOT, 'node_modules/@deepseek-ai/dsh-client-ui-trajectory/package.json'))
-const runtime = await TavernPromptTemplateRuntime.create()
+const runtime = { render() { throw new Error('This editor fixture contains no templates') } }
 let document = { name: '世界书改造验证', entries: {
   0: { uid: 0, comment: '角色库开头', content: '<角色库>', constant: true, order: 10, position: 0 },
   1: { uid: 1, comment: 'Alice', content: 'Alice 在钟楼值班。', key: ['Alice'], order: 20, position: 0 },

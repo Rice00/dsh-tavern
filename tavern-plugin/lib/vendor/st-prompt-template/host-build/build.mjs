@@ -46,7 +46,7 @@ export async function buildTemplatePlugin({ dependencyRoot, outputPath }) {
   }
   await writeFile(resolve(outputPath, 'manifest.json'), JSON.stringify({
     upstreamCommit: upstream.commit, version: upstream.version,
-    entry: 'index.js', hostIntegrated: false, files
+    entry: 'index.js', hostIntegrated: true, files
   }, null, 2) + '\n')
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

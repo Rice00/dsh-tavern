@@ -3,10 +3,10 @@ import assert from 'node:assert/strict'
 import { prepareWorldBookRecall } from '../tavern-plugin/lib/domain/worldbook-recall.js'
 import { createWorldbookRecallLog } from '../tavern-plugin/lib/domain/worldbook-recall-log.js'
 import { createForegroundWorldbook } from '../tavern-plugin/lib/domain/foreground-worldbook.js'
-import { TavernPromptTemplateRuntime } from '../tavern-plugin/lib/domain/tavern-prompt-template-runtime.js'
+import { UpstreamTemplateRuntime } from './fixtures/upstream-template-runtime.mjs'
 
 const entry = (ref, order, extra = {}) => ({ ref, order, title: ref, enabled: true, content: '设定 ' + ref, primaryKeys: ['少林'], ...extra })
-test('日志区分当前输入和历史命中，并解释低优先级条目为何被 token 预算拒绝', () => {
+test('日志区分当前输入和历史命中，并解释低优先级条目为何被 token 预算拒绝', async () => {
  const entries = Array.from({length:6},(_,i)=>entry('entry:'+i,i))
  entries.push(entry('secondary',100,{secondaryKeys:['午夜'],selective:true,selectiveLogic:0}))
  const result=prepareWorldBookRecall({worldBook:{view:{entries,raw:{token_budget:30}}},chat:{messages:[{role:'assistant',text:'少林山门',turn:1}]},userText:'请教少林罗汉功',turn:1})
@@ -22,7 +22,7 @@ test('日志区分当前输入和历史命中，并解释低优先级条目为�
  assert.equal(secondary.reason,'keywords')
  assert.ok(excluded.priorityRank>result.diagnostics.find(e=>e.ref==='entry:5').priorityRank)
 })
-test('分组日志指明胜者与竞争方式，冷却日志记录起止依据', () => {
+test('分组日志指明胜者与竞争方式，冷却日志记录起止依据', async () => {
  const entries=[entry('a',1,{group:'人',groupOverride:true}),entry('b',2,{group:'人'})]
  const first=prepareWorldBookRecall({worldBook:{view:{entries}},userText:'少林',turn:1})
  assert.equal(first.diagnostics.find(e=>e.ref==='b').groupReason,'priority')
@@ -31,7 +31,7 @@ test('分组日志指明胜者与竞争方式，冷却日志记录起止依据',
  assert.deepEqual(next.diagnostics.find(e=>e.ref==='a').cooldown,{readTurn:1,currentTurn:2,duration:10})
 })
 test('日志把已选中但模板失败与实际输出分开，禁用条目有明确原因', async () => {
- const runtime=await TavernPromptTemplateRuntime.create()
+ const runtime=await UpstreamTemplateRuntime.create()
  const entries=[entry('bad',1,{content:'<% if ( %>'}),entry('good',2),entry('off',3,{enabled:false})]
  const project=createForegroundWorldbook({bound:async()=>({view:{entries}}),runtime:async()=>runtime,globalVariables:async()=>({})})
  const result=await project({chat:{messages:[]},card:{},userText:'少林'})

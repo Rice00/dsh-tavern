@@ -132,7 +132,7 @@ export function constantWorldBookContext(input = {}) {
  * Disabled entries remain addressable by getwi(), but never activate themselves.
  * Scope mutations stay inside this read-only projection and cannot change Chat state.
  */
-export function projectWorldBookTemplates(input = {}) {
+export async function projectWorldBookTemplates(input = {}) {
   const runtime = input.runtime
   if (!runtime || typeof runtime.render !== 'function') throw new Error('缺少世界书模板运行时')
   const resources = allEntries(input.worldBook)
@@ -167,12 +167,13 @@ export function projectWorldBookTemplates(input = {}) {
   for (const entry of controllers) {
     const random = input.randomSeed ? entryRandom(input.randomSeed, entry.ref) : (input.random || Math.random)
     const result = isWorldBookTemplateEntry(entry)
-      ? runtime.render(templateBody(entry.content), Object.assign({}, templateContext, { scopes, random }))
+      ? await runtime.render(templateBody(entry.content), Object.assign({}, templateContext, { scopes, randomSeed: input.randomSeed, randomRef: entry.ref }))
       : { ok: true, text: entry.content, scopes }
     if (!result.ok) {
       diagnostics.push({ kind: 'worldbook-template', code: result.kind, ref: str(entry.ref) })
       continue
     }
+    for (let count = 0; count < (result.randomCalls || 0); count++) random()
     activationRequests.push(...(result.activationRequests || []).map(request => ({ ...request, sourceRef: entry.ref })))
     scopes = clone(result.scopes)
     const projected = input.includeConstants === true

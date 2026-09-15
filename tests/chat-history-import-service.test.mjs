@@ -1,6 +1,6 @@
 import { createForegroundWorldbook } from '../tavern-plugin/lib/domain/foreground-worldbook.js'
 import { projectWorldBookTemplates } from '../tavern-plugin/lib/domain/worldbook-recall.js'
-import { TavernPromptTemplateRuntime } from '../tavern-plugin/lib/domain/tavern-prompt-template-runtime.js'
+import { UpstreamTemplateRuntime } from './fixtures/upstream-template-runtime.mjs'
 import test from 'node:test'
 import { createContextPlanner } from '../tavern-plugin/lib/domain/context-planner.js'
 import assert from 'node:assert/strict'
@@ -87,7 +87,7 @@ test('concurrent requests cannot reuse an operation for different content',async
 })
 
 test('import rebuilds card instructions and worldbook context against each historical state', async () => {
- const h=fixture(), seen=[], runtime=await TavernPromptTemplateRuntime.create()
+ const h=fixture(), seen=[], runtime=await UpstreamTemplateRuntime.create()
  h.options.cards.read=async()=>({name:'card',system_prompt:'Card special rule',post_history_instructions:'Card writing constraint'})
  h.options.worldBooks.bound=async()=>({view:{entries:[{comment:'[initvar]',content:'hp: 10'},
   {ref:'walking',enabled:true,primaryKeys:['/\\bwalk\\b/'],content:'Opening worldbook rule'},
@@ -96,7 +96,7 @@ test('import rebuilds card instructions and worldbook context against each histo
  h.options.projectWorldBookTemplates=async(chat)=>{
   const hp=chat.messages.at(-1)?.variables?.[0]?.stat_data.hp
   seen.push(hp)
-  return projectWorldBookTemplates({chat, card:await h.options.cards.read(), worldBook:await h.options.worldBooks.bound(), runtime})
+  return await projectWorldBookTemplates({chat, card:await h.options.cards.read(), worldBook:await h.options.worldBooks.bound(), runtime})
  }
  await createChatHistoryImportService(h.options).import(input)
  const frames=h.session.deriveMessages().filter(m=>m.source?.form==='foreground-frame').map(m=>m.content[0].text)
@@ -116,7 +116,7 @@ test('import rebuilds card instructions and worldbook context against each histo
 
 
 test('历史导入复用正式世界书投影，当前输入不重复占用扫描窗口，蓝绿灯一起编排', async () => {
- const h=fixture(), runtime=await TavernPromptTemplateRuntime.create()
+ const h=fixture(), runtime=await UpstreamTemplateRuntime.create()
  const worldBook={view:{entries:[{comment:'[initvar]',content:'hp: 10',enabled:false},
   {ref:'open',constant:true,content:'<角色库>',order:10},
   {ref:'role',primaryKeys:['/\\bwalk\\b/'],content:'开场角色',order:20},

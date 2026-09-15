@@ -1,3 +1,4 @@
+import { projectFullPromptTemplateState, applyFullPromptTemplateState } from './full-prompt-template-state.js'
 import { projectTavernHelperScripts } from './tavern-helper-scripts.js'
 import { mutateScriptPrompts } from './tavern-script-prompts.js'
 import { projectTavernHelperContext, replaceTavernHelperVariables, replaceTavernHelperMessages } from './tavern-helper-context.js'
@@ -10,7 +11,7 @@ import { projectTavernHelperWorldbook, replaceTavernHelperWorldbookOperations } 
 const copy = value => structuredClone(value)
 
 /** Private pre-game host state. No Session or shared resource is written here. */
-export function createOpeningPreparation({ readCard, worldBooks, templateRuntime, generateRaw, readRuntimeExtensions, now = Date.now }) {
+export function createOpeningPreparation({ readCard, worldBooks, generateRaw, readRuntimeExtensions, now = Date.now }) {
   const drafts = new Map()
   const lifetime = 2 * 60 * 60 * 1000
   function requireDraft(id) {
@@ -56,15 +57,39 @@ export function createOpeningPreparation({ readCard, worldBooks, templateRuntime
       draft.diagnostics = projected.diagnostics.concat(extensions.diagnostics || [])
       draft.runtimeEnabled = projected.scripts.length > 0
       draft.extensionSettings = {}
-      if (settings.runtime === true && templateRuntime) {
-        const runtime = await templateRuntime()
-        const initialized = runtime.initializeVariables(record?.view.entries || [], { charName: card.name, userName: draft.userName })
-        if (initialized.diagnostics.length) throw new Error('开场模板初始变量解析失败：' + initialized.diagnostics.map(item => item.code).join('、'))
-        draft.chat.variables = copy(initialized.initial)
-        draft.extensionSettings.EjsTemplate = { enabled: true }
-        draft.runtimeEnabled = true
-      }
+      if (settings.runtime === true) { draft.extensionSettings.EjsTemplate = { enabled: true }; draft.runtimeEnabled = true }
+      draft.chat.sessionId = 'opening:' + draft.id
       drafts.set(draft.id, draft)
+      return present(draft)
+    },
+    templateState(id) {
+      const draft = requireDraft(id), world = draft.card.name || 'opening'
+      const card = { ...copy(draft.card), data: { ...copy(draft.card), extensions: { ...draft.card.extensions, world } } }
+      return { state: projectFullPromptTemplateState(draft.chat), environment: { characters: [card], this_chid: 0,
+        name1: draft.userName, name2: draft.card.name, world_names: [world], selected_world_info: [],
+        extension_settings: { ...copy(draft.extensionSettings), variables: { global: copy(draft.globalVariables || {}) } },
+        worldbooks: { [world]: draft.document ? exportSillyTavernWorldBook(draft.document) : { entries: {} } },
+        dsh: { cardPath: draft.cardPath, regexScripts: [], model: '' } } }
+    },
+    saveTemplateState(id, state) {
+      const draft = requireDraft(id)
+      draft.chat = applyFullPromptTemplateState(draft.chat, copy(draft.chat), state)
+      draft.chat._storageRevision++
+      return { updated: true, state: projectFullPromptTemplateState(draft.chat) }
+    },
+    saveTemplateSettings(id, settings) {
+      const draft = requireDraft(id); draft.extensionSettings.EjsTemplate = copy(settings)
+      return { updated: true, settings: copy(settings) }
+    },
+    saveTemplateGlobals(id, variables) {
+      const draft = requireDraft(id); draft.globalVariables = copy(variables)
+      return { updated: true, variables: copy(variables) }
+    },
+    applyTemplateInitial(id, result) {
+      const draft = requireDraft(id)
+      if (result.diagnostics?.length) throw new Error('完整模板初始化失败')
+      draft.chat.variables = copy(result.initial)
+      draft.chat._storageRevision++
       return present(draft)
     },
     get(id) { return present(requireDraft(id)) },

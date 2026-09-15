@@ -121,6 +121,7 @@ export function inspectWorldBookDocument(document, options = {}) {
     displayName: str(book.name).trim() || fallbackName || '未命名世界书',
     description: str(book.description),
     scanDepth: book.scan_depth ?? 2,
+    tokenBudget: book.token_budget ?? 8192,
     recursiveScanning: book.recursive_scanning === true,
     entryCount: entries.length,
     enabledCount: entries.filter(function (entry) { return entry.enabled }).length,
@@ -265,7 +266,7 @@ export function exportCharacterBook(document, options = {}) {
   if (options.replace) delete exported.originalData
   if (hasOwn(book, 'name')) exported.name = str(book.name)
   if (hasOwn(book, 'description')) exported.description = str(book.description)
-  for (const key of ['scan_depth', 'recursive_scanning', 'case_sensitive', 'match_whole_words']) {
+  for (const key of ['scan_depth', 'token_budget', 'recursive_scanning', 'case_sensitive', 'match_whole_words']) {
     if (hasOwn(book, key)) exported[key] = clone(book[key])
   }
   exported.extensions = Object.assign({}, object(original.extensions) || {}, object(book.extensions) || {})
@@ -331,6 +332,11 @@ export function updateWorldBookDocument(document, request = {}) {
     const depth = Number(request.scanDepth)
     if (!Number.isInteger(depth) || depth < 0 || depth > 1000) throw new Error('扫描深度必须为 0 至 1000 的整数')
     book.scan_depth = depth
+  }
+  if (Object.hasOwn(request, 'tokenBudget')) {
+    const budget = Number(request.tokenBudget)
+    if (!Number.isInteger(budget) || budget < 0 || budget > 1000000) throw new Error('Token 预算必须为 0 至 1000000 的整数')
+    book.token_budget = budget
   }
   if (Object.hasOwn(request, 'recursiveScanning')) book.recursive_scanning = request.recursiveScanning === true
   let operations = Array.isArray(request.operations) ? request.operations : (request.operations ? [request.operations] : [])

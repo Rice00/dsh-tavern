@@ -35,10 +35,10 @@ test('常驻条目可触发递归；未入选条目不能把隐藏正文带入�
   assert.deepEqual(recall(entries, {}, { recursive_scanning: true }).refs, ['entry:1'])
   const overflow = Array.from({ length: 6 }, (_, uid) => e(uid, 'start', { order: uid, content: uid === 0 ? 'hidden' : '普通内容' }))
   overflow.push(e(9, 'hidden', { order: 999 }))
-  const result = recall(overflow, { userText: 'start' }, { recursive_scanning: true })
+  const result = recall(overflow, { userText: 'start' }, { recursive_scanning: true, token_budget: 30 })
   assert.equal(result.refs.length, 5)
   assert.ok(!result.refs.includes('entry:9'))
-  assert.equal(result.diagnostics.find(item => item.ref === 'entry:0').reason, 'limit')
+  assert.equal(result.diagnostics.find(item => item.ref === 'entry:0').reason, 'budget')
 })
 test('包含组支持优先级、权重、计分和多个组，不会重复入选', () => {
   const entries = [e(0, 'Alice', { group: '角色', groupOverride: true, order: 10 }), e(1, 'Alice', { group: '角色', order: 200 })]
@@ -90,10 +90,10 @@ test('正式前台投影：蓝灯标签包住绿灯角色，系统前缀无重�
   const prefixOnly = projectWorldBookTemplates({ worldBook, runtime, includeConstants: true, chat, card: {} })
   assert.equal(prefixOnly.prefixContext, '通用规则')
 })
-test('失败的绿灯 EJS 不泄露源码、不消耗冷却；脚本扫描与玩家输入共享五条上限', async () => {
+test('失败的绿灯 EJS 不泄露源码、不消耗冷却；脚本扫描与玩家输入共享 token 预算', async () => {
   const entries = Array.from({ length: 6 }, (_, uid) => e(uid, uid > 2 ? 'script' : 'player', { order: uid }))
   entries.push(e(9, 'player', { content: '<% if ( %>', order: 999 }))
-  const project = createForegroundWorldbook({ bound: async () => book(entries), runtime: async () => runtime, globalVariables: async () => ({}), scanText: () => 'script' })
+  const project = createForegroundWorldbook({ bound: async () => book(entries, { token_budget: 20 }), runtime: async () => runtime, globalVariables: async () => ({}), scanText: () => 'script' })
   const result = await project({ chat: { messages: [] }, card: {}, userText: 'player' })
   assert.equal(result.refs.length, 4)
   assert.equal(result.reads['entry:9'], undefined)

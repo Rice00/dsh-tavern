@@ -194,7 +194,7 @@ export function projectWorldBookTemplates(input = {}) {
   }
 }
 
-/** Select at most five non-constant entries; retain the existing ten-turn cooldown. */
+/** Select non-constant entries within a token budget; retain the existing ten-turn cooldown. */
 export function prepareWorldBookRecall(input = {}) {
   const forced = new Set((input.activationRequests || []).filter(request => request.force).map(request => request.ref))
   const all = allEntries(input.worldBook).filter(entry => (entry.enabled !== false || forced.has(entry.ref)) && str(entry.content).trim() && !isMvuUpdateEntry(entry))
@@ -213,6 +213,7 @@ export function prepareWorldBookRecall(input = {}) {
     entries: activation.entries,
     diagnostics: activation.diagnostics,
     settings: activation.settings,
+    budget: activation.budget,
     scanSources: activation.scanSources,
     context: selected.map(function (entry) { return str(entry.content).trim() }).filter(Boolean).join('\n\n'),
     refs: selected.map(function (entry) { return str(entry.ref) }),

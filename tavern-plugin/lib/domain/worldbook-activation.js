@@ -1,6 +1,12 @@
 // Selection priority and prompt order are different in SillyTavern.
 const str = value => value == null ? '' : String(value)
-export const DYNAMIC_ENTRY_LIMIT = 5
+export const DEFAULT_WORLD_BOOK_TOKEN_BUDGET = 8192
+// Local admission estimate, not provider usage. Count non-ASCII more conservatively than ASCII.
+export function estimateWorldBookTokens(value) {
+  let ascii = 0, other = 0
+  for (const char of str(value)) char.codePointAt(0) < 128 ? ascii++ : other++
+  return Math.ceil(ascii / 4 + other)
+}
 export function priorityOrder(entries) {
   return entries.map((entry, index) => ({ entry, index })).sort((a, b) =>
     (Number(b.entry.order ?? 100) - Number(a.entry.order ?? 100)) ||
@@ -33,6 +39,7 @@ export function worldBookSettings(worldBook) {
   const raw = worldBook?.view?.raw || {}
   return {
     scanDepth: integer(raw.scan_depth, 2),
+    tokenBudget: integer(raw.token_budget, DEFAULT_WORLD_BOOK_TOKEN_BUDGET, 1000000),
     recursive: raw.recursive_scanning === true,
     caseSensitive: raw.case_sensitive === true,
     matchWholeWords: raw.match_whole_words === true
@@ -189,7 +196,7 @@ export function activateWorldBook(input) {
     order: entry.order ?? 100, displayIndex: entry.displayIndex, placement: placementKey(entry), priorityRank: entries.indexOf(entry) + 1,
     scanDepth: integer(entry.scanDepth, settings.scanDepth), caseSensitive: entry.caseSensitive, matchWholeWords: entry.matchWholeWords, reason, ...extra })
   const levels = [...new Set(entries.map(entry => integer(entry.delayUntilRecursion, 0)).filter(Boolean))].sort((a, b) => a - b)
-  let level = 0, iteration = 0, dynamicCount = 0
+  let level = 0, iteration = 0, budgetUsed = 0, budgetOverflowed = false
   // Each successful step consumes entries; delayed levels are finite as well.
   while (iteration <= entries.length + levels.length + 1) {
     const sourcesFor = entry => {
@@ -220,11 +227,20 @@ export function activateWorldBook(input) {
     })
     const added = []
     for (const entry of winners) {
-      if (!entry.constant && dynamicCount >= DYNAMIC_ENTRY_LIMIT) { reject(entry, 'limit', { limit: DYNAMIC_ENTRY_LIMIT, selectedBefore: activated.filter(item => !item.constant).map(item => item.ref) }); rejected.add(entry.ref); continue }
+      const tokenCost = input.tokenCosts ? (input.tokenCosts[entry.ref] ?? 0) : (estimateWorldBookTokens(entry.content) + 2)
+      const hardLimit = settings.tokenBudget * 2
+      if (!entry.constant && !input.ignoreBudget && (budgetOverflowed || budgetUsed >= settings.tokenBudget || budgetUsed + tokenCost > hardLimit)) {
+        reject(entry, 'budget', { tokenCost, budgetUsed, tokenBudget: settings.tokenBudget, hardLimit,
+          budgetReason: budgetOverflowed ? 'stopped' : budgetUsed >= settings.tokenBudget ? 'soft-limit-reached' : 'hard-limit', overflowedEarlier: budgetOverflowed,
+          selectedBefore: activated.filter(item => !item.constant).map(item => item.ref) })
+        budgetOverflowed = true
+        rejected.add(entry.ref)
+        continue
+      }
       activated.push(entry)
       added.push(entry)
-      if (!entry.constant) dynamicCount++
-      reject(entry, 'selected', { stage: iteration ? 'recursion' : 'initial', scanDepth: integer(entry.scanDepth, settings.scanDepth) })
+      if (!entry.constant) budgetUsed += tokenCost
+      reject(entry, 'selected', { tokenCost: entry.constant ? 0 : tokenCost, budgetUsed, stage: iteration ? 'recursion' : 'initial', scanDepth: integer(entry.scanDepth, settings.scanDepth) })
     }
     if (!settings.recursive) break
     const sources = added.filter(entry => !entry.preventRecursion).map(entry => ({ text: str(entry.content), source: 'recursion', ref: entry.ref })).filter(source => source.text)
@@ -235,5 +251,5 @@ export function activateWorldBook(input) {
     if (nextLevel === undefined) break
     level = nextLevel
   }
-  return { entries: activated, diagnostics: [...diagnostics.values()], settings, scanSources: messages.map(({ text, ...source }) => ({ ...source, chars: text.length })) }
+  return { budget: { limit: settings.tokenBudget, hardLimit: settings.tokenBudget * 2, mode: 'soft', used: budgetUsed, overflowed: budgetOverflowed, estimator: 'unicode-estimate', scope: 'non-constant' }, entries: activated, diagnostics: [...diagnostics.values()], settings, scanSources: messages.map(({ text, ...source }) => ({ ...source, chars: text.length })) }
 }

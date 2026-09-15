@@ -6,12 +6,12 @@ import { createForegroundWorldbook } from '../tavern-plugin/lib/domain/foregroun
 import { TavernPromptTemplateRuntime } from '../tavern-plugin/lib/domain/tavern-prompt-template-runtime.js'
 
 const entry = (ref, order, extra = {}) => ({ ref, order, title: ref, enabled: true, content: '设定 ' + ref, primaryKeys: ['少林'], ...extra })
-test('日志区分当前输入和历史命中，并解释低优先级条目为何被五条上限拒绝', () => {
+test('日志区分当前输入和历史命中，并解释低优先级条目为何被 token 预算拒绝', () => {
  const entries = Array.from({length:6},(_,i)=>entry('entry:'+i,i))
  entries.push(entry('secondary',100,{secondaryKeys:['午夜'],selective:true,selectiveLogic:0}))
- const result=prepareWorldBookRecall({worldBook:{view:{entries}},chat:{messages:[{role:'assistant',text:'少林山门',turn:1}]},userText:'请教少林罗汉功',turn:1})
+ const result=prepareWorldBookRecall({worldBook:{view:{entries,raw:{token_budget:30}}},chat:{messages:[{role:'assistant',text:'少林山门',turn:1}]},userText:'请教少林罗汉功',turn:1})
  const excluded=result.diagnostics.find(e=>e.ref==='entry:0')
- assert.equal(excluded.reason,'limit');assert.equal(excluded.selectedBefore.length,5)
+ assert.equal(excluded.reason,'budget');assert.equal(excluded.selectedBefore.length,5)
  assert.equal(excluded.match.primary[0].key,'少林')
  assert.equal(excluded.match.primary[0].source,'current-input')
  assert.match(excluded.match.primary[0].excerpt,/请教少林/)

@@ -8280,6 +8280,7 @@ window.__ModuleLoader__.load({
 					const update = { operations: operations };
 					if (draft.displayName !== initial.displayName) update.name = draft.displayName;
 					if (draft.description !== initial.description) update.description = draft.description;
+					if (draft.tokenBudget !== initial.tokenBudget) update.tokenBudget = draft.tokenBudget;
 					if (draft.scanDepth !== initial.scanDepth) update.scanDepth = draft.scanDepth;
 					if (draft.recursiveScanning !== initial.recursiveScanning) update.recursiveScanning = draft.recursiveScanning;
 					const result = await rpc("updateWorldBook", { source: props.record.source, update: update }, props.sessionId);
@@ -8313,7 +8314,7 @@ window.__ModuleLoader__.load({
 						),
 
                         h("details", null, h("summary", null, "激活规则"),
-                          h("p", { className: "dsh-tavern-card-field-hint" }, "扫描当前输入和最近消息；每轮最多新增 5 条，沿用 10 轮冷却。排序越大越优先入选，同一位置内排序越小越靠前。位置用于分组编排，暂不映射到 ST 的精确消息锚点。"),
+                          h("p", { className: "dsh-tavern-card-field-hint" }, "扫描当前输入和最近消息；非常驻条目共用估算 Token 软预算，沿用 10 轮冷却。排序越大越优先入选，同一位置内排序越小越靠前。位置用于分组编排，暂不映射到 ST 的精确消息锚点。"),
                           h("div", { className: "dsh-tavern-worldbook-grid" },
                             h("label", null, "扫描消息数（留空跟随世界书）", h("input", { type: "number", min: 0, max: 1000, value: entry.scanDepth ?? "", onChange: function (event) { updateEntry(index, { scanDepth: event.target.value === "" ? null : numeric(event.target.value, 2) }); } })),
                             h("label", null, "二级条件逻辑", h("select", { value: entry.selectiveLogic || 0, onChange: function (event) { updateEntry(index, { selectiveLogic: Number(event.target.value) }); } }, ["至少一个命中", "不全部命中", "全部不命中", "全部命中"].map(function (label, value) { return h("option", { key: value, value: value }, label); }))),
@@ -8358,6 +8359,8 @@ window.__ModuleLoader__.load({
 					h("div", { className: "dsh-tavern-card-field" }, h("label", null, "世界书名称"), h("input", { value: draft.displayName || "", onChange: function (event) { setDraft(Object.assign({}, draft, { displayName: event.target.value })); } })),
 					h("div", { className: "dsh-tavern-card-field" }, h("label", null, "说明"), h("textarea", { value: draft.description || "", onChange: function (event) { setDraft(Object.assign({}, draft, { description: event.target.value })); } })),
 					h("div", { className: "dsh-tavern-worldbook-grid" },
+                      h("label", null, "非常驻 Token 软预算（本地估算）", h("input", { type: "number", min: 0, max: 1000000, value: draft.tokenBudget ?? 8192, onChange: function (event) { setDraft(Object.assign({}, draft, { tokenBudget: numeric(event.target.value, 8192) })); } })),
+                      h("p", { className: "dsh-tavern-card-field-hint" }, "按作者优先级选取，允许完整加入一条跨过软预算的内容后停止；硬上限为软预算的 2 倍，条目不截断。0 关闭非常驻召回。常驻规则不计入此额度。按 ASCII 约 4 字符、其他字符约 1 字符估算 1 Token，不是模型精确计数，硬上限也仅约束估算值。扫描 1 条通常只看本次输入，2 条包含上一条回复。"),
                       h("label", null, "默认扫描消息数", h("input", { type: "number", min: 0, max: 1000, value: draft.scanDepth ?? 2, onChange: function (event) { setDraft(Object.assign({}, draft, { scanDepth: numeric(event.target.value, 2) })); } })),
                       h("label", null, h("input", { type: "checkbox", checked: draft.recursiveScanning === true, onChange: function (event) { setDraft(Object.assign({}, draft, { recursiveScanning: event.target.checked })); } }), "递归扫描已激活条目")
                     ),
@@ -8497,7 +8500,7 @@ window.__ModuleLoader__.load({
 			function row(item) { const source = item.kind === "card" ? { kind: "card", cardPath: item.cardPath } : { kind: "standalone", path: item.path }; const resourcePath = item.kind === "card" ? item.cardPath : item.path; return h("div", { key: resourcePath, className: "dsh-tavern-card-pick-wrap" }, h("button", { className: "dsh-tavern-library-card", disabled: busy, onClick: function () { load(source); } }, h("b", null, item.name), h("span", null, item.entryCount + " 条 · " + item.enabledCount + " 条启用" + (item.diagnostics ? " · " + item.diagnostics + " 个诊断" : "")), item.cardName ? h("span", null, "来自人物卡：" + item.cardName) : null), sessionMode === "card" ? h("button", { className: "dsh-tavern-resource-at", title: "在对话中引用", onClick: function () { props.appendMention("worldbook", resourcePath, item.name); } }, "在对话中引用") : null); }
 			function group(title, items) { return h("section", { className: "dsh-tavern-resource-group" }, h("div", { className: "dsh-tavern-resource-group-title" }, h("span", null, title + " · " + items.length)), items.length ? items.map(row) : h("div", { className: "dsh-tavern-status-empty" }, "暂无")); }
 			return h("div", { className: "dsh-tavern-library" }, h("div", { className: "dsh-tavern-status-head" }, h("div", { className: "dsh-tavern-status-title" }, "世界书库"), h("div", { className: "dsh-tavern-question-sub" }, "独立世界书与人物卡内置世界书共用编辑界面"), h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: function () { importInput.current && importInput.current.click(); } }, "导入世界书"), h("input", { ref: importInput, type: "file", accept: ".json,application/json", style: { display: "none" }, onChange: function (event) { const file = event.target.files && event.target.files[0]; importFile(file); event.target.value = ""; } })), h("div", { className: "dsh-tavern-resource-body" },
-				h("div", { className: "dsh-tavern-worldbook-note" }, "常驻条目随人物卡进入稳定前缀；非常驻条目按关键词确定性匹配，每轮最多注入 3 条，实际注入后冷却 10 个剧情回合。世界书不再调用后台 Agent。尚未支持的酒馆字段仍会原样保留。"),
+				h("div", { className: "dsh-tavern-worldbook-note" }, "非常驻条目按作者关键词和优先级匹配，使用可配置的估算 Token 软预算，实际注入后冷却 10 个剧情回合。常驻条目不计入该预算；混合位置随本轮共同编排。尚未支持的酒馆字段仍会原样保留。"),
 				loading && !catalog ? h("div", { className: "dsh-tavern-empty" }, "正在读取世界书…") : null,
 				error ? h("div", { className: "dsh-tavern-dock-error" }, error, h("button", { className: "dsh-tavern-btn", onClick: refresh }, "重新读取")) : null,
 				catalogWarning ? h("div", { className: "dsh-tavern-dock-error" }, catalogWarning) : null,

@@ -1,7 +1,7 @@
 # Tavern 原生世界书激活设计
 
 > 已实现；ST 语义参考固定提交 `8172dcd0ee672d3cd9a5e5f7af134f91a45cd2b8`。
-> DSH 仍保留每轮最多 5 条非常驻条目及既有 10 轮冷却，不承诺完整 ST 提示词兼容。
+> DSH 使用可配置的非常驻 token 预算，保留既有 10 轮冷却，不承诺完整 ST 提示词兼容。
 
 ## 运行链路
 
@@ -43,15 +43,21 @@
 
 世界书 EJS 支持 `getEnabledWorldInfoEntries()`、`selectActivatedEntries(entries, keywords, condition)` 和 `activewi` / `activateWorldInfo`。条目列表来自本轮绑定书快照（包括停用资料），提供 uid、comment、key/keysecondary 等字段；不额外加载 ST 全局或 persona 库，也不支持按这些来源开关分别取库。
 
-`selectActivatedEntries` 复用完整关键词、主副键、整词、大小写和包含组逻辑；支持 constant/disabled/vectorized 条件筛选，不在这里消耗五条额度。`activewi` 按标题或 uid 请求激活，支持指定书名和正则标题，未找到返回 null；返回条目表示已登记请求，不保证通过额度筛选。
+`selectActivatedEntries` 复用完整关键词、主副键、整词、大小写和包含组逻辑；支持 constant/disabled/vectorized 条件筛选，不在这里消耗token 额度。`activewi` 按标题或 uid 请求激活，支持指定书名和正则标题，未找到返回 null；返回条目表示已登记请求，不保证通过额度筛选。
 
-`force=true` 绕过关键词并允许请求停用条目；最终仍遵守本项目五条额度、十轮冷却、分组与排序，不绕过 MVU 专用分类。这是与 [ST-Prompt-Template](https://github.com/zonde306/ST-Prompt-Template/blob/main/src/function/worldinfo.ts) 强制激活语义的明确差异。
+`force=true` 绕过关键词并允许请求停用条目；最终仍遵守本项目token 额度、十轮冷却、分组与排序，不绕过 MVU 专用分类。这是与 [ST-Prompt-Template](https://github.com/zonde306/ST-Prompt-Template/blob/main/src/function/worldinfo.ts) 强制激活语义的明确差异。
 
 脚本请求进入同一选取与投影链，嵌套请求去重；每次重投影都从同一书快照和原始变量开始，不累计试算副作用。最多 16 次收敛，否则明确记录激活错误；失败模板不提交部分请求。日志记录请求来源条目、force 和最终拒绝原因。实际渲染的动态条目才记录冷却。
 
-## 五条上限与十轮冷却
+## Token 预算与十轮冷却
 
-非常驻条目每轮最多选 5 条，玩家输入与脚本扫描共用此上限。常驻条目不占五条额度。超出上限时优先选择较大 `order`，诊断记录 `limit`。
+非常驻条目使用 `token_budget`，默认软预算 8192（硬上限 16384），可在世界书编辑器配置为 0 至 1000000；0 关闭非常驻召回。当前输入、历史、递归和脚本主动激活共用预算，不再限制条目数量。常驻条目沿用现有路径，不计入这项预算。
+
+按作者 order 降序选取，采用软预算：已用量低于目标时，允许完整加入一个跨线条目，达到或超过目标后停止；硬上限固定为目标的 2 倍。超过硬上限的条目整条跳过并停止后续普通候选，不截断、不跳过排序填缝。拒绝记录 `budget`，并注明 soft-limit-reached、hard-limit 或 stopped。预算只用于选取；最终文本仍按所在位置内的原顺序编排。先试算模板输出，再按实际渲染正文计量并重投影；试算副作用不进入 Chat，失败或空输出不消耗文本预算。
+
+使用本地 Unicode 估算（ASCII 四字符约一个 token，其他码点约一个 token，另计分隔开销），日志标记 `unicode-estimate`，不代表供应商 tokenizer 或计费 token。日志包含预算总额、实际选取估算量、超额条目的成本和此前入选列表。预览尚未渲染时按源码估算，正式请求按渲染结果重新选择。
+
+这一步参考 ST 的按文本体量取舍方式，允许跨过软预算一条是 DSH 的额外策略，但没有照搬其按模型上下文百分比计算的全量预算；常驻仍不计费，也没有新增 ignoreBudget 例外。多书绑定继续由主书设置决定预算。
 
 保留既有冷却算法：第 N 轮记录的条目在 N+1 至 N+10 冷却，N+11 恢复；同轮可复用，正文指纹变化立即解除。回退继续通过 Story Timeline checkpoint 恢复记录。没有引入作者 cooldown/sticky/delay，也没有新去重系统。
 
@@ -76,7 +82,7 @@ EJS 与宏按最终编排顺序运行；失败条目产生诊断，不发送模�
 
 每次正式正文操作单独保存详细日志：`worldbook-recalls/<chatId>/<operationId>.json`。游玩页「导出 → 世界书召回日志」下载当前分支最近一次记录；调试工具的 `worldbook` 层可按轮次读取。旧轮次没有记录时明确返回缺失，不用当前卡片反推。
 
-日志包括扫描范围、命中关键词及其输入/历史/递归来源片段、主副关键词条件、优先级与最终输出顺序、组竞争胜者、冷却依据、五条截断前的入选项，以及禁用、空正文、MVU 专用条目的排除原因。选取顺序使用 `order` 降序、`displayIndex` 升序，最终文本在各位置内反向编排。
+日志包括扫描范围、命中关键词及其输入/历史/递归来源片段、主副关键词条件、优先级与最终输出顺序、组竞争胜者、冷却依据、预算截断前的入选项，以及禁用、空正文、MVU 专用条目的排除原因。选取顺序使用 `order` 降序、`displayIndex` 升序，最终文本在各位置内反向编排。
 
 选中与发送分开记录：条目可能因模板失败或输出为空而没有注入。`outputs` 保存渲染正文和位置；实际模型请求到达时标记 `requested`、关联请求 ID，并核对前台输出是否出现在请求 Frame 中。系统前缀输出的核对值为 `null`，不冒充已经核实。
 

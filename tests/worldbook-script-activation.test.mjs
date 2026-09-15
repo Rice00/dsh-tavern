@@ -7,7 +7,7 @@ const runtime = await TavernPromptTemplateRuntime.create()
 const entry = (ref, extra = {}) => ({ ref, sourceUid: ref, title: ref, comment: ref, enabled: true, constant: false,
   primaryKeys: [], secondaryKeys: [], order: 100, content: '正文 ' + ref, ...extra })
 const controller = (ref, content) => entry(ref, { constant: true, order: 500, content: '@@generate_before\n' + content })
-const project = entries => createForegroundWorldbook({ bound: async () => ({ view: { displayName: '绑定书', entries } }), runtime: async () => runtime, globalVariables: async () => ({}) })
+const project = (entries, raw = {}) => createForegroundWorldbook({ bound: async () => ({ view: { displayName: '绑定书', entries, raw } }), runtime: async () => runtime, globalVariables: async () => ({}) })
 
 test('变量驱动的选角调度使用同一关键词规则，强制入选后真实渲染且记录来源', async () => {
   const entries = [controller('调度', `<% const all = await getEnabledWorldInfoEntries();
@@ -27,14 +27,14 @@ test('变量驱动的选角调度使用同一关键词规则，强制入选后�
   assert.deepEqual(miss.refs, [])
 })
 
-test('主动激活仍受五条额度和既有冷却约束；重投影不重复累加变量', async () => {
+test('主动激活仍受token 预算和既有冷却约束；重投影不重复累加变量', async () => {
   const entries = [controller('调度', '<% incvar("count"); for (const e of await getEnabledWorldInfoEntries()) if (!e.constant) await activewi("绑定书", e.uid, true); %>'),
     ...Array.from({ length: 6 }, (_, i) => entry('叶' + i, { order: 110 - i, content: '<%= getvar("count", {defaults:0}) %> 叶' + i }))]
-  const run = project(entries)
+  const run = project(entries, { token_budget: 20 })
   const first = await run({ chat: { messages: [{ role: 'assistant', turn: 1, text: '' }] }, card: {}, userText: '无关键词' })
   assert.equal(first.error, null)
   assert.equal(first.refs.length, 5)
-  assert.equal(first.log.entries.find(e => e.ref === '叶5').reason, 'limit')
+  assert.equal(first.log.entries.find(e => e.ref === '叶5').reason, 'budget')
   // Lower order leaves execute before the controller; speculative passes must not persist its increments.
   assert.ok(first.log.outputs.every(o => /^0 叶/.test(o.text)))
   const second = await run({ chat: { worldBookReads: first.reads, messages: [{ role: 'assistant', turn: 2, text: '' }] }, card: {}, userText: '无关键词' })

@@ -37,7 +37,7 @@ function chat(body = '两人正在旅店大厅交谈。') {
   }
 }
 
-test('常驻条目按 Tavern order 进入稳定前缀，不受动态五条上限和冷却影响', function () {
+test('常驻条目按 Tavern order 进入稳定前缀，不受动态 token 预算和冷却影响', function () {
   const worldBook = { view: { entries: [
     entry('entry:0', '{{char}} 的故乡常年下雨。', { constant: true, order: 100 }),
     entry('entry:1', '王室法律优先执行。', { constant: true, order: 300 }),
@@ -91,11 +91,11 @@ test('主副关键词遵守 Tavern 四种 selectiveLogic，正则关键词可参
   assert.doesNotMatch(prepared.context, /AND_ALL/)
 })
 
-test('只有实际注入的五条进入十轮冷却，未入选条目下一轮仍可竞争', function () {
+test('预算内实际注入的条目进入十轮冷却，未入选条目下一轮仍可竞争', function () {
   const entries = [0, 1, 2, 3, 4, 5].map(function (index) {
     return entry('entry:' + index, '设定 ' + index, { primaryKeys: ['钟楼'], order: 400 - index * 100 })
   })
-  const worldBook = { view: { entries } }
+  const worldBook = { view: { entries, raw: { token_budget: 25 } } }
   const first = prepareWorldBookRecall({ card: card(), chat: chat('抵达钟楼。'), turn: 2, worldBook })
   const reads = first.recordReads(null)
 

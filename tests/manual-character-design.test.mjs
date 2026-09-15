@@ -56,3 +56,33 @@ test('重复触发被拒绝，未保存档案时报错，服务重启后不会�
   assert.match(run.get().characterDesignTask.error, /未保存/)
   assert.equal(run.api.project({ id: 'old', characterDesignTask: { status: 'running' } }).status, 'failed')
 })
+
+test('设计意见选填，空白输入也能启动并保存人物档案', async () => {
+  const run = fixture(async input => {
+    assert.equal(JSON.parse(input.messages[0].content[0].text).guidance, '')
+    assert.match(input.system, /设计意见留空时/)
+    await input.onToolCall({ name: 'character_design_save', arguments: design })
+  })
+  await run.api.start({ sessionId: 'session', guidance: '   ' })
+  await run.api.wait('chat')
+  assert.equal(run.get().characterDesignTask.status, 'done')
+  assert.equal(run.get().characterDesignDocument.characters[0].name, '张三')
+})
+
+test('手动设计先恢复当前页面会话，不使用档案中的旧会话 ID', async () => {
+  let restored = false, received
+  let chat = { id: 'chat', sessionId: 'old-session', messages: [] }
+  const api = createManualCharacterDesign({
+    store: { chatForSession: async () => chat, readCard: async () => ({}), updateChat: async (_id, fn) => { chat = fn(structuredClone(chat)); return chat } },
+    selection: () => ({}),
+    ensureSession: async id => { assert.equal(id, 'current-session'); restored = true },
+    runAgent: async input => {
+      assert.equal(restored, true)
+      received = input.sessionId
+      await input.onToolCall({ name: 'character_design_save', arguments: design })
+    }
+  })
+  await api.start({ sessionId: 'current-session' }); await api.wait('chat')
+  assert.equal(received, 'current-session')
+  assert.equal(chat.characterDesignTask.status, 'done')
+})

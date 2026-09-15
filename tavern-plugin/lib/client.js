@@ -10056,7 +10056,7 @@ window.__ModuleLoader__.load({
 				finally { setSettlementRetryBusy(false); }
 			}
 			async function designCharacter(initialValue = "") {
-                await askTavernText({ title: "设计人物", description: "填写人物和设计要求，可创建新档案或修改已有档案。", initialValue, maxLength: 4000, confirmLabel: "开始设计",
+                await askTavernText({ title: "设计人物", description: "设计意见（选填）。留空则根据当前剧情和已有档案设计人物。", initialValue, allowEmpty: true, maxLength: 4000, confirmLabel: "开始设计",
                     onSubmit: async guidance => { await rpc("designCharacter", { guidance }, props.sessionId); liveTavernView.invalidate(props.sessionId); }
                 });
             }

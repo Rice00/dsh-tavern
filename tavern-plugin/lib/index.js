@@ -1689,7 +1689,10 @@ export async function apply(ctx) {
   })
   const manualCharacterDesign = createManualCharacterDesign({
     store: { chatForSession, updateChat, readCard: readChatCard },
-    runAgent: input => backgroundAgentRunner.run(input), selection: backgroundModelSelection
+    runAgent: input => backgroundAgentRunner.run(input), selection: backgroundModelSelection,
+    ensureSession: async sessionId => {
+      if (!agentRegistry.get(sessionId)?.session) await agentRegistry.resume({ resumeSessionId: sessionId })
+    }
   })
   const phoneChat = createPhoneChat({
     store: { chatForSession, readCard, updateChat },

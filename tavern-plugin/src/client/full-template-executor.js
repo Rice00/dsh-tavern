@@ -24,7 +24,7 @@ function createFullTemplateExecutor({ window: hostWindow, rpc: invoke, executeSl
       if (owner !== record || event.source !== frame.contentWindow || data?.token !== token || !['full-template-rpc','template-close'].includes(data.type)) return;
       if(data.type === 'template-close') { frame.hidden=true; return; }
       try {
-        if (!['getFullPromptTemplateState','saveFullPromptTemplateState','saveFullPromptTemplateSettings','saveFullPromptTemplateGlobals','countFullTemplateTokens','claimFullTemplateWork','startFullTemplateWork','completeFullTemplateWork','getFullTemplateWorldbook','replaceFullTemplateWorldbook','executeTemplateHostCommand'].includes(data.method)) throw new Error('Unsupported template RPC');
+        if (!['getFullTemplateRuntimeInfo','getFullPromptTemplateState','saveFullPromptTemplateState','saveFullPromptTemplateSettings','saveFullPromptTemplateGlobals','countFullTemplateTokens','claimFullTemplateWork','startFullTemplateWork','completeFullTemplateWork','getFullTemplateWorldbook','replaceFullTemplateWorldbook','executeTemplateHostCommand'].includes(data.method)) throw new Error('Unsupported template RPC');
         const result = data.method === 'executeTemplateHostCommand' ? {pipe: await executeSlash(data.args.text, sessionId, {waitForCompletion:false}).then(value => typeof value === 'string' ? value : '')} : await invoke(data.method, data.args || {}, sessionId);
         if (result?.ok === false) throw new Error(result.error || 'Template RPC failed');
         if (owner === record) frame.contentWindow.postMessage({ token, requestId: data.requestId, result }, '*');
@@ -41,9 +41,9 @@ function createFullTemplateExecutor({ window: hostWindow, rpc: invoke, executeSl
 <script src="/api/dsh-tavern/vendor/runtime-assets/lodash/lodash.min.js"></script>
 <script type="module">
 import * as YAML from '/api/dsh-tavern/vendor/runtime-assets/yaml/index.mjs';
-import {connectTemplateSession,createTemplateServices,createTemplatePanel,templateHost} from '/api/dsh-tavern/vendor/st-prompt-template/index.js';
+
 const token=${JSON.stringify(token)},sessionId=${JSON.stringify(sessionId)},runtimeId=token;
-let sequence=0,context,plugin,panel,dirty=true,panelRequested=false,lastSync=0;const pending=new Map();
+let sequence=0,context,plugin,panel,templateHost,dirty=true,panelRequested=false,lastSync=0;const pending=new Map();
 const rpc=(method,args={})=>new Promise((resolve,reject)=>{const requestId=++sequence;pending.set(requestId,{resolve,reject});parent.postMessage({type:'full-template-rpc',token,requestId,method,args},'*')});
 addEventListener('message',event=>{if(event.source!==parent||event.data?.token!==token)return;const data=event.data;if(data.type==='template-dirty'){dirty=true;return}if(data.type==='template-open'){panelRequested=true;return}const item=pending.get(data.requestId);if(!item)return;pending.delete(data.requestId);data.error?item.reject(new Error(data.error)):item.resolve(data.result)});
 window.toastr=Object.fromEntries(['info','success','warning','error'].map(key=>[key,message=>console[key==='error'?'error':'log'](message)]));
@@ -51,8 +51,13 @@ window.YAML=YAML;
 window.SillyTavern={getContext:()=>Object.assign({},context,templateHost)};
 async function run(){
  try {
+  const {entryUrl}=await rpc('getFullTemplateRuntimeInfo');
+  const templateModule=await import(new URL(entryUrl,document.baseURI).href);
+  const {connectTemplateSession,createTemplateServices,createTemplatePanel}=templateModule;templateHost=templateModule.templateHost;
   const settingsHtml=await fetch('/api/dsh-tavern/vendor/st-prompt-template/settings.html').then(r=>r.text());
-  plugin=await connectTemplateSession({sessionId,runtimeId,rpc,settingsHtml,libraries:{yaml:YAML},services:createTemplateServices(()=>context,rpc)});context=plugin.context;
+  plugin=await connectTemplateSession({sessionId,runtimeId,rpc,settingsHtml,libraries:{yaml:YAML},services:createTemplateServices(()=>context,rpc)});
+  for(const method of ['processNext','synchronize']) if(typeof plugin?.[method]!=='function') throw new Error('完整提示词模板版本不匹配：缺少 '+method+'，请更新酒馆并刷新页面');
+  context=plugin.context;
   panel=createTemplatePanel({rpc,plugin,close:()=>parent.postMessage({token,type:'template-close'},'*')});
   while(true){
    try {

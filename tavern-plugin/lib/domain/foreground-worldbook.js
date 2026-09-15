@@ -6,7 +6,7 @@ import { prepareTemplateWorldbook, prepareWorldBookRecall, projectWorldBookTempl
 
 /** One request uses one bound-book snapshot for both selection and rendering. */
 export function createForegroundWorldbook({ bound, runtime, globalVariables, scanText = () => '', filterCandidates }) {
-  return async function project({ chat, card, userText, userTextInHistory = false, worldBook: snapshot }) {
+  return async function project({ chat, card, userText, userTextInHistory = false, worldBook: snapshot, purpose = 'generation' }) {
     try {
       let worldBook = snapshot || await bound(chat.cardPath, card, chat)
       const turn = Number([...(chat.messages || [])].reverse().find(message => message.role === 'assistant')?.turn) || 0
@@ -24,7 +24,8 @@ export function createForegroundWorldbook({ bound, runtime, globalVariables, sca
       const preparedActivations = worldBook?.templateActivationRequests || []
       let activationRequests = preparedActivations, recalled, projected
       const tokenCosts = {}
-      let screeningDone = !filterCandidates, screening, allowedRefs
+      // Historical reconstruction must remain local even with the live filter installed.
+      let screeningDone = purpose === 'history-import' || !filterCandidates, screening, allowedRefs
       const protectedRefs = () => new Set(activationRequests.flatMap(request => [request.ref, request.sourceRef]))
       // Rebuild from the same snapshot and original scopes; speculative passes never mutate Chat.
       // Only requests from controllers still selected survive to the next pass.

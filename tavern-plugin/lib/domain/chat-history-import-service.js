@@ -34,6 +34,13 @@ export function incompatibleState(expected, actual, path = '') {
   })
 }
 
+function assertImportedWorldbook(projected) {
+  if (projected.error) throw new Error(projected.error)
+  if (projected.diagnostics?.length) {
+    throw new Error('条目模板处理失败：' + projected.diagnostics.map(item => `${item.ref || '未知条目'} (${item.code || item.kind || 'error'})`).join('、'))
+  }
+}
+
 export function createChatHistoryImportService({ initialization, cards, worldBooks, store, chats, native, planner, projectWorldBookTemplates, projectForegroundWorldbook }) {
   const pending = new Map()
   async function inspect(input) {
@@ -72,7 +79,13 @@ export function createChatHistoryImportService({ initialization, cards, worldBoo
         operationId: input.operationId, fileName: input.fileName, initialVariables, textOnly: input.textOnly === true,
         prepareFrame: async ({ chat, turn, userText }) => {
           if (projectForegroundWorldbook) {
-            const projected = await projectForegroundWorldbook({ chat, card, userText, userTextInHistory: true, worldBook })
+            let projected
+            try {
+              projected = await projectForegroundWorldbook({ chat, card, userText, userTextInHistory: true, worldBook, purpose: 'history-import' })
+              assertImportedWorldbook(projected)
+            } catch (error) {
+              throw new Error(`导入第 ${turn} 轮世界书上下文失败：${error.message || error}`, { cause: error })
+            }
             if (projected.reads) chat.worldBookReads = projected.reads
             if (projected.randomState) chat.worldBookRandomState = projected.randomState
             return planner.plan({ purpose: 'body', card, chat: projected.macroState ? { ...chat, macroState: projected.macroState } : chat,
@@ -80,7 +93,13 @@ export function createChatHistoryImportService({ initialization, cards, worldBoo
           }
           const recalled = prepareWorldBookRecall({ chat, card, worldBook, turn: turn - 1, userText, userTextInHistory: true })
           chat.worldBookReads = recalled.recordReads(chat.worldBookReads)
-          const templates = projectWorldBookTemplates ? await projectWorldBookTemplates(chat, card) : null
+          let templates
+          try {
+            templates = projectWorldBookTemplates ? await projectWorldBookTemplates(chat, card) : null
+            if (templates) assertImportedWorldbook(templates)
+          } catch (error) {
+            throw new Error(`导入第 ${turn} 轮世界书上下文失败：${error.message || error}`, { cause: error })
+          }
           return planner.plan({ purpose: 'body', card, chat, userText, sessionId: input.sessionId,
             nativeTurn: turn, scriptReference: null,
             worldBookContext: [recalled.context, templates?.context].filter(Boolean).join('\n\n') })

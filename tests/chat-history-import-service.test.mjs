@@ -129,3 +129,40 @@ test('历史导入复用正式世界书投影，当前输入不重复占用扫�
  assert.doesNotMatch(frames[1],/开场角色/)
  assert.match(frames[1],/<角色库>\n\n<\/角色库>/)
 })
+
+for (const textOnly of [false,true]) test(`历史导入装配真实筛选器仍不调用 Agent（textOnly=${textOnly}）`, async()=>{
+ const h=fixture(), runtime=await UpstreamTemplateRuntime.create()
+ const {createWorldbookFilterPrototype}=await import('../tavern-plugin/lib/domain/worldbook-filter-prototype.js')
+ let calls=0
+ const worldBook={view:{entries:[{comment:'[initvar]',content:'hp: 10',enabled:false},
+  ...['walk','rest'].flatMap(word=>Array.from({length:6},(_,i)=>({ref:word+i,enabled:true,primaryKeys:[word],content:`${word} rule ${i}`})))]}}
+ const project=createForegroundWorldbook({bound:async()=>worldBook,runtime:async()=>runtime,globalVariables:async()=>({}),
+  filterCandidates:createWorldbookFilterPrototype({selection:()=>({}),runAgent:async()=>{calls++;throw Error('model transport reached')}})})
+ h.options.worldBooks.bound=async()=>worldBook;h.options.projectForegroundWorldbook=project
+ await createChatHistoryImportService(h.options).import({...input,textOnly})
+ assert.equal(calls,0)
+ const frames=h.session.deriveMessages().filter(m=>m.source?.form==='foreground-frame').map(m=>m.content[0].text)
+ assert.match(frames[0],/walk rule/);assert.match(frames[1],/rest rule/)
+ await project({chat:{id:'live',sessionId:'session',messages:[]},card:{},userText:'walk',worldBook})
+ assert.equal(calls,1,'正常生成仍走真实模型筛选器')
+})
+
+test('世界书投影失败时明确指出历史轮次，不发布残缺导入，修复后可重试',async()=>{
+ const h=fixture()
+ h.options.projectForegroundWorldbook=async()=>({context:'',error:'worldbook unavailable'})
+ await assert.rejects(createChatHistoryImportService(h.options).import(input),/第 2 轮.*worldbook unavailable/)
+ assert.equal(h.publishes,0)
+ assert.equal(h.session.deriveMessages().length,0)
+ h.options.projectForegroundWorldbook=async()=>({context:'restored'})
+ await createChatHistoryImportService(h.options).import(input)
+ assert.equal(h.publishes,1)
+})
+
+test('条目模板报错不能无提示丢弃历史上下文',async()=>{
+ const h=fixture(),runtime=await UpstreamTemplateRuntime.create()
+ const worldBook={view:{entries:[{ref:'broken',constant:true,content:'<% throw new Error("broken template") %>'}]}}
+ h.options.projectForegroundWorldbook=createForegroundWorldbook({bound:async()=>worldBook,runtime:async()=>runtime,globalVariables:async()=>({})})
+ h.options.worldBooks.bound=async()=>worldBook
+ await assert.rejects(createChatHistoryImportService(h.options).import(input),/第 2 轮.*broken/)
+ assert.equal(h.publishes,0)
+})

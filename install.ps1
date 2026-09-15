@@ -91,6 +91,7 @@ $PreviousDshHome = $env:DSH_HOME
 $PreviousCliHome = $env:DSH_TAVERN_CLI_HOME
 $PreviousLegacyHome = $env:DSH_TAVERN_LEGACY_DSH_HOME
 $PreviousPath = $env:Path
+$PreviousUpdateAttempt = $env:DSH_TAVERN_UPDATE_ATTEMPT
 $PreviousNpmRegistry = $env:npm_config_registry
 $PreviousPnpmRegistry = $env:pnpm_config_registry
 try {
@@ -130,6 +131,47 @@ try {
   }
 
   New-Item -ItemType Directory -Force -Path $TempDir | Out-Null
+  $UpdateLogRoot = if ($env:DSH_TAVERN_UPDATE_LOG_ROOT) { $env:DSH_TAVERN_UPDATE_LOG_ROOT } else { Join-Path $DshRoot 'profile-data/tavern/data' }
+  $UpdateAttempt = if ($env:DSH_TAVERN_UPDATE_ATTEMPT) { $env:DSH_TAVERN_UPDATE_ATTEMPT } else { "install-$PID-$([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds())" }
+  $env:DSH_TAVERN_UPDATE_ATTEMPT = $UpdateAttempt
+  $UpdateLogger = Join-Path $TempDir 'update-log.cjs'
+  [IO.File]::WriteAllText($UpdateLogger, @'
+const fs=require('node:fs'),path=require('node:path');
+try {
+ const [root,event,step,exitCode,startedAt,file]=process.argv.slice(2).map(v=>v==='-'?'':v);
+ const clean=value=>String(value||'').replace(/https?:\/\/[^\s<>"')]+/g,raw=>{try{const u=new URL(raw);return u.origin+u.pathname}catch{return '[URL]'}}).replace(/Bearer\s+[^\s,;]+/gi,'Bearer [redacted]').replace(/((?:authorization|token|password|api[_-]?key)\s*[:=]\s*)[^\s,;]+/gi,'$1[redacted]');
+ let output=file&&fs.existsSync(file)?clean(fs.readFileSync(file,'utf8')):'';
+ const outputCharacters=output.length;
+ if(output.length>6000)output=output.slice(0,3000)+'\n[中间输出省略]\n'+output.slice(-3000);
+ const record={at:new Date().toISOString(),pid:process.ppid,attemptId:process.env.DSH_TAVERN_UPDATE_ATTEMPT,event,step,exitCode:exitCode===''?undefined:Number(exitCode),durationMs:startedAt?Date.now()-Number(startedAt):undefined,output,outputCharacters};
+ fs.mkdirSync(root,{recursive:true});const target=path.join(root,'update-diagnostics.jsonl');
+ try{if(fs.statSync(target).size>1048576){try{fs.unlinkSync(target+'.1')}catch{}fs.renameSync(target,target+'.1')}}catch{}
+ fs.appendFileSync(target,JSON.stringify(record)+'\n');
+}catch{}
+'@, (New-Object Text.UTF8Encoding($false)))
+  function Write-UpdateLog([string]$Event, [string]$Step, [string]$Code = '', [string]$Started = '', [string]$OutputFile = '') {
+    try { $LogArgs = @($UpdateLogRoot, $Event, $Step, $Code, $Started, $OutputFile) | ForEach-Object { if ($_ -eq '') { '-' } else { $_ } }; & node $UpdateLogger @LogArgs *> $null } catch {}
+  }
+  function Invoke-UpdateGit([string]$Step, [string[]]$GitArgs) {
+    $Started = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    Write-UpdateLog 'installer.stage.started' $Step
+    $PreviousPreference = $ErrorActionPreference
+    $Output = @()
+    $Code = 1
+    try {
+      $ErrorActionPreference = 'Continue'
+      $Output = @(& $GitCommand @GitArgs 2>&1)
+      $Code = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $PreviousPreference }
+    $OutputFile = Join-Path $TempDir 'git.output'
+    [IO.File]::WriteAllText($OutputFile, ($Output -join "`n"), (New-Object Text.UTF8Encoding($false)))
+    $Event = if ($Code -eq 0) { 'installer.stage.succeeded' } else { 'installer.stage.failed' }
+    Write-UpdateLog $Event $Step ([string]$Code) ([string]$Started) $OutputFile
+    if ($Code -ne 0) { throw "Git 步骤失败：$Step（退出码 $Code）：$($Output -join "`n")" }
+    return ($Output -join "`n")
+  }
+  Write-UpdateLog 'installer.started' 'bootstrap'
+  Write-Host "更新诊断日志：$UpdateLogRoot/update-diagnostics.jsonl"
   $ArchivePath = Join-Path $TempDir 'app.zip'
   $ExtractDir = Join-Path $TempDir 'extract'
   $UsedGit = $false
@@ -139,26 +181,23 @@ try {
       Write-Host '正在通过 Git 增量同步 DSH Tavern（不下载文档与图片）……'
       New-Item -ItemType Directory -Force -Path (Split-Path $SourceCache -Parent) | Out-Null
       if (-not (Test-Path (Join-Path $SourceCache 'HEAD'))) {
-        & $GitCommand clone --bare --filter=blob:none --depth 1 --single-branch --branch main $RepositoryUrl $SourceCache
-        Assert-LastCommand 'DSH Tavern Git 缓存初始化失败。'
+        Invoke-UpdateGit 'git.clone' @('clone', '--bare', '--filter=blob:none', '--depth', '1', '--single-branch', '--branch', 'main', $RepositoryUrl, $SourceCache) | Write-Host
       }
-      & $GitCommand --git-dir=$SourceCache remote set-url origin $RepositoryUrl
-      Assert-LastCommand 'DSH Tavern Git 远程地址配置失败。'
-      & $GitCommand --git-dir=$SourceCache fetch --depth 1 origin main
-      Assert-LastCommand 'DSH Tavern 增量更新失败。'
-      $TargetCommit = (& $GitCommand --git-dir=$SourceCache rev-parse FETCH_HEAD).Trim()
-      Assert-LastCommand 'DSH Tavern 提交号读取失败。'
-      & $GitCommand -c core.autocrlf=false -c core.eol=lf --git-dir=$SourceCache archive --format=zip "--output=$ArchivePath" FETCH_HEAD -- @RuntimePaths
-      Assert-LastCommand 'DSH Tavern 精简运行包生成失败。'
+      Invoke-UpdateGit 'git.remote' @("--git-dir=$SourceCache", 'remote', 'set-url', 'origin', $RepositoryUrl) | Write-Host
+      Invoke-UpdateGit 'git.fetch' @("--git-dir=$SourceCache", 'fetch', '--depth', '1', 'origin', 'main') | Write-Host
+      $TargetCommit = (Invoke-UpdateGit 'git.revision' @("--git-dir=$SourceCache", 'rev-parse', 'FETCH_HEAD')).Trim()
+      Invoke-UpdateGit 'git.archive' (@('-c', 'core.autocrlf=false', '-c', 'core.eol=lf', "--git-dir=$SourceCache", 'archive', '--format=zip', "--output=$ArchivePath", 'FETCH_HEAD', '--') + $RuntimePaths) | Write-Host
       $UsedGit = $true
     }
     catch {
-      Write-Warning ("Git 增量更新不可用，将回退到完整 ZIP：" + $_.Exception.Message)
+      Write-Warning ("Git 增量更新失败，正在尝试 jsDelivr 备用源：" + $_.Exception.Message)
     }
   }
+  if ($null -eq $GitCommand) { Write-UpdateLog 'installer.stage.failed' 'git.unavailable' '127'; Write-Warning '未找到 Git，正在尝试备用源。' }
   if (-not $UsedGit) {
     try {
-      Write-Host 'GitHub 直连不可用，正在通过 jsDelivr 备用源下载运行代码……'
+      Write-Host '正在通过 jsDelivr 备用源下载运行代码……'
+      Write-UpdateLog 'installer.stage.started' 'source.jsdelivr'
       $CdnSource = Join-Path $TempDir 'cdn-source'
       New-Item -ItemType Directory -Force -Path $CdnSource | Out-Null
       $Metadata = Invoke-RestMethod -UseBasicParsing -Uri $CdnMetadataUrl -TimeoutSec 15
@@ -176,9 +215,13 @@ try {
       }
       [IO.File]::WriteAllText((Join-Path $CdnSource 'dsh-tavern-runtime.json'), (($Metadata | ConvertTo-Json -Depth 10) + [Environment]::NewLine), (New-Object Text.UTF8Encoding($false)))
       $TargetCommit = [string]$Metadata.revision
+      Write-UpdateLog 'installer.stage.succeeded' 'source.jsdelivr' '0'
       $UsedCdn = $true
     }
     catch {
+      $CdnErrorFile = Join-Path $TempDir 'cdn.error'
+      [IO.File]::WriteAllText($CdnErrorFile, $_.Exception.ToString(), (New-Object Text.UTF8Encoding($false)))
+      Write-UpdateLog 'installer.stage.failed' 'source.jsdelivr' '1' '' $CdnErrorFile
       Write-Warning ("jsDelivr 备用源不可用，将回退到完整 ZIP：" + $_.Exception.Message)
     }
   }
@@ -295,9 +338,18 @@ try {
     Write-Host 'DSH Tavern 安装完成。请使用上方完整访问地址，或运行 dsh-tavern open 打开网页。'
     Write-Host '以后可以使用：dsh-tavern start、open、stop、restart、status、update（新 PowerShell 生效）'
   }
+  Write-UpdateLog 'installer.finished' 'bootstrap' '0'
 }
 catch {
-  throw ("安装失败：" + $_.Exception.Message)
+  $InstallFailure = $_
+  try {
+    if (Test-Path $UpdateLogger) {
+      $FailureFile = Join-Path $TempDir 'installer.error'
+      [IO.File]::WriteAllText($FailureFile, $InstallFailure.Exception.ToString(), (New-Object Text.UTF8Encoding($false)))
+      Write-UpdateLog 'installer.finished' 'bootstrap' '1' '' $FailureFile
+    }
+  } catch {}
+  throw ("安装失败：" + $InstallFailure.Exception.Message)
 }
 finally {
   $env:npm_config_registry = $PreviousNpmRegistry
@@ -306,6 +358,7 @@ finally {
   $env:DSH_TAVERN_CLI_HOME = $PreviousCliHome
   $env:DSH_TAVERN_LEGACY_DSH_HOME = $PreviousLegacyHome
   $env:Path = $PreviousPath
+  $env:DSH_TAVERN_UPDATE_ATTEMPT = $PreviousUpdateAttempt
   if (Test-Path $TempDir) {
     Remove-Item -LiteralPath $TempDir -Recurse -Force
   }

@@ -204,9 +204,16 @@ export function createApplicationUpdater(options) {
   }
   async function diagnosticFetch(url, init, timeoutMs = 5000) {
     record('request', { url, timeoutMs })
-    const response = await fetch(url, init)
-    record('response', { url, status: response.status })
-    return response
+    const startedAt = now()
+    try {
+      const response = await fetch(url, init)
+      record('response', { url, status: response.status, durationMs: now() - startedAt })
+      return response
+    } catch (error) {
+      record('request.failed', { url, durationMs: now() - startedAt, error: String(error?.message || error), code: error?.code,
+        cause: error?.cause ? { message: String(error.cause.message || error.cause), code: error.cause.code } : undefined })
+      throw error
+    }
   }
   const fetchManifest = options.fetchManifest || async function () {
     const response = await diagnosticFetch(options.versionUrl || process.env.DSH_TAVERN_VERSION_URL || VERSION_URL, {

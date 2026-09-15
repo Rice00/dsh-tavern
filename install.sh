@@ -80,6 +80,8 @@ TEMP_DIR=$(mktemp -d "${TMP_BASE}/dsh-tavern-install.XXXXXX")
 TARGET_COMMIT=${DSH_TAVERN_TARGET_COMMIT:-}
 
 cleanup() {
+  install_exit=$?
+  if command -v update_log >/dev/null 2>&1; then update_log installer.finished bootstrap "$install_exit" '' ''; fi
   case "${TEMP_DIR}" in
     "${TMP_BASE}"/dsh-tavern-install.*) rm -rf -- "${TEMP_DIR}" ;;
   esac
@@ -119,27 +121,69 @@ fi
 
 command -v tar >/dev/null 2>&1 || fail "未找到 tar。"
 
+# Standalone bootstrap must log before the repository has been downloaded.
+UPDATE_LOG_ROOT=${DSH_TAVERN_UPDATE_LOG_ROOT:-${DSH_ROOT}/profile-data/tavern/data}
+DSH_TAVERN_UPDATE_ATTEMPT=${DSH_TAVERN_UPDATE_ATTEMPT:-install-$$-$(date +%s)}
+export DSH_TAVERN_UPDATE_ATTEMPT
+cat > "${TEMP_DIR}/update-log.cjs" <<'UPDATE_LOG_JS'
+const fs=require('node:fs'),path=require('node:path');
+try {
+ const [root,event,step,exitCode,startedAt,file]=process.argv.slice(2);
+ const clean=value=>String(value||'').replace(/https?:\/\/[^\s<>"')]+/g,raw=>{try{const u=new URL(raw);return u.origin+u.pathname}catch{return '[URL]'}}).replace(/Bearer\s+[^\s,;]+/gi,'Bearer [redacted]').replace(/((?:authorization|token|password|api[_-]?key)\s*[:=]\s*)[^\s,;]+/gi,'$1[redacted]');
+ let output=file&&fs.existsSync(file)?clean(fs.readFileSync(file,'utf8')):'';
+ const outputCharacters=output.length;
+ if(output.length>6000)output=output.slice(0,3000)+'\n[中间输出省略]\n'+output.slice(-3000);
+ const record={at:new Date().toISOString(),pid:process.ppid,attemptId:process.env.DSH_TAVERN_UPDATE_ATTEMPT,event,step,exitCode:exitCode===''?undefined:Number(exitCode),durationMs:startedAt?Date.now()-Number(startedAt):undefined,output,outputCharacters};
+ fs.mkdirSync(root,{recursive:true});const target=path.join(root,'update-diagnostics.jsonl');
+ try{if(fs.statSync(target).size>1048576){try{fs.unlinkSync(target+'.1')}catch{}fs.renameSync(target,target+'.1')}}catch{}
+ fs.appendFileSync(target,JSON.stringify(record)+'\n');
+}catch{}
+UPDATE_LOG_JS
+update_log() {
+  node "${TEMP_DIR}/update-log.cjs" "$UPDATE_LOG_ROOT" "$@" >/dev/null 2>&1 || true
+}
+run_git() {
+  git_step=$1
+  shift
+  git_started=$(node -p 'Date.now()')
+  update_log installer.stage.started "$git_step" '' '' ''
+  if git "$@" >"${TEMP_DIR}/git.stdout" 2>"${TEMP_DIR}/git.stderr"; then git_code=0; else git_code=$?; fi
+  cat "${TEMP_DIR}/git.stdout"
+  cat "${TEMP_DIR}/git.stderr" >&2
+  cat "${TEMP_DIR}/git.stdout" "${TEMP_DIR}/git.stderr" >"${TEMP_DIR}/git.output"
+  if [ "$git_code" -eq 0 ]; then git_event=installer.stage.succeeded; else git_event=installer.stage.failed; fi
+  update_log "$git_event" "$git_step" "$git_code" "$git_started" "${TEMP_DIR}/git.output"
+  if [ "$git_code" -ne 0 ]; then echo "Git 步骤失败：$git_step（退出码 $git_code），正在尝试备用源。" >&2; fi
+  return "$git_code"
+}
+update_log installer.started bootstrap '' '' ''
+echo "更新诊断日志：${UPDATE_LOG_ROOT}/update-diagnostics.jsonl"
+
 echo "正在增量同步 DSH Tavern……"
 USED_GIT=0
 USED_CDN=0
 if command -v git >/dev/null 2>&1; then
   echo "正在通过 Git 增量同步（不下载文档与图片）……"
   mkdir -p "$(dirname -- "${SOURCE_CACHE}")"
-  if { [ -f "${SOURCE_CACHE}/HEAD" ] || git clone --bare --filter=blob:none --depth 1 --single-branch --branch main "${REPOSITORY_URL}" "${SOURCE_CACHE}"; } \
-    && git --git-dir="${SOURCE_CACHE}" remote set-url origin "${REPOSITORY_URL}" \
-    && git --git-dir="${SOURCE_CACHE}" fetch --depth 1 origin main \
-    && TARGET_COMMIT=$(git --git-dir="${SOURCE_CACHE}" rev-parse FETCH_HEAD) \
-    && git -c core.autocrlf=false -c core.eol=lf --git-dir="${SOURCE_CACHE}" archive --format=tar --output="${TEMP_DIR}/app.tar" FETCH_HEAD -- ${RUNTIME_PATHS}; then
+  if { [ -f "${SOURCE_CACHE}/HEAD" ] || run_git git.clone clone --bare --filter=blob:none --depth 1 --single-branch --branch main "${REPOSITORY_URL}" "${SOURCE_CACHE}"; } \
+    && run_git git.remote --git-dir="${SOURCE_CACHE}" remote set-url origin "${REPOSITORY_URL}" \
+    && run_git git.fetch --git-dir="${SOURCE_CACHE}" fetch --depth 1 origin main \
+    && TARGET_COMMIT=$(run_git git.revision --git-dir="${SOURCE_CACHE}" rev-parse FETCH_HEAD) \
+    && run_git git.archive -c core.autocrlf=false -c core.eol=lf --git-dir="${SOURCE_CACHE}" archive --format=tar --output="${TEMP_DIR}/app.tar" FETCH_HEAD -- ${RUNTIME_PATHS}; then
     USED_GIT=1
   else
-    echo "Git 增量更新不可用，将回退到完整 ZIP。" >&2
+    echo "Git 增量更新失败，正在尝试 jsDelivr 备用源。" >&2
   fi
+else
+  update_log installer.stage.failed git.unavailable 127 '' ''
+  echo "未找到 Git，正在尝试备用源。" >&2
 fi
 
 if [ "${USED_GIT}" -eq 0 ]; then
-  echo "GitHub 直连不可用，正在通过 jsDelivr 备用源下载运行代码……"
+  echo "正在通过 jsDelivr 备用源下载运行代码……"
+  update_log installer.stage.started source.jsdelivr '' '' ''
   mkdir -p "${TEMP_DIR}/cdn-source"
-  if CDN_METADATA_URL="${CDN_METADATA_URL}" CDN_ROOT_URL="${CDN_ROOT_URL}" CDN_SOURCE="${TEMP_DIR}/cdn-source" node <<'NODE'
+  if CDN_METADATA_URL="${CDN_METADATA_URL}" CDN_ROOT_URL="${CDN_ROOT_URL}" CDN_SOURCE="${TEMP_DIR}/cdn-source" node 2>"${TEMP_DIR}/cdn.stderr" <<'NODE'
 const { createHash } = require('node:crypto')
 const { mkdir, writeFile } = require('node:fs/promises')
 const path = require('node:path')
@@ -168,10 +212,13 @@ async function get(url, timeout = 30000) {
 })().catch((error) => { console.error(error.message); process.exit(1) })
 NODE
   then
+    update_log installer.stage.succeeded source.jsdelivr 0 '' ''
     USED_CDN=1
     TARGET_COMMIT=$(cat "${TEMP_DIR}/cdn-source/.revision")
     rm -f -- "${TEMP_DIR}/cdn-source/.revision"
   else
+    update_log installer.stage.failed source.jsdelivr 1 '' "${TEMP_DIR}/cdn.stderr"
+    cat "${TEMP_DIR}/cdn.stderr" >&2
     echo "jsDelivr 备用源不可用，将回退到完整 ZIP。" >&2
   fi
 fi

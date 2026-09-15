@@ -1,4 +1,5 @@
-import { recordUpdateDiagnostic } from './update-diagnostics.mjs'
+import { recordUpdateDiagnostic, redactUpdateDiagnostic } from './update-diagnostics.mjs'
+import { randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
@@ -56,9 +57,10 @@ export async function updateApplication(options = { host: RUNTIME_HOST, statusFi
   const sourceRoot = path.resolve(options.sourceRoot || SOURCE_ROOT)
   const log = typeof options.log === 'function' ? options.log : console.log
   const startedAt = Date.now()
+  const attemptId = randomUUID()
   const targetCommit = String(options.targetCommit || '')
   writeUpdateStatus(options.statusFile, {
-    phase: 'running', host: options.host, startedAt, pid: process.pid,
+    phase: 'running', attemptId, host: options.host, startedAt, pid: process.pid,
     ...(targetCommit ? { targetCommit } : {}),
   })
   let temporary = ''
@@ -88,7 +90,9 @@ export async function updateApplication(options = { host: RUNTIME_HOST, statusFi
         env: {
           ...runtimeEnvironment(),
           DSH_TAVERN_HOST: options.host,
+          DSH_TAVERN_UPDATE_ATTEMPT: attemptId,
           DSH_TAVERN_SOURCE_ROOT: SOURCE_ROOT,
+          ...(capture ? { DSH_TAVERN_UPDATE_LOG_ROOT: path.dirname(options.statusFile) } : {}),
           ...(options.targetCommit ? { DSH_TAVERN_TARGET_COMMIT: options.targetCommit } : {}),
           ...(capture ? { DSH_TAVERN_NO_OPEN: '1' } : {}),
         },
@@ -98,7 +102,12 @@ export async function updateApplication(options = { host: RUNTIME_HOST, statusFi
     } finally {
       if (outputDescriptor !== null) closeSync(outputDescriptor)
     }
-    if (capture && existsSync(outputFile)) recordUpdateDiagnostic(path.dirname(options.statusFile), { event: 'installer.output', exitCode: result.status, signal: result.signal, output: decodeUpdateOutput(readFileSync(outputFile)).slice(-6000) })
+    if (capture && existsSync(outputFile)) {
+      const output = redactUpdateDiagnostic(decodeUpdateOutput(readFileSync(outputFile)), Infinity)
+      recordUpdateDiagnostic(path.dirname(options.statusFile), { event: 'installer.output', attemptId, exitCode: result.status, signal: result.signal,
+        durationMs: Date.now() - startedAt, output: output.slice(-6000), outputHead: output.slice(0, 6000),
+        omittedCharacters: Math.max(0, output.length - 12000) })
+    }
     if (result.error) throw new Error(`无法运行更新程序：${result.error.message}`)
     if (result.status !== 0) {
       const details = capture && existsSync(outputFile) ? decodeUpdateOutput(readFileSync(outputFile)).trim().split('\n').slice(-12).join('\n') : ''
@@ -109,7 +118,7 @@ export async function updateApplication(options = { host: RUNTIME_HOST, statusFi
     if (outputFile !== '' && existsSync(outputFile)) unlinkSync(outputFile)
     outputFile = ''
     writeUpdateStatus(options.statusFile, {
-      phase: 'completed', host: options.host, completedAt: Date.now(), requiresRestart: options.host === 'desktop',
+      phase: 'completed', attemptId, host: options.host, completedAt: Date.now(), requiresRestart: options.host === 'desktop',
       ...(targetCommit ? { targetCommit } : {}),
     })
   } catch (error) {
@@ -123,7 +132,7 @@ export async function updateApplication(options = { host: RUNTIME_HOST, statusFi
       try { unlinkSync(outputFile) } catch {}
     }
     writeUpdateStatus(options.statusFile, {
-      phase: 'failed', repairRequired: true, host: options.host, failedAt: Date.now(), error: String(failure?.message || failure),
+      phase: 'failed', attemptId, repairRequired: true, host: options.host, failedAt: Date.now(), error: String(failure?.message || failure),
       ...(targetCommit ? { targetCommit } : {}),
     })
     throw failure

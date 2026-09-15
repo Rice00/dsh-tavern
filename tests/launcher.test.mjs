@@ -398,8 +398,8 @@ test('installers default to codeload archives while allowing an override', () =>
 
 test('安装器优先使用 Git 稀疏缓存，再用 jsDelivr 校验下载和完整 ZIP 回退', () => {
   assert.match(windowsInstaller, /source-cache\\dsh-tavern\.git/)
-  assert.match(windowsInstaller, /clone --bare --filter=blob:none --depth 1/)
-  assert.match(windowsInstaller, /archive --format=zip/)
+  assert.match(windowsInstaller, /'clone', '--bare', '--filter=blob:none', '--depth', '1'/)
+  assert.match(windowsInstaller, /'archive', '--format=zip'/)
   assert.match(windowsInstaller, /jsDelivr 备用源下载运行代码/)
   assert.match(windowsInstaller, /SHA256/)
   assert.match(windowsInstaller, /正在下载完整 ZIP/)

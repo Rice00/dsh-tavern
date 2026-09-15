@@ -2,10 +2,10 @@ import { appendFileSync, mkdirSync, readFileSync, renameSync, statSync } from 'n
 import path from 'node:path'
 
 const filename = 'update-diagnostics.jsonl'
-export function redactUpdateDiagnostic(value) {
+export function redactUpdateDiagnostic(value, maxLength = 6000) {
   return String(value ?? '').replace(/https?:\/\/[^\s<>"')]+/g, raw => {
     try { const url = new URL(raw); return url.origin + url.pathname } catch { return '[URL]' }
-  }).replace(/Bearer\s+[^\s,;]+/gi, 'Bearer [redacted]').replace(/((?:authorization|token|password|api[_-]?key)\s*[:=]\s*)[^\s,;]+/gi, '$1[redacted]').slice(0, 6000)
+  }).replace(/Bearer\s+[^\s,;]+/gi, 'Bearer [redacted]').replace(/((?:authorization|token|password|api[_-]?key)\s*[:=]\s*)[^\s,;]+/gi, '$1[redacted]').slice(0, maxLength)
 }
 export function recordUpdateDiagnostic(dataRoot, record) {
   try {

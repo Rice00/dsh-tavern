@@ -7620,6 +7620,7 @@ window.__ModuleLoader__.load({
 				h("div", { className: "dsh-tavern-resource-body" }, error ? h("div", { className: "dsh-tavern-dock-error" }, error) : null, visible.length ? organization.renderCards(function (item) { return h("div", { key: item.path, className: "dsh-tavern-library-card-row" },
 					cardBatch.checkbox(item),
 					h("button", { className: "dsh-tavern-library-card" + (item.hasImage ? " with-image" : "") + (cardBatch.managing && cardBatch.isSelected(item.path) ? " selected" : ""), disabled: busy, onClick: function () { if (cardBatch.managing) cardBatch.toggle(item.path); else loadCard(item.path); } }, h(TavernCardListContent, { card: item, detail: item.path.split("/").pop(), extra: item.script ? "已绑定剧本：" + item.script.title : "" })),
+					!cardBatch.managing ? organization.rowMenu(item) : null,
 					sessionMode === "card" && !cardBatch.managing ? h("button", { className: "dsh-tavern-resource-at", title: "在对话中引用", onClick: function () { props.appendMention(item.path, item.name); } }, "在对话中引用") : null
 				); }) : h("div", { className: "dsh-tavern-empty" }, cards.length ? "没有匹配的人物卡" : "还没有人物卡") )
 			);
@@ -7931,7 +7932,7 @@ window.__ModuleLoader__.load({
 				) : null,
 				worldBookCatalogWarning ? h("div", { className: "dsh-card-error" }, worldBookCatalogWarning) : null
 			);
-			return h("aside", { className: "dsh-tavern-status" },
+			return h("aside", { className: "dsh-tavern-status" + (props.library ? " dsh-tavern-card-detail" : "") },
 				h("div", { className: "dsh-tavern-status-head" },
 					props.onBack ? h("button", { className: "dsh-tavern-btn", onClick: props.onBack }, "← 返回人物卡库") : null,
 					h("div", { className: "dsh-tavern-status-role" }, props.view.card.name),

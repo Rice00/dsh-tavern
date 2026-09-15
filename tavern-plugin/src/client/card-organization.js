@@ -88,6 +88,39 @@ function useCardOrganization(cards, busy, refresh, onError, batch) {
           h('button', { className: 'dsh-tavern-btn', disabled, onClick: () => nameGroup() }, '＋ 创建分组'),
           h('button', { className: 'dsh-tavern-btn', disabled, onClick: () => { setManaging(false); batch.begin(); } }, '批量整理人物卡')))) : null);
   }
+  function rowMenu(card) {
+    return h('details', { className: 'dsh-tavern-card-row-menu',
+      onBlur: event => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; },
+      onKeyDown: event => { if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary').focus(); } },
+      onToggle: event => {
+        const root = event.currentTarget;
+        if (event.target !== root) return;
+        const popup = root.querySelector('.dsh-tavern-card-row-popup');
+        if (!root.open) { if (typeof popup.hidePopover === 'function' && popup.matches(':popover-open')) popup.hidePopover(); return; }
+        if (typeof popup.showPopover === 'function') popup.showPopover();
+        document.querySelectorAll('.dsh-tavern-card-row-menu[open]').forEach(other => { if (other !== root) other.open = false; });
+        const rect = root.querySelector('summary').getBoundingClientRect();
+        const height = Math.min(300, window.innerHeight - 24);
+        popup.style.maxHeight = height + 'px';
+        popup.style.left = Math.max(12, Math.min(rect.right - 220, window.innerWidth - 232)) + 'px';
+        const above = rect.bottom + Math.min(popup.scrollHeight, height) + 8 > window.innerHeight;
+        popup.style.top = above ? 'auto' : rect.bottom + 6 + 'px';
+        popup.style.bottom = above ? Math.max(12, window.innerHeight - rect.top + 6) + 'px' : 'auto';
+      }
+    }, h('summary', { 'aria-label': '选择分组：' + card.name, title: '选择分组' }, '⋯'),
+      h('div', { className: 'dsh-tavern-card-row-popup',
+        ...(typeof HTMLElement !== 'undefined' && 'showPopover' in HTMLElement.prototype ? { popover: 'auto' } : {}),
+        onToggle: event => { if (event.newState === 'closed' || event.nativeEvent?.newState === 'closed') event.currentTarget.closest('details').open = false; }
+      },
+        h('div', { className: 'dsh-tavern-card-row-menu-title' }, '移到分组'),
+        ['', ...groups].map(group => h('button', { key: group, type: 'button', disabled,
+          'aria-pressed': (card.group || '') === group,
+          onClick: event => {
+            event.currentTarget.closest('details').open = false;
+            submit({ action: 'cards', paths: [card.path], group });
+          }
+        }, h('span', { 'aria-hidden': true }, (card.group || '') === group ? '✓' : ''), group || '未分组'))));
+  }
   function detailSettings(card) {
     if (!card) return null;
     return h('div', { className: 'dsh-tavern-card-detail-organization' },
@@ -97,5 +130,5 @@ function useCardOrganization(cards, busy, refresh, onError, batch) {
         onChange: event => submit({ action: 'cards', paths: [card.path], group: event.target.value.slice(6) }) }, options())),
       h('button', { className: 'dsh-tavern-btn', disabled, onClick: () => nameGroup() }, '创建分组'));
   }
-  return { visible, toolbar, detailSettings, renderCards: render => visible.map(render) };
+  return { visible, toolbar, rowMenu, detailSettings, renderCards: render => visible.map(render) };
 }

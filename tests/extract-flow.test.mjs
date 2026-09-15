@@ -1050,7 +1050,7 @@ test('世界书库统一编辑独立世界书与人物卡内置世界书', () =>
   assert.match(library, /createWorldBookLibraryRefreshModule/)
   assert.doesNotMatch(library, /window\.addEventListener\("focus"/)
   assert.doesNotMatch(library, /document\.addEventListener\("visibilitychange"/)
-  assert.match(library, /未知字段与 extensions 会原样保留/)
+  assert.doesNotMatch(library, /未知字段与 extensions 会原样保留|非常驻 Token 软预算|默认扫描消息数/)
 })
 
 test('资料库读取 RPC 有超时收尾，不会永久停留在加载状态', () => {

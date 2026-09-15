@@ -90,7 +90,7 @@ test('import rebuilds card instructions and worldbook context against each histo
  const h=fixture(), seen=[], runtime=await TavernPromptTemplateRuntime.create()
  h.options.cards.read=async()=>({name:'card',system_prompt:'Card special rule',post_history_instructions:'Card writing constraint'})
  h.options.worldBooks.bound=async()=>({view:{entries:[{comment:'[initvar]',content:'hp: 10'},
-  {ref:'walking',enabled:true,primaryKeys:['opening'],content:'Opening worldbook rule'},
+  {ref:'walking',enabled:true,primaryKeys:['/\\bwalk\\b/'],content:'Opening worldbook rule'},
   {ref:'resting',enabled:true,primaryKeys:['walked'],content:'Walked worldbook rule'},
   {ref:'template',enabled:true,constant:true,content:'<% print("Historical HP " + getvar("stat_data.hp")) %>'}]}})
  h.options.projectWorldBookTemplates=async(chat)=>{
@@ -119,7 +119,7 @@ test('历史导入复用正式世界书投影，当前输入不重复占用扫�
  const h=fixture(), runtime=await TavernPromptTemplateRuntime.create()
  const worldBook={view:{entries:[{comment:'[initvar]',content:'hp: 10',enabled:false},
   {ref:'open',constant:true,content:'<角色库>',order:10},
-  {ref:'role',primaryKeys:['opening'],content:'开场角色',order:20},
+  {ref:'role',primaryKeys:['/\\bwalk\\b/'],content:'开场角色',order:20},
   {ref:'close',constant:true,content:'</角色库>',order:30}]}}
  h.options.worldBooks.bound=async()=>worldBook
  h.options.projectForegroundWorldbook=createForegroundWorldbook({bound:async()=>worldBook,runtime:async()=>runtime,globalVariables:async()=>({})})

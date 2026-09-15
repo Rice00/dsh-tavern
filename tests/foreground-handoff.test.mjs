@@ -21,9 +21,9 @@ test('开场预扫描只提供预览，不调用结算模型、不重复准备',
     turns: {
       async finalize() {}, async discard() {},
       async prepare() {
-        assert.deepEqual(chat.preparedWorldBook.refs, ['entry:1', 'entry:0'])
-        assert.match(chat.preparedWorldBookContext, /秘密0/)
-        assert.match(chat.preparedWorldBookContext, /秘密1/)
+        assert.deepEqual(chat.preparedWorldBook.refs, [])
+        assert.doesNotMatch(chat.preparedWorldBookContext, /秘密0/)
+        assert.doesNotMatch(chat.preparedWorldBookContext, /秘密1/)
         assert.doesNotMatch(chat.preparedWorldBookContext, /秘密2/)
       }
     }

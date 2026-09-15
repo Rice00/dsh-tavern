@@ -49,7 +49,7 @@ export async function createInitializationNative(bootPath, { preset } = {}) {
   const sessionId = 'opening-session'
   const worldBooks = { bound: async () => ({ view: { entries: [
     { ref: 'constant', enabled: true, constant: true, content: 'Fixture constant worldbook' },
-    { ref: 'dynamic', enabled: true, primaryKeys: ['导入开场'], content: 'Fixture recalled worldbook' }
+    { ref: 'dynamic', enabled: true, primaryKeys: ['走到花店'], content: 'Fixture recalled worldbook' }
   ] } }) }
   let target, persistence, importer
   const card = { path: 'cards/test.json', name: '角色', first_mes: '{{user}}，你好。', description: '不可丢失的固定背景', system_prompt: 'Fixture card special instruction', post_history_instructions: 'Fixture card writing constraint' }

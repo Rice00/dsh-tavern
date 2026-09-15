@@ -251,3 +251,24 @@ test('两个写入者删除不同字段时都生效，不产生 undefined 字段
   assert.deepEqual(app.stored().state, { keep: null })
   assert.deepEqual(Object.keys(app.stored().state), ['keep'])
 })
+
+test('journal 的过期写入按需读取持久版本，不长期保留每轮完整副本', async t => {
+  const root=await mkdtemp(join(tmpdir(),'chat-baseline-'))
+  t.after(()=>rm(root,{recursive:true,force:true}))
+  const store=createChatJournalStore({dataRoot:root})
+  let baselineReads=0
+  const persistence=createChatPersistence({store:{...store,readRevision:async(...args)=>{baselineReads++;return store.readRevision(...args)}}})
+  await persistence.write({id:'c',messages:[message()],counter:0})
+  const old=await persistence.read('c')
+  for(let i=0;i<12;i++)await persistence.update('c',c=>{c.counter++;return c})
+  old.extra='并发无关改动'
+  await persistence.write(old)
+  assert.equal(baselineReads,1)
+  const saved=await persistence.read('c')
+  assert.equal(saved.counter,12)
+  assert.equal(saved.extra,old.extra)
+  const a=await persistence.read('c'),b=await persistence.read('c')
+  a.counter++;b.counter+=2
+  await persistence.write(a)
+  await assert.rejects(persistence.write(b),error=>error.code==='DSH_TAVERN_CHAT_CONFLICT')
+})

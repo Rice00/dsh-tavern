@@ -104,6 +104,7 @@ export function createChatPersistence(options = {}) {
   const normalize = typeof options.normalize === 'function' ? options.normalize : function (value) { return value }
   const now = typeof options.now === 'function' ? options.now : Date.now
   const baselines = new Map()
+  let baselineBytes = 0
 
   function relative(chatId) {
     const id = String(chatId || '')
@@ -125,7 +126,21 @@ export function createChatPersistence(options = {}) {
     if (!chat || typeof chat !== 'object') return chat
     const revision = Math.max(0, Number(chat[STORAGE_REVISION]) || 0)
     chat[STORAGE_REVISION] = revision
-    baselines.set(chat.id + ':' + revision, clone(chat))
+    // Journal revisions are durable: reconstruct a baseline only for a stale
+    // write. Legacy stores have no revision reader, so keep a bounded fallback.
+    if (typeof records.readRevision !== 'function') {
+      const key = chat.id + ':' + revision
+      if (!baselines.has(key)) {
+        const bytes = JSON.stringify(chat).length * 2
+        if (bytes <= 16 * 1024 * 1024) {
+          baselines.set(key, {value:clone(chat),bytes}); baselineBytes += bytes
+          while (baselines.size > 8 || baselineBytes > 16 * 1024 * 1024) {
+            const oldest = baselines.keys().next().value
+            baselineBytes -= baselines.get(oldest).bytes; baselines.delete(oldest)
+          }
+        }
+      }
+    }
     return chat
   }
 
@@ -141,8 +156,8 @@ export function createChatPersistence(options = {}) {
     const chatId = String(desired.id)
     const touchUpdatedAt = metadata.touchUpdatedAt !== false
     const basedOn = Math.max(0, Number(desired[STORAGE_REVISION]) || 0)
-    const baseline = baselines.get(chatId + ':' + basedOn)
-    const saved = await records.update(chatId, function (stored) {
+    let baseline = baselines.get(chatId + ':' + basedOn)?.value
+    const saved = await records.update(chatId, async function (stored) {
       if (stored === undefined) {
         if (basedOn !== 0) throw conflict(chatId, '<deleted>')
         desired[STORAGE_REVISION] = 1
@@ -155,6 +170,11 @@ export function createChatPersistence(options = {}) {
       if (latestRevision === basedOn) {
         next = desired
       } else {
+        if (baseline === undefined && typeof records.readRevision === 'function') {
+          try { baseline = await records.readRevision(chatId, basedOn) }
+          catch (error) { if (error.code !== 'DSH_TAVERN_REVISION_NOT_FOUND') throw error }
+          if (baseline !== undefined) baseline = normalize(baseline)
+        }
         if (baseline === undefined) throw conflict(chatId, '<baseline>')
         next = mergeValue(baseline, latest, desired, '', chatId)
       }
@@ -198,7 +218,7 @@ export function createChatPersistence(options = {}) {
   }
 
   async function remove(chatId) {
-    baselines.forEach(function (_value, key) { if (key.startsWith(String(chatId) + ':')) baselines.delete(key) })
+    baselines.forEach(function (entry, key) { if (key.startsWith(String(chatId) + ':')) { baselineBytes -= entry.bytes; baselines.delete(key) } })
     await records.remove(chatId)
   }
 

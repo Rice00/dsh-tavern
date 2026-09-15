@@ -70,7 +70,7 @@ function transcriptOf(chat) {
 }
 
 export function isMvuUpdateEntry(entry) {
-  return /^\s*\[mvu_update\]/i.test(str(entry && (entry.comment || entry.title || entry.name)))
+  return /^\s*(?:\d+[a-z]?[_\s.-]*)?\[mvu_update\]/i.test(str(entry && (entry.comment || entry.title || entry.name)))
 }
 
 export function mvuUpdateRulesFromWorldBook(worldBook) {

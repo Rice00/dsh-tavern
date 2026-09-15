@@ -186,3 +186,11 @@ test('原生世界书控制器失败时局部跳过，不把模板源码发送�
   assert.equal(projected.context, '')
   assert.deepEqual(projected.diagnostics, [{ kind: 'worldbook-template', code: 'syntax-error', ref: 'entry:1' }])
 })
+
+ test('数字编号 MVU 条目进入后台且不占正文额度', () => {
+  const updates = ['11d_[mvu_update]官党投效登记', '30b_[mvu_update]本命兵刃登记', '31b_[mvu_update]炼制成品登记'].map((title, i) => entry('entry:' + i, '登记' + i, { title, primaryKeys: ['少林'] }))
+  const plot = entry('entry:3', '正文设定', { primaryKeys: ['少林'], title: '说明[mvu_update]并非标签' })
+  const worldBook = { view: { entries: [...updates, plot] } }
+  assert.deepEqual(mvuUpdateRulesFromWorldBook(worldBook), ['登记0', '登记1', '登记2'])
+  assert.deepEqual(prepareWorldBookRecall({ worldBook, chat: chat('少林'), turn: 2 }).refs, ['entry:3'])
+ })

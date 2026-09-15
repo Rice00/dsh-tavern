@@ -361,7 +361,7 @@ export function createTurnOrchestrator(options) {
     if (scriptWorldBook && typeof scriptWorldBook.recordReads === 'function') chat.worldBookReads = scriptWorldBook.recordReads(chat.worldBookReads)
     source.worldBook.templateRefs = Array.isArray(templateWorldBook && templateWorldBook.refs) ? clone(templateWorldBook.refs) : []
     source.worldBook.templateDiagnostics = Array.isArray(templateWorldBook && templateWorldBook.diagnostics) ? clone(templateWorldBook.diagnostics) : []
-    const frame = frameBuilder.build({
+    const frameInput = {
       chatId: chat.id,
       branchId: foregroundOperation.basedOn.branchId,
       basedOnRevision: foregroundOperation.basedOn.revision,
@@ -369,7 +369,14 @@ export function createTurnOrchestrator(options) {
       turn,
       inputs: foregroundFrameInputs(plan, userText, runtimeUserText, chat.runtimePresetSnapshot, chat),
       source: { ...source, ...(sceneWorldbook ? { sceneWorldbook } : {}) }
-    })
+    }
+    let frame = frameBuilder.build(frameInput)
+    if (foregroundWorldBook?.log && typeof options.recordWorldbookRecall === 'function') {
+      let receipt
+      try { receipt = { recallLog: await options.recordWorldbookRecall({ chat, frame, log: foregroundWorldBook.log }) } }
+      catch (error) { receipt = { recallLogError: String(error?.message || error) } }
+      frame = frameBuilder.build({ ...frameInput, source: { ...source, worldBook: { ...source.worldBook, ...receipt } } })
+    }
     consumeScriptPrompts(chat)
     rememberFrame(chat, frame)
     chatChanged = true

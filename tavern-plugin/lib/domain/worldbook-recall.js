@@ -174,6 +174,7 @@ export function projectWorldBookTemplates(input = {}) {
   }
   return {
     context: context.join('\n\n'),
+    renderedEntries: projectedEntries.map(entry => ({ ref: entry.ref, text: entry.content, location: dynamicKeys.has(placementKey(entry)) ? 'foreground' : 'prefix' })),
     prefixContext: projectedEntries.filter(entry => !dynamicKeys.has(placementKey(entry))).map(entry => entry.content).join('\n\n'),
     foregroundContext: projectedEntries.filter(entry => dynamicKeys.has(placementKey(entry))).map(entry => entry.content).join('\n\n'),
     refs,
@@ -200,6 +201,8 @@ export function prepareWorldBookRecall(input = {}) {
     kind: 'keywords',
     entries: activation.entries,
     diagnostics: activation.diagnostics,
+    settings: activation.settings,
+    scanSources: activation.scanSources,
     context: selected.map(function (entry) { return str(entry.content).trim() }).filter(Boolean).join('\n\n'),
     refs: selected.map(function (entry) { return str(entry.ref) }),
     totalChars,

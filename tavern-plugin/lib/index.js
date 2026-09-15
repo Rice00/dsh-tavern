@@ -129,6 +129,7 @@ import { createTavernCompactionCoordinator } from './domain/tavern-compaction.js
 import { cordisToolNames, createTurnOrchestrator, dshFileToolNames } from './domain/turn-orchestration.js'
 import { resourceWorkspaceContext } from './domain/workspace-resources.js'
 import { createWorldBookLibrary } from './domain/worldbook-library.js'
+import { createWorldbookRecallLog, compactRecallDiagnostics } from './domain/worldbook-recall-log.js'
 import { createForegroundWorldbook } from './domain/foreground-worldbook.js'
 import { mvuUpdateRulesFromWorldBook, prepareWorldBookRecall, projectWorldBookTemplates } from './domain/worldbook-recall.js'
 import {
@@ -184,6 +185,7 @@ export async function apply(ctx) {
   const dataRoot = resolveTavernDataRoot()
   const stablePrefixStorage = createSessionStablePrefixStorage(dataRoot + '/session-prefixes')
   const profileData = createProfileDataStore({ dataRoot })
+  const worldbookRecallLog = createWorldbookRecallLog({ store: profileData })
   const userPreferenceProfile = createUserPreferenceProfile({ store: profileData })
   const sceneWorldbooks = TAVERN_RELEASE_CAPABILITIES.sceneImages ? createSceneWorldbooks({ store: profileData }) : null
   const imageHostDiagnostic = createSceneImageHostLogger(ctx.logger)
@@ -1995,7 +1997,7 @@ export async function apply(ctx) {
     latest.preparedWorldBookContext = context
     latest.preparedWorldBook = {
       schemaVersion: 2,
-      diagnostics: prepared.diagnostics || [],
+      diagnostics: compactRecallDiagnostics(prepared.diagnostics),
       ts: Date.now(),
       turn,
       branchId: current.branchId,
@@ -2419,6 +2421,7 @@ export async function apply(ctx) {
     projectReply: projectRuntimeReply,
     projectWorldBookTemplates: input => nativeWorldBookTemplateContext(input.chat, input.card),
     projectForegroundWorldbook,
+    recordWorldbookRecall: worldbookRecallLog.record,
     projectScriptPromptWorldbook: async function ({ chat, card, turn }) {
       const text = scriptPromptScanText(chat)
       if (!text.trim()) return null
@@ -2836,6 +2839,11 @@ export async function apply(ctx) {
         }
         await mvuDiagnostics.record(chat.sessionId, { stage: 'script-runtime', diagnostic: { level: diagnostic.level === 'error' ? 'error' : 'warn', scriptId: str(diagnostic.scriptId).slice(0, 200), message: redactMvuLoadError(diagnostic.message, 4000), ...(sanitizeModuleFailure(diagnostic.moduleFailure) ? { moduleFailure: sanitizeModuleFailure(diagnostic.moduleFailure) } : {}) } })
         return { recorded: true }
+      }
+      case 'getWorldBookRecallLog': {
+        const chat = await chatForSession(args && args.sessionId)
+        if (!chat) throw new Error('对话不存在')
+        return await worldbookRecallLog.read(chat, args && args.turn)
       }
       case 'getPlayChatDebugTarget': {
         const sourceChat = await chatForSession(args && args.sessionId)
@@ -3614,6 +3622,10 @@ export async function apply(ctx) {
       if (options.purpose === undefined && chat !== undefined && (chat.mode === 'story' || chat.mode === 'script')) {
         const coordinates = requestCoordinates.get(sessionId) || {}
         requestRecord = await modelRequestLog.record({ chat, context: backgroundContext, coordinates, options })
+        if (!backgroundContext) {
+          try { await worldbookRecallLog.requested(chat, options, requestRecord.id) }
+          catch (error) { console.warn('dsh-tavern: 世界书请求日志关联失败', String(error?.message || error)) }
+        }
       }
       let responseText = ''
       let finish = null
@@ -4020,7 +4032,7 @@ export async function apply(ctx) {
       parameters: {
         ref: { type: 'string', description: '已挂载游玩记录引用，例如 play-chat:chat-xxx；只有一个引用时可省略' },
         turn: { type: 'integer', description: '要读取的游玩轮次；省略时使用最新一轮' },
-        layer: { type: 'string', enum: ['overview', 'turns', 'conversation', 'input', 'source', 'session', 'display', 'saved-display', 'diagnostics', 'tavern', 'foreground', 'background', 'request', 'iframe'], description: '读取层：小型概览、轮次目录、整场对话、本轮玩家输入、模型原文、Session 文本、当前实时展示、保存时展示快照、当前正则诊断、Tavern 状态、前台 Agent、后台 Agent、真实模型请求或 iframe 运行证据；默认 overview' },
+        layer: { type: 'string', enum: ['overview', 'turns', 'conversation', 'input', 'source', 'session', 'display', 'saved-display', 'diagnostics', 'tavern', 'foreground', 'background', 'request', 'worldbook', 'iframe'], description: '读取层：小型概览、轮次目录、整场对话、本轮玩家输入、模型原文、Session 文本、当前实时展示、保存时展示快照、当前正则诊断、Tavern 状态、前台 Agent、后台 Agent、真实模型请求或 iframe 运行证据；默认 overview' },
         offset: { type: 'integer', description: '可选的 1 起始字符位置，默认 1' },
         limit: { type: 'integer', description: '本次最多读取字符数，默认 6000，最大 12000' }
       },
@@ -4080,6 +4092,7 @@ export async function apply(ctx) {
         return readPlayChatDebugTurn(editorChat, sourceChat, reference, args, projector, {
           foreground: sessionDebugEvidence(foregroundId),
           background: sessionDebugEvidence(backgroundId),
+          worldbook: args.layer === 'worldbook' ? await worldbookRecallLog.read(sourceChat, args.turn || reference.turn) : undefined,
           requests: await modelRequestLog.evidence(sourceChat.id, args.turn || reference.turn)
         })
       }

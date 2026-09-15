@@ -131,6 +131,7 @@ function harness(mode, options = {}) {
     projectReply: projectReplyPresentation,
     projectWorldBookTemplates: options.projectWorldBookTemplates,
     projectForegroundWorldbook: options.projectForegroundWorldbook,
+    recordWorldbookRecall: options.recordWorldbookRecall,
     projectScriptPromptWorldbook: options.projectScriptPromptWorldbook,
     shellToolName: options.shellToolName,
     now: () => 2000
@@ -838,4 +839,17 @@ test('正式 Frame 使用当前输入的统一世界书投影，重试复用 Fra
   assert.doesNotMatch(first.frame.context.activeWorldbook, /过期的预扫描/)
   assert.deepEqual(first.frame.source.worldBook.refs, ['entry:1'])
   assert.equal(run.chat().worldBookReads['entry:1'].turn, 0)
+})
+
+
+test('世界书日志收据进入不可变 Frame；日志写入失败不阻断正文', async () => {
+ for (const fail of [false,true]) {
+  const run=harness('story',{projectForegroundWorldbook:async()=>({context:'世界书正文',refs:[],activation:{refs:[]},log:{entries:[],outputs:[]}}),
+   recordWorldbookRecall:async()=>{if(fail)throw Error('磁盘不可写');return 'worldbook-recalls/chat/op.json'}})
+  const result=await run.orchestrator.prepare({sessionId:'session-1',turn:1,userText:'继续'})
+  assert.equal(result.ready,true)
+  assert.equal(Object.isFrozen(result.frame),true)
+  if(fail)assert.equal(result.frame.source.worldBook.recallLogError,'磁盘不可写')
+  else assert.equal(result.frame.source.worldBook.recallLog,'worldbook-recalls/chat/op.json')
+ }
 })

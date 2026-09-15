@@ -71,31 +71,44 @@ function keyMatch(text, value, entry) {
   return literalMatch(text, key, entry)
 }
 
-function keywordMatch(entry, body) {
-  const primary = (Array.isArray(entry.primaryKeys) ? entry.primaryKeys : []).filter(function (key) { return str(key).trim() !== '' })
-  if (primary.length === 0 || !primary.some(function (key) { return keyMatch(body, key, entry) })) return false
-  const secondary = (Array.isArray(entry.secondaryKeys) ? entry.secondaryKeys : []).filter(function (key) { return str(key).trim() !== '' })
-  if (entry.selective !== true || secondary.length === 0) return true
-  const matches = secondary.map(function (key) { return keyMatch(body, key, entry) })
-  switch (Number(entry.selectiveLogic) || 0) {
-    case 1: return !matches.every(Boolean)
-    case 2: return !matches.some(Boolean)
-    case 3: return matches.every(Boolean)
-    default: return matches.some(Boolean)
+function keywordEvaluation(entry, body, sources) {
+  const keys = values => (Array.isArray(values) ? values : []).map(value => str(value).trim()).filter(Boolean)
+  function hits(values) {
+    return keys(values).filter(key => keyMatch(body, key, entry)).map(key => {
+      const source = sources.find(source => keyMatch(source.text, key, entry))
+      const text = source?.text || body
+      const regex = regexKey(key)
+      const index = regex ? (regex.exec(text)?.index ?? 0) : (entry.caseSensitive ? text : text.toLocaleLowerCase()).indexOf(entry.caseSensitive ? key : key.toLocaleLowerCase())
+      return { key, source: source?.source || 'combined', messageIndex: source?.messageIndex, turn: source?.turn, role: source?.role,
+        ref: source?.ref, excerpt: text.slice(Math.max(0, index - 45), Math.max(0, index) + 115) }
+    })
   }
+  const primary = hits(entry.primaryKeys), secondary = hits(entry.secondaryKeys)
+  const secondaryKeys = keys(entry.secondaryKeys)
+  let secondaryPassed = true
+  if (entry.selective === true && secondaryKeys.length) {
+    switch (Number(entry.selectiveLogic) || 0) {
+      case 1: secondaryPassed = secondary.length !== secondaryKeys.length; break
+      case 2: secondaryPassed = secondary.length === 0; break
+      case 3: secondaryPassed = secondary.length === secondaryKeys.length; break
+      default: secondaryPassed = secondary.length > 0
+    }
+  }
+  return { matched: primary.length > 0 && secondaryPassed, primary, secondary, secondaryPassed,
+    primaryKeyCount: keys(entry.primaryKeys).length, secondaryKeys, selectiveLogic: entry.selective === true ? Number(entry.selectiveLogic) || 0 : null }
 }
 
-
 function scanMessages(input) {
-  const messages = (input.chat?.messages || []).filter(message => ['user', 'assistant'].includes(message?.role))
-    .map(message => str(message.sourceText || message.text))
-  // latestBody is retained for callers importing history or supplying a scan fixture.
+  const messages = (input.chat?.messages || []).map((message, messageIndex) => ({ ...message, messageIndex }))
+    .filter(message => ['user', 'assistant'].includes(message?.role))
+    .map(message => ({ text: str(message.sourceText || message.text), source: 'history', messageIndex: message.messageIndex, role: message.role, turn: message.turn }))
   if (input.latestBody !== undefined) {
     const last = messages.length - 1
-    if (last >= 0 && input.chat?.messages?.at(-1)?.role === 'assistant') messages[last] = str(input.latestBody)
-    else messages.push(str(input.latestBody))
+    const source = { text: str(input.latestBody), source: 'latest-body', role: 'assistant' }
+    if (last >= 0 && input.chat?.messages?.at(-1)?.role === 'assistant') messages[last] = { ...messages[last], ...source }
+    else messages.push(source)
   }
-  if (!input.userTextInHistory && str(input.userText).trim()) messages.push(str(input.userText))
+  if (!input.userTextInHistory && str(input.userText).trim()) messages.push({ text: str(input.userText), source: 'current-input', role: 'user' })
   return messages.reverse()
 }
 function groupNames(entry) { return str(entry.group).split(/,\s*/).map(value => value.trim()).filter(Boolean) }
@@ -119,14 +132,14 @@ function filterGroups(candidates, activated, textFor, random, reject) {
   const occupied = new Set(activated.flatMap(groupNames))
   for (const [name, members] of groups) {
     let pool = members.filter(entry => retained.has(entry))
-    const remove = entry => { retained.delete(entry); reject(entry, 'group', { group: name }) }
-    if (occupied.has(name)) { pool.forEach(remove); continue }
+    const remove = (entry, details = {}) => { retained.delete(entry); reject(entry, 'group', { group: name, ...details }) }
+    if (occupied.has(name)) { pool.forEach(entry => remove(entry, { groupReason: 'already-selected', winners: activated.filter(item => groupNames(item).includes(name)).map(item => item.ref) })); continue }
     if (pool.length < 2) continue
     if (pool.some(entry => option(entry, 'useGroupScoring', false))) {
       const scores = pool.map(entry => groupScore(entry, textFor(entry)))
       const max = Math.max(...scores)
       pool = pool.filter((entry, index) => {
-        if (option(entry, 'useGroupScoring', false) && scores[index] < max) { remove(entry); return false }
+        if (option(entry, 'useGroupScoring', false) && scores[index] < max) { remove(entry, { groupReason: 'score', score: scores[index], maxScore: max }); return false }
         return true
       })
     }
@@ -137,7 +150,7 @@ function filterGroups(candidates, activated, textFor, random, reject) {
       let roll = random() * pool.reduce((sum, entry) => sum + weight(entry), 0)
       winner = pool.find(entry => { roll -= weight(entry); return roll < 0 }) || pool[0]
     }
-    for (const entry of pool) if (entry !== winner) remove(entry)
+    for (const entry of pool) if (entry !== winner) remove(entry, { groupReason: overrides.length ? 'priority' : 'weight', winners: winner ? [winner.ref] : [], weight: option(entry, 'groupWeight', 100) })
   }
   return candidates.filter(entry => retained.has(entry))
 }
@@ -156,24 +169,31 @@ export function activateWorldBook(input) {
     matchWholeWords: entry.matchWholeWords ?? settings.matchWholeWords
   }))
   const activated = [], recurse = [], diagnostics = new Map(), rejected = new Set()
-  const reject = (entry, reason, extra = {}) => diagnostics.set(entry.ref, { ref: entry.ref, reason, ...extra })
+  const reject = (entry, reason, extra = {}) => diagnostics.set(entry.ref, { ...diagnostics.get(entry.ref), ref: entry.ref, title: str(entry.title || entry.comment), constant: entry.constant === true,
+    order: entry.order ?? 100, displayIndex: entry.displayIndex, placement: placementKey(entry), priorityRank: entries.indexOf(entry) + 1,
+    scanDepth: integer(entry.scanDepth, settings.scanDepth), caseSensitive: entry.caseSensitive, matchWholeWords: entry.matchWholeWords, reason, ...extra })
   const levels = [...new Set(entries.map(entry => integer(entry.delayUntilRecursion, 0)).filter(Boolean))].sort((a, b) => a - b)
   let level = 0, iteration = 0, dynamicCount = 0
   // Each successful step consumes entries; delayed levels are finite as well.
   while (iteration <= entries.length + levels.length + 1) {
-    const textFor = entry => {
+    const sourcesFor = entry => {
       const depth = integer(entry.scanDepth, settings.scanDepth)
-      if (!depth) return ''
-      return [...messages.slice(0, depth), injected, ...(iteration > 0 ? recurse : [])].filter(Boolean).join('\n\x01\n')
+      if (!depth) return []
+      return [...messages.slice(0, depth), ...(injected ? [{ text: injected, source: 'script' }] : []), ...(iteration > 0 ? recurse : [])]
     }
+    const textFor = entry => sourcesFor(entry).map(source => source.text).filter(Boolean).join('\n\x01\n')
     const candidates = []
     for (const entry of entries) {
       if (rejected.has(entry.ref) || activated.some(item => item.ref === entry.ref)) continue
-      if (!entry.constant && input.isCoolingDown(entry)) { reject(entry, 'cooldown'); continue }
+      if (!entry.constant && input.isCoolingDown(entry)) { reject(entry, 'cooldown', { cooldown: { readTurn: input.chat?.worldBookReads?.[entry.ref]?.turn, currentTurn: input.turn, duration: 10 } }); continue }
       const delay = integer(entry.delayUntilRecursion, 0)
       if (delay && (!iteration || delay > level)) { reject(entry, 'recursion-delay'); continue }
       if (iteration && entry.excludeRecursion) { reject(entry, 'recursion-excluded'); continue }
-      if (!entry.constant && !keywordMatch(entry, textFor(entry))) { reject(entry, 'keywords'); continue }
+      if (!entry.constant) {
+        const match = keywordEvaluation(entry, textFor(entry), sourcesFor(entry))
+        reject(entry, 'matched', { match, stage: iteration ? 'recursion' : 'initial', recursionLevel: level, scanSources: sourcesFor(entry).map(({ text, ...source }) => ({ ...source, chars: text.length })) })
+        if (!match.matched) { reject(entry, 'keywords'); continue }
+      }
       candidates.push(entry)
     }
     const winners = filterGroups(candidates, activated, textFor, random, (entry, reason, extra) => {
@@ -182,14 +202,14 @@ export function activateWorldBook(input) {
     })
     const added = []
     for (const entry of winners) {
-      if (!entry.constant && dynamicCount >= DYNAMIC_ENTRY_LIMIT) { reject(entry, 'limit', { limit: DYNAMIC_ENTRY_LIMIT }); rejected.add(entry.ref); continue }
+      if (!entry.constant && dynamicCount >= DYNAMIC_ENTRY_LIMIT) { reject(entry, 'limit', { limit: DYNAMIC_ENTRY_LIMIT, selectedBefore: activated.filter(item => !item.constant).map(item => item.ref) }); rejected.add(entry.ref); continue }
       activated.push(entry)
       added.push(entry)
       if (!entry.constant) dynamicCount++
       reject(entry, 'selected', { stage: iteration ? 'recursion' : 'initial', scanDepth: integer(entry.scanDepth, settings.scanDepth) })
     }
     if (!settings.recursive) break
-    const sources = added.filter(entry => !entry.preventRecursion).map(entry => str(entry.content)).filter(Boolean)
+    const sources = added.filter(entry => !entry.preventRecursion).map(entry => ({ text: str(entry.content), source: 'recursion', ref: entry.ref })).filter(source => source.text)
     recurse.push(...sources)
     iteration++
     if (sources.length) continue
@@ -197,5 +217,5 @@ export function activateWorldBook(input) {
     if (nextLevel === undefined) break
     level = nextLevel
   }
-  return { entries: activated, diagnostics: [...diagnostics.values()] }
+  return { entries: activated, diagnostics: [...diagnostics.values()], settings, scanSources: messages.map(({ text, ...source }) => ({ ...source, chars: text.length })) }
 }

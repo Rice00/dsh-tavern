@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "ff1bcad2b76b97306e8954c5bc87b5a1e0395414",
-  "releaseSequence": 216,
+  "revision": "e94683dcd8ef98eae72d7f3db02a6bb3edd79443",
+  "releaseSequence": 217,
   "version": "1.8.0",
   "files": [
     {
@@ -256,8 +256,8 @@
     },
     {
       "path": "tavern-plugin/lib/client.js",
-      "sha256": "8d51a21535a7cdd21473e0d3c84cfa1032e21331fbfd4f4a8e703482f5b9aff9",
-      "size": 906689
+      "sha256": "5f84810ac792a5d3f9f61b64546e7de8d395861111eab2559e02c1995f275d92",
+      "size": 908043
     },
     {
       "path": "tavern-plugin/lib/cordis-inspect.js",
@@ -463,6 +463,11 @@
       "path": "tavern-plugin/lib/domain/epub-text.js",
       "sha256": "241c5caedd1361c67a43a2cae27249a193ed1fb1d2e9bf53b740781e3f75eb35",
       "size": 6981
+    },
+    {
+      "path": "tavern-plugin/lib/domain/failed-error-visibility.js",
+      "sha256": "c0e0136798fe5a5257af7ecd35e4ca92235b12d860b04e628d0fe13a28198d5a",
+      "size": 735
     },
     {
       "path": "tavern-plugin/lib/domain/file-resources.js",
@@ -1141,8 +1146,8 @@
     },
     {
       "path": "tavern-plugin/lib/index.js",
-      "sha256": "bcc4a7a6a71fe304049e3a81944836746c0ff55200dd2c0ca5862e1671f5f7c7",
-      "size": 272203
+      "sha256": "280cd6e4f16f8d40482eb92cc889c67bf0ee808749b4e5d3cf9e072d9b871c67",
+      "size": 272981
     },
     {
       "path": "tavern-plugin/lib/profile-data-store.js",
@@ -3546,8 +3551,8 @@
     },
     {
       "path": "tavern-plugin/src/client/main.js",
-      "sha256": "eb129545c84874d2aa62980c228399c6e20bc8cb379d01472e41ef897de51466",
-      "size": 701316
+      "sha256": "eec6d9b7a2a8a41911723a44ae683887358e3322941cbf9331e3574f0138a5b2",
+      "size": 701987
     },
     {
       "path": "tavern-plugin/src/client/modules/frame-activation.js",
@@ -3606,8 +3611,8 @@
     },
     {
       "path": "tavern-plugin/src/client/turn-error-controls.js",
-      "sha256": "92c25bc0c3aa81dd29c2a535adb1b3e6d38a638637998e80a91df9301d613f50",
-      "size": 3648
+      "sha256": "f19dacb9da52d29c9ee6c28a81361d9f5221ea1154cdc99c3f56cffbb1133589",
+      "size": 4311
     },
     {
       "path": "tavern-plugin/tsconfig.host.json",

@@ -25,7 +25,7 @@ function createFullTemplateExecutor({ window: hostWindow, rpc: invoke, executeSl
       if(data.type === 'template-close') { frame.hidden=true; return; }
       try {
         if (!['getFullPromptTemplateState','saveFullPromptTemplateState','saveFullPromptTemplateSettings','saveFullPromptTemplateGlobals','countFullTemplateTokens','claimFullTemplateWork','startFullTemplateWork','completeFullTemplateWork','getFullTemplateWorldbook','replaceFullTemplateWorldbook','executeTemplateHostCommand'].includes(data.method)) throw new Error('Unsupported template RPC');
-        const result = data.method === 'executeTemplateHostCommand' ? {pipe: await executeSlash(data.args.text, sessionId).then(value => typeof value === 'string' ? value : '')} : await invoke(data.method, data.args || {}, sessionId);
+        const result = data.method === 'executeTemplateHostCommand' ? {pipe: await executeSlash(data.args.text, sessionId, {waitForCompletion:false}).then(value => typeof value === 'string' ? value : '')} : await invoke(data.method, data.args || {}, sessionId);
         if (result?.ok === false) throw new Error(result.error || 'Template RPC failed');
         if (owner === record) frame.contentWindow.postMessage({ token, requestId: data.requestId, result }, '*');
       } catch (error) {

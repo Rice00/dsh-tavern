@@ -4768,7 +4768,7 @@ window.__ModuleLoader__.load({
 
 		function createTavernFrameSlashExecutor(ctx, hostWindow) {
 			hostWindow = hostWindow || window;
-			return function (line, sessionId) {
+			return function (line, sessionId, options) {
                 if (/^\/ejs(?:-refresh)?(?:\s|$)/.test(String(line))) return rpc("executeFullTemplateCommand", {text:line}, sessionId).then(function(result){return result.pipe;});
 				const draftMatch = /^\/setinput(?: ([\s\S]*))?$/.exec(String(line || ""));
 				const match = /^\/send\s+([\s\S]+)\|\s*\/trigger\s*$/.exec(String(line || ""));
@@ -4787,6 +4787,15 @@ window.__ModuleLoader__.load({
 				const input = conversation.input.for(actx);
 				if (draftMatch) { input.setDraft(draftMatch[1] || ""); return Promise.resolve({ drafted: true }); }
 				const binding = triggerOnly && ctx.sessions.binding(sessionId);
+                // Template execution owns the generation queue; waiting here would deadlock it.
+                if (options?.waitForCompletion === false) {
+                    if (triggerOnly) return Promise.resolve(binding.session.prompt([], "queue")).then(function(result) {
+                        if (!result?.ok) throw new Error(result?.error?.message || "生成提交失败");
+                        return {submitted:true};
+                    });
+                    input.setDraft(match[1]);
+                    return Promise.resolve(input.submit("queue")).then(function(){return {submitted:true};});
+                }
 				const sessions = ctx.sessions.list;
 				return new Promise(function (resolve, reject) {
 					let observedRun = false;

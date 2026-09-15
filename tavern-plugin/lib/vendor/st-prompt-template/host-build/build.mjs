@@ -38,6 +38,11 @@ export async function buildTemplatePlugin({ dependencyRoot, outputPath }) {
     if (stats.hasErrors() || stats.hasWarnings()) return reject(new Error(stats.toString({ all: false, errors: true, warnings: true })))
     accept()
   }))
+  await new Promise((accept, reject) => webpack({
+    mode:'production', target:'webworker', entry:resolve(here,'compiler-worker.js'),
+    resolve:{modules:[resolve(dependencyRoot,'node_modules')]},
+    output:{path:resolve(outputPath),filename:'ejs.workers.js'}, performance:{hints:false}
+  }, (error,stats) => error || stats.hasErrors() ? reject(error || new Error(stats.toString({all:false,errors:true}))) : accept()))
   await writeFile(resolve(outputPath, 'settings.html'), await readFile(resolve(here, '../upstream/settings.html')))
   const files = {}
   for (const name of (await readdir(outputPath)).sort()) {

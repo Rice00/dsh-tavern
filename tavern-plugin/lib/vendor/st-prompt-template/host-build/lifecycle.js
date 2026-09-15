@@ -1,5 +1,5 @@
 import { eventSource, chat, getCurrentChatId, saveChatConditional } from './host.js'
-import { mountTemplateMessages, formatTemplateMessage } from './dom.js'
+import { mountTemplateMessages, formatTemplateMessage, templateMessageHTML } from './dom.js'
 import { settings } from '../upstream/src/modules/ui.ts'
 
 const copy = value => structuredClone(value)
@@ -38,7 +38,7 @@ export function createTemplateLifecycle() {
       if (old && (old.swipes?.length || 0) > (message.swipes?.length || 0)) await eventSource.emit('MESSAGE_SWIPE_DELETED', index, old.swipes.findIndex((text, i) => text !== message.swipes[i]))
       if (!old || old.swipe_id === swipe) await eventSource.emit(message.is_user ? 'USER_MESSAGE_RENDERED' : 'CHARACTER_MESSAGE_RENDERED', String(index), 'template-host', !sourceChanged || (!old && Boolean(message.is_ejs_processed?.[swipe])))
       if (settings.enabled && settings.render_enabled) {
-        const html = document.querySelector(`.mes[mesid="${index}"] .mes_text`)?.innerHTML || ''
+        const html = templateMessageHTML(document.querySelector(`.mes[mesid="${index}"] .mes_text`))
         if (html !== formatTemplateMessage(message.mes)) message.template_display = { source: message.mes, swipe, html }
         else delete message.template_display
       } else delete message.template_display

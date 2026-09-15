@@ -3,6 +3,18 @@ import { configureTemplateHost, refreshTemplateSnapshot, disposeTemplateHost, ev
 
 /** This must be loaded in a dedicated disposable frame, once per session. */
 export async function initializeTemplatePlugin({ snapshot, callbacks, libraries }) {
+  // The upstream worker URL is fixed to ST's extension directory.
+  const NativeWorker = globalThis.Worker
+  if (!NativeWorker.templateHost) {
+    class TemplateWorker extends NativeWorker {
+      static templateHost = true
+      constructor(url, options) {
+        super(String(url) === '/scripts/extensions/third-party/ST-Prompt-Template/dist/ejs.workers.js'
+          ? new URL('ejs.workers.js', __webpack_public_path__) : url, options)
+      }
+    }
+    globalThis.Worker = TemplateWorker
+  }
   configureTemplateHost(snapshot, callbacks, libraries)
   const initialized = []
   try {

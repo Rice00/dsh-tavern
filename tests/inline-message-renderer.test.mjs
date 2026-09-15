@@ -2225,3 +2225,13 @@ test('Helper 增量不遍历未变历史，替换、追加与截断保留旧状�
   assert.equal(truncated.messages.length, 1)
   assert.equal(next.messages.length, 3)
 })
+
+
+test('模板内生成命令在提交后返回，不占住模板队列等待下一轮', async () => {
+  const calls=[]
+  const ctx={sessions:{scope:()=>({}),binding:()=>({session:{prompt:async()=>({ok:true})}})},get:()=>({input:{for:()=>({setDraft:text=>calls.push(text),submit:mode=>calls.push(mode)})}})}
+  const execute=client.createTavernFrameSlashExecutor(ctx,{setTimeout,clearTimeout})
+  assert.equal((await execute('/send 下一步|/trigger','game',{waitForCompletion:false})).submitted,true)
+  assert.deepEqual(calls,['下一步','queue'])
+  assert.equal((await execute('/trigger','game',{waitForCompletion:false})).submitted,true)
+})

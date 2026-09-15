@@ -71,3 +71,28 @@ test('玩家输入在召回前执行官方渲染，返回新变量且不提前�
   assert.equal(result.message.is_ejs_processed[0],true)
   assert.equal(result.scopes.message.place,'少林')
 })
+
+test('显示脚本在真正展示的 frame 执行一次，格式化镜像不执行脚本或事件属性', async () => {
+  const content='<p>正文</p><script>window.__visibleCount=(window.__visibleCount||0)+1</script><img src="data:image/png,broken" onerror="window.__imageFired=true">正文'
+  const result=await runtime.lifecycle({settings:{preload_worldinfo_enabled:false,raw_message_evaluation_enabled:true},transcript:[{role:'assistant',content}],worldBookEntries:[{uid:1401,comment:'render',constant:true,enabled:false,content:'@@render_before\n前缀'}]})
+  const page=runtime.page
+  await page.waitForFunction(()=>document.querySelector('#chat img')?.complete)
+  assert.equal(await page.evaluate(()=>window.__visibleCount),undefined)
+  assert.equal(await page.evaluate(()=>window.__imageFired),undefined)
+  const html=result.first.chat[0].template_display.html
+  assert.match(html,/onerror=/)
+  await page.evaluate(html=>{const frame=document.createElement('iframe');frame.id='visible-test';frame.srcdoc=html;document.body.append(frame)},html)
+  await page.waitForFunction(()=>document.querySelector('#visible-test')?.contentWindow.__imageFired===true)
+  assert.equal(await page.evaluate(()=>document.querySelector('#visible-test').contentWindow.__visibleCount),1)
+  await page.locator('#visible-test').evaluate(frame=>frame.remove())
+})
+
+
+test('上游可选 Worker 编译使用本地完整 EJS，正常结果与语法错误均返回', async () => {
+  const context={settings:{compile_workers:true,preload_worldinfo_enabled:false}}
+  const result=await runtime.render('值 <%= _.keyBy([{id:"a",n:7}],"id").a.n %>',context)
+  assert.equal(result.text,'值 7')
+  const invalid=await runtime.render('<% const = %>',context)
+  assert.equal(invalid.ok,false)
+  await runtime.render('恢复',{settings:{compile_workers:false}})
+})

@@ -75,7 +75,7 @@ test('标签与说明混写的边界不强行拆分', async () => {
 
 test('常驻状态模板随轮追加，存档时间变化不改固定前缀', () => {
   const worldBook = { view: { entries: [
-    { ref: 'fixed', content: '固定世界规则', constant: true, enabled: true },
+    { ref: 'fixed', content: '固定世界规则{{getvar::config}}', constant: true, enabled: true },
     { ref: 'state', content: '<状态><%= getMessageVar("clock") %></状态>', constant: true, enabled: true }
   ] } }
   const render = clock => projectWorldBookTemplates({ worldBook, runtime, includeConstants: true,

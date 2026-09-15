@@ -1,12 +1,12 @@
 import { placementKey, promptOrder } from './worldbook-activation.js'
 import { hasWorldbookRandom } from './worldbook-random.js'
 
-// Explicit state reads cannot be part of an immutable prefix, even on blue-light entries.
+// Message-state reads vary each turn; local/global configuration macros keep their prefix placement.
 export function hasWorldbookStateReads(content) {
   const text = String(content || '')
-  if (/\{\{\s*(?:getvar|getglobalvar|lastmessage|lastusermessage|lastcharmessage|lastmessageid)\b/i.test(text)) return true
+  if (/\{\{\s*(?:lastmessage|lastusermessage|lastcharmessage|lastmessageid)\b/i.test(text)) return true
   return [...text.matchAll(/<%[=_-]?([\s\S]*?)%>/g)].some(match =>
-    /\b(?:getvar|getGlobalVar|getLocalVar|getMessageVar|getChatMessages|variables|chat_messages|lastUserMessage|lastCharMessage)\b/.test(match[1]))
+    /\b(?:getMessageVar|getChatMessages|variables|chat_messages|lastUserMessage|lastCharMessage)\b/.test(match[1]))
 }
 
 // Separate fixed bodies from changing bodies while keeping both projections wrapped.

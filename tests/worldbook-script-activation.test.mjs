@@ -13,7 +13,7 @@ test('变量驱动的选角调度使用同一关键词规则，强制入选后�
   const entries = [controller('调度', `<% const all = await getEnabledWorldInfoEntries();
     const leaves = all.filter(e => e.comment.startsWith('名册·'));
     for (const leaf of selectActivatedEntries(leaves, getvar('stat_data.地点'))) await activewi(leaf.comment, true); %>`),
-    entry('叶', { title: '名册·少林', comment: '名册·少林', primaryKeys: ['少林'], secondaryKeys: ['夜'], selective: true, content: '<%= getvar("stat_data.地点") %>的名册' }),
+    entry('叶', { title: '名册·少林', comment: '名册·少林', primaryKeys: ['少林'], secondaryKeys: ['/夜/'], selective: true, content: '<%= getvar("stat_data.地点") %>的名册' }),
     entry('无关', { comment: '名册·武当', primaryKeys: ['武当'] })]
   const chat = { messages: [], variables: { stat_data: { 地点: '少林夜' } } }
   const result = await project(entries)({ chat, card: {}, userText: '看看四周' })
@@ -65,7 +65,7 @@ test('非强制调用保留关键词条件；别名与正则标题正确定位�
     const found = selectActivatedEntries(await getEnabledWorldInfoEntries(), '关口', { disabled: false, constant: false });
     for (const e of found) await activewi(e.comment, true); %>`),
     entry('未命中', { primaryKeys: ['秘密'] }), entry('停用', { enabled: false }),
-    entry('主副键', { primaryKeys: ['关口'], secondaryKeys: ['夜'], selective: true }),
+    entry('主副键', { primaryKeys: ['关口'], secondaryKeys: ['/夜/'], selective: true }),
     entry('正则', { primaryKeys: ['/关[口卡]/'] })]
   const result = await project(entries)({ chat: { messages: [] }, card: {}, userText: '看看' })
   assert.equal(result.error, null)

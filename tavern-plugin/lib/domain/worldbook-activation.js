@@ -61,6 +61,8 @@ function literalMatch(text, key, entry) {
   const source = sensitive ? text : text.toLocaleLowerCase()
   const needle = sensitive ? key : key.toLocaleLowerCase()
   if (needle === '') return false
+  // Single Han aliases must stand alone; JS \W treats every Han character as a boundary.
+  if (/^\p{Script=Han}$/u.test(needle)) return new RegExp('(?:^|[^\\p{L}\\p{N}\\p{M}_])' + needle + '(?=$|[^\\p{L}\\p{N}\\p{M}_])', 'u').test(source)
   if (entry.matchWholeWords !== true || needle.split(/\s+/).length > 1) return source.includes(needle)
   const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   try {

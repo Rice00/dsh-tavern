@@ -53,8 +53,8 @@ test('包含组支持优先级、权重、计分和多个组，不会重复入�
   entries.push(e(2, 'Alice', { group: '人物', useGroupScoring: true }))
   assert.deepEqual(recall(entries, { userText: 'Alice Bob' }).refs, ['entry:0'])
 })
-test('ST 整词规则保留中文单字和多词短语，不设任意最短词长', () => {
-  assert.deepEqual(recall([e(0, '雨', { matchWholeWords: true }), e(1, 'New York', { matchWholeWords: true })], { userText: '下雨了，New Yorkshire' }).refs, ['entry:1', 'entry:0'])
+test('单汉字使用独立边界，多词短语保留原有匹配', () => {
+  assert.deepEqual(recall([e(0, '雨', { matchWholeWords: true }), e(1, 'New York', { matchWholeWords: true })], { userText: '下雨了，New Yorkshire' }).refs, ['entry:1'])
 })
 test('扫描和分组设置在独立、嵌入格式往返时保留，编辑不修改原文件', () => {
   const original = { entries: { 0: e(0, 'Alice') } }
@@ -113,4 +113,13 @@ test('开场白不触发关键词，当前输入和后续正文仍触发', () =>
   assert.equal(JSON.stringify(chat), before)
   chat.messages.push({ role: 'user', text: '继续' }, { role: 'assistant', text: '武当来客到了' })
   assert.deepEqual(recall(entries, { chat }).refs, ['entry:0'])
+})
+
+
+test('单汉字简称不命中词内片段，独立称呼和作者正则仍可命中', () => {
+  const entries = [e(0, '白'), e(1, '都'), e(2, '袖白雪'), e(3, '/白/')]
+  assert.deepEqual(new Set(recall(entries, { userText: '袖白雪发出白光，你连站的地方都选错了' }).refs), new Set(['entry:2', 'entry:3']))
+  assert.deepEqual(new Set(recall(entries, { userText: '白，你先走；都！' }).refs), new Set(['entry:0', 'entry:1', 'entry:3']))
+  for (const text of ['白走了', '小白', 'A白', '白1', '_白', '白\u0301']) assert.deepEqual(recall([e(0, '白')], { userText: text }).refs, [])
+  assert.deepEqual(recall([e(0, '白')], { userText: '白' }).refs, ['entry:0'])
 })

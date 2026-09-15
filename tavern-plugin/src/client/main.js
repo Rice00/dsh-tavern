@@ -7193,6 +7193,7 @@ window.__ModuleLoader__.load({
 					probabilityEnabled: entry.probabilityEnabled, probability: entry.probability, scanDepth: entry.scanDepth,
 					caseSensitive: entry.caseSensitive, matchWholeWords: entry.matchWholeWords,
 					excludeRecursion: entry.excludeRecursion, preventRecursion: entry.preventRecursion, group: entry.group,
+					groupOverride: entry.groupOverride, groupWeight: entry.groupWeight, useGroupScoring: entry.useGroupScoring, delayUntilRecursion: entry.delayUntilRecursion,
 				};
 			}
 			async function save() {
@@ -7210,6 +7211,8 @@ window.__ModuleLoader__.load({
 					const update = { operations: operations };
 					if (draft.displayName !== initial.displayName) update.name = draft.displayName;
 					if (draft.description !== initial.description) update.description = draft.description;
+					if (draft.scanDepth !== initial.scanDepth) update.scanDepth = draft.scanDepth;
+					if (draft.recursiveScanning !== initial.recursiveScanning) update.recursiveScanning = draft.recursiveScanning;
 					const result = await rpc("updateWorldBook", { source: props.record.source, update: update }, props.sessionId);
 					props.onSaved(result); notifyTavernDataChanged(["worldbooks", "cards"], "worldbooks");
 				} catch (err) { setError(String(err && err.message || err)); }
@@ -7239,19 +7242,31 @@ window.__ModuleLoader__.load({
 							h("label", null, "排序", h("input", { type: "number", value: entry.order, onChange: function (event) { updateEntry(index, { order: numeric(event.target.value, 100) }); } })),
 							h("label", null, "展示顺序", h("input", { type: "number", value: entry.displayIndex, onChange: function (event) { updateEntry(index, { displayIndex: numeric(event.target.value, index) }); } })),
 						),
+
+                        h("details", null, h("summary", null, "激活规则"),
+                          h("p", { className: "dsh-tavern-card-field-hint" }, "扫描当前输入和最近消息；每轮最多新增 5 条，沿用 10 轮冷却。排序越大越优先入选，同一位置内排序越小越靠前。位置用于分组编排，暂不映射到 ST 的精确消息锚点。"),
+                          h("div", { className: "dsh-tavern-worldbook-grid" },
+                            h("label", null, "扫描消息数（留空跟随世界书）", h("input", { type: "number", min: 0, max: 1000, value: entry.scanDepth ?? "", onChange: function (event) { updateEntry(index, { scanDepth: event.target.value === "" ? null : numeric(event.target.value, 2) }); } })),
+                            h("label", null, "二级条件逻辑", h("select", { value: entry.selectiveLogic || 0, onChange: function (event) { updateEntry(index, { selectiveLogic: Number(event.target.value) }); } }, ["至少一个命中", "不全部命中", "全部不命中", "全部命中"].map(function (label, value) { return h("option", { key: value, value: value }, label); }))),
+                            h("label", null, "递归等级（0 表示正常触发）", h("input", { type: "number", min: 0, value: entry.delayUntilRecursion || 0, onChange: function (event) { updateEntry(index, { delayUntilRecursion: numeric(event.target.value, 0) }); } })),
+                            h("label", null, "组权重", h("input", { type: "number", min: 0, value: entry.groupWeight ?? 100, onChange: function (event) { updateEntry(index, { groupWeight: numeric(event.target.value, 100) }); } })),
+                            h("label", null, h("input", { type: "checkbox", checked: entry.groupOverride === true, onChange: function (event) { updateEntry(index, { groupOverride: event.target.checked }); } }), "组内按排序优先"),
+                            h("label", null, h("input", { type: "checkbox", checked: entry.useGroupScoring === true, onChange: function (event) { updateEntry(index, { useGroupScoring: event.target.checked }); } }), "组内关键词计分"),
+							h("label", null, "注入位置", h("input", { value: entry.position, onChange: function (event) { updateEntry(index, { position: initial.format === "sillytavern-worldbook" ? numeric(event.target.value, 0) : event.target.value }); } })),
+							h("label", null, "包含组", h("input", { value: entry.group || "", onChange: function (event) { updateEntry(index, { group: event.target.value }); } })),
+							h("label", null, h("input", { type: "checkbox", checked: entry.excludeRecursion === true, onChange: function (event) { updateEntry(index, { excludeRecursion: event.target.checked }); } }), "不被递归触发"),
+							h("label", null, h("input", { type: "checkbox", checked: entry.preventRecursion === true, onChange: function (event) { updateEntry(index, { preventRecursion: event.target.checked }); } }), "不触发递归")
+                          )
+                        ),
 						h("details", null, h("summary", null, "兼容字段"),
 							h("p", { className: "dsh-tavern-card-field-hint" }, "以下字段仅用于兼容 SillyTavern 导入、导出格式，不参与 DSH Tavern 游玩模式的世界书召回与注入逻辑；修改它们不会改变游玩模式的内置运行效果。人物卡脚本仍可读取这些字段。"),
 							h("div", { className: "dsh-tavern-worldbook-grid" },
-							h("label", null, "注入位置", h("input", { value: entry.position, onChange: function (event) { updateEntry(index, { position: initial.format === "sillytavern-worldbook" ? numeric(event.target.value, 0) : event.target.value }); } })),
 							h("label", null, "深度", h("input", { type: "number", value: entry.depth, onChange: function (event) { updateEntry(index, { depth: numeric(event.target.value, 4) }); } })),
 							h("label", null, "概率 %", h("input", { type: "number", min: 0, max: 100, value: entry.probability, onChange: function (event) { updateEntry(index, { probability: numeric(event.target.value, 100) }); } })),
-							h("label", null, "包含组", h("input", { value: entry.group || "", onChange: function (event) { updateEntry(index, { group: event.target.value }); } }))
 						),
 						h("div", { className: "dsh-tavern-worldbook-checks" },
 							h("label", null, h("input", { type: "checkbox", checked: entry.probabilityEnabled !== false, onChange: function (event) { updateEntry(index, { probabilityEnabled: event.target.checked }); } }), "启用概率"),
 							h("label", null, h("input", { type: "checkbox", checked: entry.vectorized === true, onChange: function (event) { updateEntry(index, { vectorized: event.target.checked }); } }), "向量候选"),
-							h("label", null, h("input", { type: "checkbox", checked: entry.excludeRecursion === true, onChange: function (event) { updateEntry(index, { excludeRecursion: event.target.checked }); } }), "不被递归触发"),
-							h("label", null, h("input", { type: "checkbox", checked: entry.preventRecursion === true, onChange: function (event) { updateEntry(index, { preventRecursion: event.target.checked }); } }), "不触发递归")
 						)
 						),
 						h("div", { className: "dsh-tavern-worldbook-danger-zone" },
@@ -7273,7 +7288,11 @@ window.__ModuleLoader__.load({
 					props.bindingPanel,
 					h("div", { className: "dsh-tavern-card-field" }, h("label", null, "世界书名称"), h("input", { value: draft.displayName || "", onChange: function (event) { setDraft(Object.assign({}, draft, { displayName: event.target.value })); } })),
 					h("div", { className: "dsh-tavern-card-field" }, h("label", null, "说明"), h("textarea", { value: draft.description || "", onChange: function (event) { setDraft(Object.assign({}, draft, { description: event.target.value })); } })),
-					h("div", { className: "dsh-tavern-worldbook-summary" }, draft.entries.length + " 个条目 · " + draft.entries.filter(function (entry) { return entry.enabled !== false; }).length + " 个启用。未知字段与 extensions 会原样保留；尚未实现的酒馆运行语义不会在这里伪装成已支持。"),
+					h("div", { className: "dsh-tavern-worldbook-grid" },
+                      h("label", null, "默认扫描消息数", h("input", { type: "number", min: 0, max: 1000, value: draft.scanDepth ?? 2, onChange: function (event) { setDraft(Object.assign({}, draft, { scanDepth: numeric(event.target.value, 2) })); } })),
+                      h("label", null, h("input", { type: "checkbox", checked: draft.recursiveScanning === true, onChange: function (event) { setDraft(Object.assign({}, draft, { recursiveScanning: event.target.checked })); } }), "递归扫描已激活条目")
+                    ),
+                    h("div", { className: "dsh-tavern-worldbook-summary" }, draft.entries.length + " 个条目 · " + draft.entries.filter(function (entry) { return entry.enabled !== false; }).length + " 个启用。未知字段与 extensions 会原样保留；尚未实现的酒馆运行语义不会在这里伪装成已支持。"),
 					(initial.diagnostics || []).map(function (item, index) { return h("div", { key: index, className: "dsh-tavern-dock-error" }, item.message); }),
 					h("div", { className: "dsh-tavern-worldbook-head" }, h("span", { className: "dsh-tavern-worldbook-title" }, "条目"), h("button", { className: "dsh-tavern-worldbook-add", onClick: addEntry }, "＋ 新增条目")),
 					h("div", { className: "dsh-tavern-card-field" }, h("label", null, "搜索条目"), h("input", { type: "search", value: query, placeholder: "搜索标题、正文或触发词", onChange: function (event) { setQuery(event.target.value); } }), h("span", null, "匹配 " + (entryGroups.constant.length + entryGroups.dynamic.length) + " / " + draft.entries.length + " 条")),
@@ -7284,7 +7303,6 @@ window.__ModuleLoader__.load({
 				)
 			);
 		}
-
 		function WorldBookLibraryTab(props) {
 			const [catalog, setCatalog] = React.useState(null);
 			const [catalogWarning, setCatalogWarning] = React.useState("");

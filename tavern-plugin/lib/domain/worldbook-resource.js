@@ -80,6 +80,9 @@ function entryProjection(entry, sourceRef, format, index) {
     excludeRecursion: embedded ? extensionValue(entry, ['exclude_recursion'], false) === true : entry.excludeRecursion === true,
     preventRecursion: embedded ? extensionValue(entry, ['prevent_recursion'], false) === true : entry.preventRecursion === true,
     delayUntilRecursion: embedded ? extensionValue(entry, ['delay_until_recursion'], 0) : (entry.delayUntilRecursion ?? 0),
+    groupOverride: embedded ? extensionValue(entry, ['group_override'], false) === true : entry.groupOverride === true,
+    groupWeight: numberOr(embedded ? extensionValue(entry, ['group_weight'], 100) : entry.groupWeight, 100),
+    useGroupScoring: embedded ? booleanOrNull(extensionValue(entry, ['use_group_scoring'], null)) : booleanOrNull(entry.useGroupScoring),
     group: str(embedded ? extensionValue(entry, ['group'], '') : entry.group),
     sticky: embedded ? extensionValue(entry, ['sticky'], null) : (entry.sticky ?? null),
     cooldown: embedded ? extensionValue(entry, ['cooldown'], null) : (entry.cooldown ?? null),
@@ -117,6 +120,8 @@ export function inspectWorldBookDocument(document, options = {}) {
     format: identified.format,
     displayName: str(book.name).trim() || fallbackName || '未命名世界书',
     description: str(book.description),
+    scanDepth: book.scan_depth ?? 2,
+    recursiveScanning: book.recursive_scanning === true,
     entryCount: entries.length,
     enabledCount: entries.filter(function (entry) { return entry.enabled }).length,
     entries,
@@ -158,6 +163,9 @@ function standaloneEntryFromEmbedded(value, index) {
     ['role', ['role']],
     ['useProbability', ['use_probability', 'useProbability']],
     ['probability', ['probability']],
+    ['groupOverride', ['group_override']],
+    ['groupWeight', ['group_weight']],
+    ['useGroupScoring', ['use_group_scoring']],
     ['scanDepth', ['scan_depth']],
     ['matchWholeWords', ['match_whole_words']],
     ['excludeRecursion', ['exclude_recursion']],
@@ -220,6 +228,9 @@ function embeddedEntryFromStandalone(value, index, original, replace = false) {
     ['role', 'role'],
     ['useProbability', 'use_probability'],
     ['probability', 'probability'],
+    ['groupOverride', 'group_override'],
+    ['groupWeight', 'group_weight'],
+    ['useGroupScoring', 'use_group_scoring'],
     ['scanDepth', 'scan_depth'],
     ['matchWholeWords', 'match_whole_words'],
     ['excludeRecursion', 'exclude_recursion'],
@@ -254,6 +265,9 @@ export function exportCharacterBook(document, options = {}) {
   if (options.replace) delete exported.originalData
   if (hasOwn(book, 'name')) exported.name = str(book.name)
   if (hasOwn(book, 'description')) exported.description = str(book.description)
+  for (const key of ['scan_depth', 'recursive_scanning', 'case_sensitive', 'match_whole_words']) {
+    if (hasOwn(book, key)) exported[key] = clone(book[key])
+  }
   exported.extensions = Object.assign({}, object(original.extensions) || {}, object(book.extensions) || {})
   const originals = new Map(array(original.entries).map(function (entry, index) {
     return [numberOr(entry && entry.id, index), entry]
@@ -290,6 +304,9 @@ function assignKnownPatch(entry, patch, format) {
   if (has('role')) { if (embedded) extensions.role = numberOr(patch.role, 0); else entry.role = numberOr(patch.role, 0) }
   if (has('probabilityEnabled')) { if (embedded) extensions.use_probability = patch.probabilityEnabled === true; else entry.useProbability = patch.probabilityEnabled === true }
   if (has('probability')) { if (embedded) extensions.probability = numberOr(patch.probability, 100); else entry.probability = numberOr(patch.probability, 100) }
+  for (const [field, embeddedField] of [['groupOverride', 'group_override'], ['groupWeight', 'group_weight'], ['useGroupScoring', 'use_group_scoring']]) {
+    if (has(field)) { if (embedded) extensions[embeddedField] = patch[field]; else entry[field] = patch[field] }
+  }
   if (has('scanDepth')) { if (embedded) extensions.scan_depth = patch.scanDepth; else entry.scanDepth = patch.scanDepth }
   if (has('matchWholeWords')) { if (embedded) extensions.match_whole_words = booleanOrNull(patch.matchWholeWords); else entry.matchWholeWords = booleanOrNull(patch.matchWholeWords) }
   if (has('excludeRecursion')) { if (embedded) extensions.exclude_recursion = patch.excludeRecursion === true; else entry.excludeRecursion = patch.excludeRecursion === true }
@@ -310,6 +327,12 @@ export function updateWorldBookDocument(document, request = {}) {
   const book = identified.book
   if (Object.prototype.hasOwnProperty.call(request, 'name')) book.name = str(request.name)
   if (Object.prototype.hasOwnProperty.call(request, 'description')) book.description = str(request.description)
+  if (Object.hasOwn(request, 'scanDepth')) {
+    const depth = Number(request.scanDepth)
+    if (!Number.isInteger(depth) || depth < 0 || depth > 1000) throw new Error('扫描深度必须为 0 至 1000 的整数')
+    book.scan_depth = depth
+  }
+  if (Object.hasOwn(request, 'recursiveScanning')) book.recursive_scanning = request.recursiveScanning === true
   let operations = Array.isArray(request.operations) ? request.operations : (request.operations ? [request.operations] : [])
   if (identified.format !== 'sillytavern-worldbook') {
     const priority = { update: 0, delete: 1, add: 2 }

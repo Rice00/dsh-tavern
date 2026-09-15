@@ -37,7 +37,7 @@ function chat(body = '两人正在旅店大厅交谈。') {
   }
 }
 
-test('常驻条目按 Tavern order 进入稳定前缀，不受动态三条上限和冷却影响', function () {
+test('常驻条目按 Tavern order 进入稳定前缀，不受动态五条上限和冷却影响', function () {
   const worldBook = { view: { entries: [
     entry('entry:0', '{{char}} 的故乡常年下雨。', { constant: true, order: 100 }),
     entry('entry:1', '王室法律优先执行。', { constant: true, order: 300 }),
@@ -48,11 +48,11 @@ test('常驻条目按 Tavern order 进入稳定前缀，不受动态三条上限
   const result = constantWorldBookContext({ worldBook })
 
   assert.equal(result.count, 2)
-  assert.equal(result.context, '王室法律优先执行。\n\n{{char}} 的故乡常年下雨。')
+  assert.equal(result.context, '{{char}} 的故乡常年下雨。\n\n王室法律优先执行。')
   assert.doesNotMatch(result.context, /停用|钟楼秘密/)
 })
 
-test('非常驻条目只匹配最新一轮正文，按 Tavern order 取前三条', function () {
+test('非常驻条目默认扫描最近两条消息，优先选大 order 并按小 order 在前编排', function () {
   const current = chat('众人抵达钟楼，并在雨夜发现一扇暗门。')
   current.messages.unshift(
     { role: 'assistant', text: '更早以前曾去过矿井。', turn: 1 },
@@ -70,9 +70,9 @@ test('非常驻条目只匹配最新一轮正文，按 Tavern order 取前三条
   const prepared = prepareWorldBookRecall({ card: card(), chat: current, turn: 2, worldBook })
 
   assert.equal(prepared.kind, 'keywords')
-  assert.deepEqual(prepared.refs, ['entry:1', 'entry:2', 'entry:3'])
-  assert.equal(prepared.context, '高优先级钟楼。\n\n暗门机关。\n\n雨夜规则。')
-  assert.doesNotMatch(prepared.context, /低优先级|矿井|王宫/)
+  assert.deepEqual(prepared.refs, ['entry:0', 'entry:3', 'entry:2', 'entry:1', 'entry:5'])
+  assert.equal(prepared.context, '低优先级钟楼。\n\n雨夜规则。\n\n暗门机关。\n\n高优先级钟楼。\n\n王宫规则。')
+  assert.doesNotMatch(prepared.context, /矿井/)
 })
 
 test('主副关键词遵守 Tavern 四种 selectiveLogic，正则关键词可参与匹配', function () {
@@ -87,29 +87,29 @@ test('主副关键词遵守 Tavern 四种 selectiveLogic，正则关键词可参
     card: card(), chat: chat('午夜，众人抵达钟楼并发现暗门。'), turn: 2, worldBook
   })
 
-  assert.deepEqual(prepared.refs, ['entry:0', 'entry:1', 'entry:2'])
+  assert.deepEqual(prepared.refs, ['entry:2', 'entry:1', 'entry:0'])
   assert.doesNotMatch(prepared.context, /AND_ALL/)
 })
 
-test('只有实际注入的三条进入十轮冷却，未入选条目下一轮仍可竞争', function () {
-  const entries = [0, 1, 2, 3].map(function (index) {
+test('只有实际注入的五条进入十轮冷却，未入选条目下一轮仍可竞争', function () {
+  const entries = [0, 1, 2, 3, 4, 5].map(function (index) {
     return entry('entry:' + index, '设定 ' + index, { primaryKeys: ['钟楼'], order: 400 - index * 100 })
   })
   const worldBook = { view: { entries } }
   const first = prepareWorldBookRecall({ card: card(), chat: chat('抵达钟楼。'), turn: 2, worldBook })
   const reads = first.recordReads(null)
 
-  assert.deepEqual(Object.keys(reads), ['entry:0', 'entry:1', 'entry:2'])
+  assert.deepEqual(Object.keys(reads), ['entry:4', 'entry:3', 'entry:2', 'entry:1', 'entry:0'])
 
   const nextChat = chat('仍在钟楼。')
   nextChat.worldBookReads = reads
   const next = prepareWorldBookRecall({ card: card(), chat: nextChat, turn: 3, worldBook })
-  assert.deepEqual(next.refs, ['entry:3'])
+  assert.deepEqual(next.refs, ['entry:5'])
 
   const afterTen = prepareWorldBookRecall({ card: card(), chat: nextChat, turn: 12, worldBook })
-  assert.deepEqual(afterTen.refs, ['entry:3'])
+  assert.deepEqual(afterTen.refs, ['entry:5'])
   const afterEleven = prepareWorldBookRecall({ card: card(), chat: nextChat, turn: 13, worldBook })
-  assert.deepEqual(afterEleven.refs, ['entry:0', 'entry:1', 'entry:2'])
+  assert.deepEqual(afterEleven.refs, ['entry:4', 'entry:3', 'entry:2', 'entry:1', 'entry:0'])
 })
 
 test('条目正文改变后立即解除冷却，空世界书直接跳过', function () {

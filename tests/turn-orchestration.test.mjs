@@ -130,6 +130,7 @@ function harness(mode, options = {}) {
     resolvePresetRegexScripts: options.resolvePresetRegexScripts,
     projectReply: projectReplyPresentation,
     projectWorldBookTemplates: options.projectWorldBookTemplates,
+    projectForegroundWorldbook: options.projectForegroundWorldbook,
     projectScriptPromptWorldbook: options.projectScriptPromptWorldbook,
     shellToolName: options.shellToolName,
     now: () => 2000
@@ -815,4 +816,26 @@ test('repair workbench reaches tools and completes even when its card cannot par
   assert.equal(done.saved, true)
   const play = harness('story', { brokenCard: true })
   await assert.rejects(play.orchestrator.prepare({ sessionId: 'session-1', turn: 1, userText: '继续' }), /invalid JSON/)
+})
+
+
+test('正式 Frame 使用当前输入的统一世界书投影，重试复用 Frame，不重抽组或重复记冷却', async () => {
+  let calls = 0
+  const planner = createContextPlanner({ prompt: () => '' })
+  const run = harness('story', { planner, preparedWorldBookContext: '过期的预扫描',
+    projectForegroundWorldbook: async ({ userText }) => {
+      calls++
+      assert.equal(userText, '找 Alice')
+      return { context: '<角色库>\nAlice\n</角色库>', refs: ['entry:1'], reads: { 'entry:1': { turn: 0, fingerprint: 'test' } },
+        activation: { schemaVersion: 2, refs: ['entry:1'], mode: 'keywords' }, diagnostics: [], error: null }
+    }
+  })
+  const first = await run.orchestrator.prepare({ sessionId: 'session-1', turn: 1, userText: '找 Alice' })
+  const retry = await run.orchestrator.prepare({ sessionId: 'session-1', turn: 1, userText: '找 Alice' })
+  assert.equal(calls, 1)
+  assert.deepEqual(first.frame, retry.frame)
+  assert.match(first.frame.context.activeWorldbook, /<角色库>\nAlice\n<\/角色库>/)
+  assert.doesNotMatch(first.frame.context.activeWorldbook, /过期的预扫描/)
+  assert.deepEqual(first.frame.source.worldBook.refs, ['entry:1'])
+  assert.equal(run.chat().worldBookReads['entry:1'].turn, 0)
 })

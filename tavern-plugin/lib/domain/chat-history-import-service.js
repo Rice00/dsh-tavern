@@ -34,7 +34,7 @@ export function incompatibleState(expected, actual, path = '') {
   })
 }
 
-export function createChatHistoryImportService({ initialization, cards, worldBooks, store, chats, native, planner, projectWorldBookTemplates }) {
+export function createChatHistoryImportService({ initialization, cards, worldBooks, store, chats, native, planner, projectWorldBookTemplates, projectForegroundWorldbook }) {
   const pending = new Map()
   async function inspect(input) {
     const parsed = parseChatHistory(input.text)
@@ -71,9 +71,13 @@ export function createChatHistoryImportService({ initialization, cards, worldBoo
       const plan = await buildImportedConversation(chat, parsed, {
         operationId: input.operationId, fileName: input.fileName, initialVariables, textOnly: input.textOnly === true,
         prepareFrame: async ({ chat, turn, userText }) => {
-          // Like native play, recall against the preceding body, and project
-          // templates with only the state available before this output.
-          const recalled = prepareWorldBookRecall({ chat, card, worldBook, turn: turn - 1 })
+          if (projectForegroundWorldbook) {
+            const projected = await projectForegroundWorldbook({ chat, card, userText, userTextInHistory: true, worldBook })
+            if (projected.reads) chat.worldBookReads = projected.reads
+            return planner.plan({ purpose: 'body', card, chat: projected.macroState ? { ...chat, macroState: projected.macroState } : chat,
+              userText, sessionId: input.sessionId, nativeTurn: turn, scriptReference: null, worldBookContext: projected.context })
+          }
+          const recalled = prepareWorldBookRecall({ chat, card, worldBook, turn: turn - 1, userText, userTextInHistory: true })
           chat.worldBookReads = recalled.recordReads(chat.worldBookReads)
           const templates = projectWorldBookTemplates ? await projectWorldBookTemplates(chat, card) : null
           return planner.plan({ purpose: 'body', card, chat, userText, sessionId: input.sessionId,

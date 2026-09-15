@@ -1,3 +1,4 @@
+import { createForegroundWorldbook } from '../tavern-plugin/lib/domain/foreground-worldbook.js'
 import { projectWorldBookTemplates } from '../tavern-plugin/lib/domain/worldbook-recall.js'
 import { TavernPromptTemplateRuntime } from '../tavern-plugin/lib/domain/tavern-prompt-template-runtime.js'
 import test from 'node:test'
@@ -111,4 +112,20 @@ test('import rebuilds card instructions and worldbook context against each histo
  assert.ok(before.worldBookReads.walking)
  assert.equal(before.worldBookReads.resting,undefined)
 
+})
+
+
+test('历史导入复用正式世界书投影，当前输入不重复占用扫描窗口，蓝绿灯一起编排', async () => {
+ const h=fixture(), runtime=await TavernPromptTemplateRuntime.create()
+ const worldBook={view:{entries:[{comment:'[initvar]',content:'hp: 10',enabled:false},
+  {ref:'open',constant:true,content:'<角色库>',order:10},
+  {ref:'role',primaryKeys:['opening'],content:'开场角色',order:20},
+  {ref:'close',constant:true,content:'</角色库>',order:30}]}}
+ h.options.worldBooks.bound=async()=>worldBook
+ h.options.projectForegroundWorldbook=createForegroundWorldbook({bound:async()=>worldBook,runtime:async()=>runtime,globalVariables:async()=>({})})
+ await createChatHistoryImportService(h.options).import(input)
+ const frames=h.session.deriveMessages().filter(m=>m.source?.form==='foreground-frame').map(m=>m.content[0].text)
+ assert.match(frames[0],/<角色库>\n\n开场角色\n\n<\/角色库>/)
+ assert.doesNotMatch(frames[1],/开场角色/)
+ assert.match(frames[1],/<角色库>\n\n<\/角色库>/)
 })

@@ -194,7 +194,8 @@ function frameSource(chat, card, operation) {
     worldBook: {
       branchId: str(worldBook.branchId) || null,
       revision: Number.isSafeInteger(Number(worldBook.revision)) ? Number(worldBook.revision) : null,
-      refs: Array.isArray(worldBook.refs) ? clone(worldBook.refs) : []
+      refs: Array.isArray(worldBook.refs) ? clone(worldBook.refs) : [],
+      diagnostics: Array.isArray(worldBook.diagnostics) ? clone(worldBook.diagnostics) : []
     },
     state: clone(operation.basedOn),
     preset: {
@@ -339,12 +340,20 @@ export function createTurnOrchestrator(options) {
       return { ready: true, mode, cardName: card === null ? (str(state.draft && state.draft.name) || '卡片工作台') : card.name, text: plan.text }
     }
 
-    // 世界书关键词匹配在上一轮正文提交后本地完成。正文准备只读取已经
-    // 保存好的下一轮上下文，玩家输入和候选项选择都不能在此重新触发匹配。
-    // 脚本显式提供的扫描文本单独复用同一匹配器，不把玩家输入混入扫描。
-    const templateWorldBook = await projectWorldBookTemplates({ chat, card, turn, userText: runtimeUserText })
-    const scriptWorldBook = typeof options.projectScriptPromptWorldbook === 'function' ? await options.projectScriptPromptWorldbook({ chat, card, turn }) : null
-    const worldBookContext = [str(chat.preparedWorldBookContext).trim(), str(scriptWorldBook && scriptWorldBook.context).trim(), templateWorldBook?.dynamicConstants ? '' : str(templateWorldBook && templateWorldBook.context).trim()].filter(Boolean).join('\n\n')
+    // Resolve current input, history and script scan text in one activation pass.
+    // This shares the five-entry cap and preserves mixed blue/green ordering.
+    const foregroundWorldBook = typeof options.projectForegroundWorldbook === 'function'
+      ? await options.projectForegroundWorldbook({ chat, card, turn, userText: runtimeUserText }) : null
+    const templateWorldBook = foregroundWorldBook || await projectWorldBookTemplates({ chat, card, turn, userText: runtimeUserText })
+    const scriptWorldBook = !foregroundWorldBook && typeof options.projectScriptPromptWorldbook === 'function' ? await options.projectScriptPromptWorldbook({ chat, card, turn }) : null
+    const worldBookContext = foregroundWorldBook ? str(foregroundWorldBook.context) : [str(chat.preparedWorldBookContext).trim(), str(scriptWorldBook && scriptWorldBook.context).trim(), templateWorldBook?.dynamicConstants ? '' : str(templateWorldBook && templateWorldBook.context).trim()].filter(Boolean).join('\n\n')
+    if (foregroundWorldBook) {
+      if (foregroundWorldBook.reads) chat.worldBookReads = foregroundWorldBook.reads
+      chat.preparedWorldBookContext = worldBookContext
+      chat.preparedWorldBook = { ...foregroundWorldBook.activation, branchId: foregroundOperation.basedOn.branchId, revision: foregroundOperation.basedOn.revision }
+      chat.lastWorldBookRecall = clone(chat.preparedWorldBook)
+      chat.worldBookError = foregroundWorldBook.error
+    }
     const sceneWorldbook = typeof options.captureSceneWorldbook === 'function' ? await options.captureSceneWorldbook(chat, card) : null
     const plan = await planner.plan({ purpose: 'body', card, chat: templateWorldBook?.macroState ? { ...chat, macroState: templateWorldBook.macroState } : chat, userText: runtimeUserText, sessionId: input.sessionId, nativeTurn: turn, scriptReference, worldBookContext })
     const source = frameSource(chat, card, foregroundOperation)

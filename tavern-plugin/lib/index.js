@@ -129,6 +129,7 @@ import { createTavernCompactionCoordinator } from './domain/tavern-compaction.js
 import { cordisToolNames, createTurnOrchestrator, dshFileToolNames } from './domain/turn-orchestration.js'
 import { resourceWorkspaceContext } from './domain/workspace-resources.js'
 import { createWorldBookLibrary } from './domain/worldbook-library.js'
+import { createForegroundWorldbook } from './domain/foreground-worldbook.js'
 import { mvuUpdateRulesFromWorldBook, prepareWorldBookRecall, projectWorldBookTemplates } from './domain/worldbook-recall.js'
 import {
   createBackgroundTaskCoordinator,
@@ -1530,8 +1531,15 @@ export async function apply(ctx) {
       return result
     }
   })
+  const projectForegroundWorldbook = createForegroundWorldbook({
+    bound: (...args) => worldBooks.bound(...args),
+    runtime: promptTemplateRuntime,
+    globalVariables: readPromptTemplateGlobalVariables,
+    scanText: scriptPromptScanText
+  })
   const chatHistoryImporter = createChatHistoryImportService({
     projectWorldBookTemplates: nativeWorldBookTemplateContext,
+    projectForegroundWorldbook,
     planner: contextPlanner,
     initialization: conversationInitialization,
     cards: { read: readCard }, worldBooks, store: profileData,
@@ -1986,6 +1994,8 @@ export async function apply(ctx) {
     const context = error === null ? str(prepared.context).trim() : ''
     latest.preparedWorldBookContext = context
     latest.preparedWorldBook = {
+      schemaVersion: 2,
+      diagnostics: prepared.diagnostics || [],
       ts: Date.now(),
       turn,
       branchId: current.branchId,
@@ -1997,7 +2007,6 @@ export async function apply(ctx) {
       empty: error !== null || context === '',
       failed: error !== null
     }
-    if (error === null) latest.worldBookReads = prepared.recordReads(latest.worldBookReads)
     latest.worldBookError = error
     latest.lastWorldBookRecall = Object.assign({}, latest.preparedWorldBook)
     await writeChat(latest, { source: 'worldbook.projection' })
@@ -2409,6 +2418,7 @@ export async function apply(ctx) {
     },
     projectReply: projectRuntimeReply,
     projectWorldBookTemplates: input => nativeWorldBookTemplateContext(input.chat, input.card),
+    projectForegroundWorldbook,
     projectScriptPromptWorldbook: async function ({ chat, card, turn }) {
       const text = scriptPromptScanText(chat)
       if (!text.trim()) return null
@@ -3694,7 +3704,7 @@ export async function apply(ctx) {
       cwd: agent.session.header && agent.session.header.cwd,
       workspaceProjection,
       fixedSystemSections: chat && ['story', 'script'].includes(chat.mode || 'story')
-        ? withCurrentWorldbook(sessionStablePrefixSections(agent.session), (await nativeWorldBookTemplateContext(chat, await readChatCard(chat))).context)
+        ? withCurrentWorldbook(sessionStablePrefixSections(agent.session), (await nativeWorldBookTemplateContext(chat, await readChatCard(chat))).prefixContext ?? '')
         : sessionStablePrefixSections(agent.session)
     })
     return prependSystemInstruction(assembled, chat ? runtimePrompt('system-append') : '')

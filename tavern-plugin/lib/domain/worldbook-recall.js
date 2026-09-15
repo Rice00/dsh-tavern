@@ -1,7 +1,7 @@
 import { projectAgentContent } from './runtime-content-projection.js'
 import { lastTavernHelperVariables } from './tavern-helper-context.js'
+import { activateWorldBook, promptOrder, placementKey, dynamicPlacementKeys } from './worldbook-activation.js'
 
-const DYNAMIC_ENTRY_LIMIT = 3
 const READ_COOLDOWN_TURNS = 10
 
 function str(value) {
@@ -79,72 +79,6 @@ export function mvuUpdateRulesFromWorldBook(worldBook) {
   })
 }
 
-function tavernOrder(entries) {
-  return entries.map(function (entry, index) { return { entry, index } }).sort(function (left, right) {
-    const order = (Number(right.entry.order) || 0) - (Number(left.entry.order) || 0)
-    if (order !== 0) return order
-    const display = (Number(left.entry.displayIndex) || 0) - (Number(right.entry.displayIndex) || 0)
-    return display !== 0 ? display : left.index - right.index
-  }).map(function (item) { return item.entry })
-}
-
-function latestBody(chat) {
-  const messages = Array.isArray(chat && chat.messages) ? chat.messages : []
-  for (let index = messages.length - 1; index >= 0; index--) {
-    const message = messages[index]
-    if (!message || message.role !== 'assistant') continue
-    const text = (str(message.sourceText) || str(message.text)).trim()
-    if (text !== '') return text
-  }
-  return ''
-}
-
-function regexKey(value) {
-  const match = /^\/(.*)\/([dgimsuvy]*)$/.exec(str(value))
-  if (!match) return null
-  try {
-    return new RegExp(match[1], match[2].replaceAll('g', '').replaceAll('y', ''))
-  } catch (_error) {
-    return null
-  }
-}
-
-function literalMatch(text, key, entry) {
-  const sensitive = entry.caseSensitive === true
-  const source = sensitive ? text : text.toLocaleLowerCase()
-  const needle = sensitive ? key : key.toLocaleLowerCase()
-  if (needle === '') return false
-  if (entry.matchWholeWords !== true) return source.includes(needle)
-  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  try {
-    return new RegExp('(^|[^\\p{L}\\p{N}_])' + escaped + '(?=$|[^\\p{L}\\p{N}_])', 'u').test(source)
-  } catch (_error) {
-    return source.includes(needle)
-  }
-}
-
-function keyMatch(text, value, entry) {
-  const key = str(value).trim()
-  if (key === '') return false
-  const regex = regexKey(key)
-  if (regex !== null) return regex.test(text)
-  return literalMatch(text, key, entry)
-}
-
-function keywordMatch(entry, body) {
-  const primary = (Array.isArray(entry.primaryKeys) ? entry.primaryKeys : []).filter(function (key) { return str(key).trim() !== '' })
-  if (primary.length === 0 || !primary.some(function (key) { return keyMatch(body, key, entry) })) return false
-  const secondary = (Array.isArray(entry.secondaryKeys) ? entry.secondaryKeys : []).filter(function (key) { return str(key).trim() !== '' })
-  if (entry.selective !== true || secondary.length === 0) return true
-  const matches = secondary.map(function (key) { return keyMatch(body, key, entry) })
-  switch (Number(entry.selectiveLogic) || 0) {
-    case 1: return !matches.every(Boolean)
-    case 2: return !matches.some(Boolean)
-    case 3: return matches.every(Boolean)
-    default: return matches.some(Boolean)
-  }
-}
-
 function readRecord(chat, entry) {
   const reads = chat && chat.worldBookReads
   if (reads === null || typeof reads !== 'object' || Array.isArray(reads)) return null
@@ -172,9 +106,9 @@ function readRecorder(entries, turn) {
   }
 }
 
-/** Constant Tavern entries are part of the stable play prefix and never enter cooldown. */
+/** Snapshot constant content; request projection partitions mixed positions separately. */
 export function constantWorldBookContext(input = {}) {
-  const entries = tavernOrder(enabledEntries(input.worldBook).filter(function (entry) {
+  const entries = promptOrder(enabledEntries(input.worldBook).filter(function (entry) {
     return entry.constant === true && !isMvuUpdateEntry(entry) && !isWorldBookTemplateEntry(entry)
   }))
   return {
@@ -195,9 +129,11 @@ export function projectWorldBookTemplates(input = {}) {
   const runtime = input.runtime
   if (!runtime || typeof runtime.render !== 'function') throw new Error('缺少世界书模板运行时')
   const resources = allEntries(input.worldBook)
-  const controllers = tavernOrder(resources.filter(function (entry) {
-    return entry.enabled !== false && entry.constant === true && !isMvuUpdateEntry(entry) && (input.includeConstants === true || isWorldBookTemplateEntry(entry))
+  const controllers = promptOrder((input.selectedEntries || resources).filter(function (entry) {
+    return entry.enabled !== false && (input.selectedEntries || entry.constant === true) && !isMvuUpdateEntry(entry) && (input.includeConstants === true || isWorldBookTemplateEntry(entry))
   }))
+  const dynamicKeys = dynamicPlacementKeys(resources.filter(entry => !isMvuUpdateEntry(entry)))
+  const projectedEntries = []
   let scopes = {
     global: clone(input.globalVariables || {}),
     initial: clone(input.chat && input.chat.promptTemplateInitialVariables || {}),
@@ -233,10 +169,13 @@ export function projectWorldBookTemplates(input = {}) {
     const text = str(projected ? projected.agentText : result.text).trim()
     if (text === '') continue
     context.push(text)
+    projectedEntries.push({ ...entry, content: text })
     refs.push(str(entry.ref))
   }
   return {
     context: context.join('\n\n'),
+    prefixContext: projectedEntries.filter(entry => !dynamicKeys.has(placementKey(entry))).map(entry => entry.content).join('\n\n'),
+    foregroundContext: projectedEntries.filter(entry => dynamicKeys.has(placementKey(entry))).map(entry => entry.content).join('\n\n'),
     refs,
     diagnostics,
     evaluated: controllers.length,
@@ -244,7 +183,7 @@ export function projectWorldBookTemplates(input = {}) {
   }
 }
 
-/** Deterministically activate at most three non-constant entries for the next foreground turn. */
+/** Select at most five non-constant entries; retain the existing ten-turn cooldown. */
 export function prepareWorldBookRecall(input = {}) {
   const all = enabledEntries(input.worldBook).filter(function (entry) { return !isMvuUpdateEntry(entry) })
   const emptyRecorder = readRecorder([], input.turn)
@@ -255,12 +194,12 @@ export function prepareWorldBookRecall(input = {}) {
     return { kind: 'skip', context: '', refs: [], totalChars: 0, reason: 'empty', recordReads: emptyRecorder }
   }
   const totalChars = all.reduce(function (total, entry) { return total + charCount(entry.content) }, 0)
-  const body = str(input.latestBody) || latestBody(input.chat)
-  const selected = tavernOrder(all.filter(function (entry) {
-    return entry.constant !== true && !isCoolingDown(input.chat, entry, input.turn) && keywordMatch(entry, body)
-  })).slice(0, DYNAMIC_ENTRY_LIMIT)
+  const activation = activateWorldBook({ ...input, entries: all, isCoolingDown: entry => isCoolingDown(input.chat, entry, input.turn) })
+  const selected = promptOrder(activation.entries.filter(entry => entry.constant !== true))
   return {
     kind: 'keywords',
+    entries: activation.entries,
+    diagnostics: activation.diagnostics,
     context: selected.map(function (entry) { return str(entry.content).trim() }).filter(Boolean).join('\n\n'),
     refs: selected.map(function (entry) { return str(entry.ref) }),
     totalChars,

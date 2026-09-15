@@ -911,7 +911,7 @@ test('人物卡 Agent 保存后重新读取已打开的详情，未变化时不�
 
 test('删除对话时把缺失 Session 视为已经归档，并继续清理 Tavern 对话', () => {
   const sidebar = between(clientSource, 'function TavernSidebar', 'function TavernResourcesTab')
-  const deletion = between(sidebar, 'async function deleteConversation', 'async function exportCard')
+  const deletion = between(sidebar, 'async function deleteConversation', 'async function forkConversation')
 
   assert.match(sidebar, /function isMissingSessionArchiveError\(error\)/)
   assert.match(deletion, /catch \(archiveError\)/)
@@ -1137,14 +1137,16 @@ test('人物卡持久状态栏由酒馆状态面板承载，不再覆盖对话�
 	assert.doesNotMatch(clientSource, /dsh-tavern-persistent-status-view/)
 })
 
-test('本局人物设计档案以只读折叠项进入酒馆状态并随实时视图刷新', () => {
+test('本局人物设计由用户手动触发，档案以只读折叠项进入酒馆状态', () => {
 	const statusPanel = between(clientSource, 'function TavernStatusPanel', 'function TavernStatusTab')
 	const view = between(serverSource, 'async function view(chat, card)', 'function replyProjectionsOf')
 	assert.match(view, /characterDesigns: projectCharacterDesignDocument\(chat\.characterDesignDocument\)/)
 	assert.match(statusPanel, /"人物设计档案（"/)
 	assert.match(statusPanel, /view\.characterDesigns\.characters\.map/)
 	assert.match(statusPanel, /h\("details", \{ key: character\.name \|\| index, className: "dsh-tavern-character-design" \}/)
-	assert.match(statusPanel, /后台发现重要人物需要补全设计后，档案会自动出现在这里。/)
+	assert.match(statusPanel, /点击“设计人物”，按你的要求创建或补充档案。/)
+	assert.match(statusPanel, /onClick: \(\) => designCharacter\(/)
+	assert.match(statusPanel, /disabled: running \|\| view\.activity\?\.busy \|\| view\.characterDesignTask\?\.status === "running"/)
 	assert.doesNotMatch(statusPanel, /deleteCharacterDesign|saveCharacterDesign|编辑人物设计/)
 })
 

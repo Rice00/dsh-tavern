@@ -1,6 +1,7 @@
 // Dedicated frames do not inherit the Android host's JavaScript polyfills.
 import 'core-js/actual/index.js'
 import { createNativeTemplateConnection } from './native-connection.js'
+import { createTemplateSessionTasks } from './session-tasks.js'
 import { configureTemplateHost, refreshTemplateSnapshot, disposeTemplateHost, eventSource, runTemplateCommand, templateCommandNames } from './host.js'
 
 /** This must be loaded in a dedicated disposable frame, once per session. */
@@ -66,18 +67,17 @@ export async function initializeTemplatePlugin({ snapshot, callbacks, libraries 
 }
 
 /** Connect the official plugin to DSH's versioned native state APIs. */
-export async function connectTemplateSession({ sessionId, rpc, services, settingsHtml, libraries }) {
+export async function connectTemplateSession({ sessionId, rpc, services, settingsHtml, libraries, runtimeId }) {
   const connection = await createNativeTemplateConnection({ sessionId, rpc, services, settingsHtml })
   const plugin = await initializeTemplatePlugin({ ...connection, libraries })
-  let tail = Promise.resolve()
-  const connected = action => { const next = tail.then(action); tail = next.catch(() => {}); return next }
+  const dispatch = {
+    claim: () => rpc('claimFullTemplateWork', { runtimeId, ready: true }),
+    start: work => rpc('startFullTemplateWork', { runtimeId, eventId: work.event.id, leaseToken: work.leaseToken }),
+    complete: (work, receipt) => rpc('completeFullTemplateWork', { runtimeId, eventId: work.event.id, leaseToken: work.leaseToken, ...receipt })
+  }
   try {
     await connection.flush()
-    return { ...plugin, context: connection.snapshot, flush: () => connected(() => connection.flush()),
-      synchronize: () => connected(async () => { const snapshot = await connection.refresh(); await plugin.refresh(snapshot); return plugin.synchronize(snapshot) }),
-      refresh: () => connected(async () => plugin.refresh(await connection.refresh())),
-      project: (operation, input) => connected(async () => { await plugin.refresh(await connection.refresh()); if (operation === 'request' && input?.request?.model) connection.snapshot.dsh.model = input.request.model; return plugin.project(operation, input) })
-    }
+    return { ...plugin, ...createTemplateSessionTasks({ connection, plugin, dispatch }) }
   } catch(error) { await plugin.dispose(); throw error }
 }
 

@@ -98,7 +98,7 @@ Host 中管理酒馆脚本工作的排队、offer、显式 start、执行租约�
 
 ## Prompt Template Runtime
 
-由 dsh-tavern 重新实现的 ST Prompt Template/EJS 运行模块。中文正式名称为“提示词模板运行模块”；它在请求构造阶段处理模板、变量和提示词加工，不属于酒馆脚本运行模块。
+执行完整上游 ST Prompt Template/EJS 语义的模块。中文正式名称为“提示词模板运行模块”；它负责模板任务的完整执行过程，模板产生的持久变化仍受 Tavern 权威状态与版本约束，不属于酒馆脚本运行模块。
 
 ## Host Adapter（桥接层）
 

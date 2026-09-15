@@ -1,3 +1,4 @@
+import { createFullTemplateRuntime } from '../../tavern-plugin/lib/domain/full-template-runtime.js'
 import { createPromptTemplateGlobalVariables } from '../../tavern-plugin/lib/domain/prompt-template-global-variables.js'
 import { createServer } from 'node:http'
 import { mkdtemp } from 'node:fs/promises'
@@ -11,6 +12,9 @@ import { createTavernExtensionSettings } from '../../tavern-plugin/lib/domain/ta
 import { createTavernScriptHostAdapter } from '../../tavern-plugin/lib/domain/tavern-script-host-adapter.js'
 import { createFullPromptTemplateAssetReader, FULL_PROMPT_TEMPLATE_ASSET_PREFIX } from '../../tavern-plugin/lib/domain/full-prompt-template-assets.js'
 import { readTavernRuntimeAsset, TAVERN_RUNTIME_ASSET_PREFIX } from '../../tavern-plugin/lib/domain/tavern-runtime-assets.js'
+const runtime=createFullTemplateRuntime({publishSignal(){}})
+runtime.dispatch.touch('test-session','native-smoke',true)
+let taskResult
 const root=await mkdtemp(join(tmpdir(),'full-template-browser-native-'))
 const open=()=>createChatPersistence({store:createChatJournalStore({dataRoot:root})})
 const persistence=open()
@@ -38,7 +42,7 @@ window.toastr=Object.fromEntries(['info','success','warning','error'].map(k=>[k,
 let context;window.SillyTavern={getContext:()=>context};
 try {
  const settingsHtml=await fetch('${FULL_PROMPT_TEMPLATE_ASSET_PREFIX}settings.html').then(r=>r.text());
- const plugin=await connectTemplateSession({sessionId:'test-session',rpc,settingsHtml,libraries:{yaml:YAML},services:{
+ const plugin=await connectTemplateSession({sessionId:'test-session',runtimeId:'native-smoke',rpc,settingsHtml,libraries:{yaml:YAML},services:{
    getUserAvatar:()=>'',getThumbnailUrl:()=>'',getCharaFilename:()=> 'alice',getChatCompletionModel:()=> 'fixture-model',
    substituteParams:value=>String(value),getRegexedString:value=>value,getTokenCountAsync:async value=>Array.from(String(value)).length
  }});
@@ -48,12 +52,17 @@ try {
  const request=await plugin.processChatCompletion({messages:[{role:'user',content:'<%- await getWorldInfo("Guide") %>'}]});
  assert(request.messages[0].content==='HP 9','native request template');
  const persisted=await fetch('/persisted').then(r=>r.json());assert(persisted.hp===9,'journal did not persist');
- window.smoke={ok:true,first,request:request.messages[0].content,persisted};output.textContent=JSON.stringify(window.smoke);
+ await fetch('/enqueue-task');
+ assert(await plugin.processNext(),'task not claimed');
+ const task=await fetch('/task-result').then(r=>r.json());assert(task.text==='Task HP 9','dispatched template result');
+ window.smoke={ok:true,first,request:request.messages[0].content,persisted,task};output.textContent=JSON.stringify(window.smoke);
 }catch(error){window.smoke={ok:false,error:String(error.stack||error)};output.textContent=JSON.stringify(window.smoke)}
 </script>`
 const server=createServer(async(req,res)=>{
  try {
   const path=new URL(req.url,'http://localhost').pathname
+  if(path==='/enqueue-task'){taskResult=runtime.forSession('test-session').render('Task HP <%= getMessageVar("hp") %>');taskResult.catch(()=>{});await new Promise(r=>setImmediate(r));res.end('queued');return}
+  if(path==='/task-result'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify(await taskResult));return}
   if(path==='/'){res.writeHead(200,{'Content-Type':'text/html; charset=utf-8'});res.end(html);return}
   if(path==='/persisted'){const state=await open().read('test-chat');res.setHeader('Content-Type','application/json');res.end(JSON.stringify({hp:state.messages[0].variables[0].hp,revision:state._storageRevision,globalVariables:await createPromptTemplateGlobalVariables(createProfileDataStore({dataRoot:root})).read()}));return}
   if(path.startsWith('/api/')) {
@@ -64,7 +73,10 @@ const server=createServer(async(req,res)=>{
    let raw='';for await(const chunk of req)raw+=chunk
    const args=JSON.parse(raw),name=path.slice(5)
    let result
-   if(name==='saveFullPromptTemplateGlobals') result=await adapter.saveFullPromptTemplateGlobals(args.sessionId,args.variables,args.expectedVariables)
+   if(name==='claimFullTemplateWork') result=runtime.dispatch.claim('test-session',args.runtimeId,args.ready)
+   else if(name==='startFullTemplateWork') result=runtime.dispatch.start('test-session',args.eventId,args.leaseToken,args.runtimeId)
+   else if(name==='completeFullTemplateWork') result={completed:runtime.dispatch.complete('test-session',args.eventId,args.args,args.runtimeId,args.leaseToken,args.error)}
+   else if(name==='saveFullPromptTemplateGlobals') result=await adapter.saveFullPromptTemplateGlobals(args.sessionId,args.variables,args.expectedVariables)
    else if(name==='getFullPromptTemplateState') result=await adapter.readFullPromptTemplateState(args.sessionId)
    else if(name==='saveFullPromptTemplateState') result=await adapter.saveFullPromptTemplateState(args.sessionId,args.state)
    else if(name==='saveFullPromptTemplateSettings') result=await adapter.saveFullPromptTemplateSettings(args.sessionId,args.settings,args.expectedSettings)

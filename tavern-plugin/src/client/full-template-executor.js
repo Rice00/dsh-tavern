@@ -52,15 +52,11 @@ window.SillyTavern={getContext:()=>Object.assign({},context,templateHost)};
 async function run(){
  try {
   const settingsHtml=await fetch('/api/dsh-tavern/vendor/st-prompt-template/settings.html').then(r=>r.text());
-  plugin=await connectTemplateSession({sessionId,rpc,settingsHtml,libraries:{yaml:YAML},services:createTemplateServices(()=>context,rpc)});context=plugin.context;
+  plugin=await connectTemplateSession({sessionId,runtimeId,rpc,settingsHtml,libraries:{yaml:YAML},services:createTemplateServices(()=>context,rpc)});context=plugin.context;
   panel=createTemplatePanel({rpc,plugin,close:()=>parent.postMessage({token,type:'template-close'},'*')});
   while(true){
    try {
-   const work=await rpc('claimFullTemplateWork',{runtimeId,ready:true});
-   if(work.event){const event=work.event;const started=await rpc('startFullTemplateWork',{runtimeId,eventId:event.id,leaseToken:work.leaseToken});if(!started.started)continue;
-    try{const result=await plugin.project(event.name,event.args[0]);await rpc('completeFullTemplateWork',{runtimeId,eventId:event.id,leaseToken:work.leaseToken,args:[result]});}
-    catch(error){await rpc('completeFullTemplateWork',{runtimeId,eventId:event.id,leaseToken:work.leaseToken,error:String(error.stack||error)});}
-   }else {
+   if(!await plugin.processNext()) {
     if(panelRequested){panelRequested=false;await panel.open()}
     if(!sessionId.startsWith('opening:') && dirty && Date.now()-lastSync>1000){dirty=false;lastSync=Date.now();try{const result=await plugin.synchronize();if(result.deferred)dirty=true;}catch(error){console.error('模板消息同步失败',error);dirty=true;}}
     await new Promise(resolve=>setTimeout(resolve,100));

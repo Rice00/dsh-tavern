@@ -350,6 +350,12 @@ export function createReplyHistoryProjector({ maxCacheBytes = 16 * 1024 * 1024, 
       const projected = projectCached(sourceText, projectionText, options, signature)
       const sessionText = str(message.text)
 
+      const templateDisplay = message.tavernPluginData?.template_display
+      if (templateDisplay && templateDisplay.source === sourceText && templateDisplay.swipe === (message.swipeId || 0)) {
+        projections.push({ version: 2, turn, text: templateDisplay.html, mode: 'html', parts: [{ kind: 'html', content: templateDisplay.html }], warnings: [] })
+        latestSourceBacked = hasSource
+        continue
+      }
       if (message.bodyEdit || !isNativeMarkdownProjection(projected.displayParts, sessionText) || (Array.isArray(message.swipes) && message.swipes.length > 1)) {
         projections.push({
           version: 2,

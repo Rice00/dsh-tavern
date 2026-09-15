@@ -7,7 +7,7 @@ const runtime = await UpstreamTemplateRuntime.create()
 let nextUid = 1000
 const entry = (ref, extra = {}) => ({ ref, sourceUid: nextUid++, title: ref, comment: ref, enabled: true, constant: false,
   primaryKeys: [], secondaryKeys: [], order: 100, content: '正文 ' + ref, ...extra })
-const controller = (ref, content) => entry(ref, { constant: true, order: 500, content: '@@generate_before\n' + content })
+const controller = (ref, content) => entry(ref, { constant: true, enabled: false, order: 500, content: '@@generate_before\n' + content })
 const project = (entries, raw = {}) => createForegroundWorldbook({ bound: async () => ({ view: { displayName: '绑定书', entries, raw } }), runtime: async () => runtime, globalVariables: async () => ({}) })
 
 test('变量驱动的选角调度使用同一关键词规则，强制入选后真实渲染且记录来源', async () => {
@@ -21,7 +21,7 @@ test('变量驱动的选角调度使用同一关键词规则，强制入选后�
   assert.equal(result.error, null)
   assert.match(result.context, /少林夜的名册/)
   assert.deepEqual(result.refs, ['叶'])
-  assert.equal(result.log.entries.find(e => e.ref === '叶').activationRequests[0].sourceRef, '调度')
+  assert.equal(result.log.entries.find(e => e.ref === '叶').activationRequests[0].sourceRef, '[GENERATE:BEFORE]')
   assert.ok(result.reads.叶)
   assert.deepEqual(chat.variables, { stat_data: { 地点: '少林夜' } })
   const miss = await project(entries)({ chat: { ...chat, variables: { stat_data: { 地点: '少林昼' } } }, card: {}, userText: '看看四周' })
@@ -36,14 +36,14 @@ test('主动激活仍受token 预算和既有冷却约束；重投影不重复�
   assert.equal(first.error, null)
   assert.equal(first.refs.length, 5, JSON.stringify({refs:first.refs, outputs:first.log.outputs}))
   assert.equal(first.log.entries.find(e => e.ref === '叶5').reason, 'budget')
-  // Lower order leaves execute before the controller; speculative passes must not persist its increments.
-  assert.ok(first.log.outputs.every(o => /^0 叶/.test(o.text)))
+  // Upstream generate-before controllers run before the native candidate projection; increments remain speculative.
+  assert.ok(first.log.outputs.every(o => /^1 叶/.test(o.text)))
   const second = await run({ chat: { worldBookReads: first.reads, messages: [{ role: 'assistant', turn: 2, text: '' }] }, card: {}, userText: '无关键词' })
   assert.deepEqual(second.refs, ['叶5'])
   assert.equal(second.log.entries.find(e => e.ref === '叶0').reason, 'cooldown')
 })
 
-test('嵌套调度去重；force 可选禁用叶，MVU 不进入前台；失败控制器不提交激活请求', async () => {
+test('嵌套调度去重；force 可选禁用叶，MVU 不进入前台；控制器异常保留上游已发生的激活副作用', async () => {
   const entries = [controller('调度', '<% await activewi("嵌套", true); await activewi("嵌套", true); await activewi("31b_[mvu_update]规则", true); %>'),
     controller('失败', '<% await activewi("不可见", true); throw new Error("fail"); %>'),
     entry('嵌套', { content: '<% await activewi("停用叶", true) %>嵌套正文' }),
@@ -51,12 +51,13 @@ test('嵌套调度去重；force 可选禁用叶，MVU 不进入前台；失败�
     entry('规则', { title: '31b_[mvu_update]规则', comment: '31b_[mvu_update]规则', content: '后台协议' })]
   const result = await project(entries)({ chat: { messages: [] }, card: {}, userText: '' })
   assert.equal(result.error, null)
-  assert.equal(result.context.match(/最终叶正文/g).length, 1)
+  assert.equal((result.context.match(/最终叶正文/g) || []).length, 1, JSON.stringify(result))
   assert.match(result.context, /嵌套正文/)
-  assert.doesNotMatch(result.context, /后台协议|不可见/)
-  assert.deepEqual(new Set(result.refs), new Set(['嵌套', '停用叶']))
+  assert.doesNotMatch(result.context, /后台协议/)
+  assert.match(result.context, /正文 不可见/)
+  assert.deepEqual(new Set(result.refs), new Set(['嵌套', '停用叶', '不可见']))
   assert.equal(result.log.entries.find(e => e.ref === '停用叶').rendering, 'rendered')
-  assert.equal(result.log.templateDiagnostics[0].ref, '失败')
+  assert.equal(result.log.entries.find(e => e.ref === '不可见').activationRequests[0].sourceRef, '[GENERATE:BEFORE]')
 })
 
 test('非强制调用保留关键词条件；别名与正则标题正确定位，缺失条目返回 null', async () => {

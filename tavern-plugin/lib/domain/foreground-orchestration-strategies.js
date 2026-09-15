@@ -182,7 +182,7 @@ export function createCompatibilityOrchestrationStrategy(options) {
       if (begun && begun.duplicate) throw new Error('该消息已由酒馆处理，请勿重复发送')
       chat = await options.chatForSession(sessionId)
     }
-    const compiled = await options.compileTurn(chat, userText)
+    const compiled = await options.compileTurn(chat, chat.runtimeInputs?.[String(payload.turn)]?.text ?? userText)
     await options.persistCompiled({ chat, compiled, turn: payload.turn })
     stagedRequests.set(sessionId, {
       turn: Number(payload.turn) || 0,

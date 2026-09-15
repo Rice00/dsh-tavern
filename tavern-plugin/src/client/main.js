@@ -3925,7 +3925,7 @@ window.__ModuleLoader__.load({
 			const hostWindow = options.window || window;
 			const sessions = options.sessions;
 			const views = options.liveView || liveTavernView;
-            const template = createFullTemplateExecutor({ window: hostWindow, rpc: options.rpc || rpc });
+            const template = createFullTemplateExecutor({ window: hostWindow, rpc: options.rpc || rpc, executeSlash: options.executeSlash });
 			const transition = options.transition || tavernSessionTransition;
 			const listeners = new Set();
 			let snapshot = { sessionId: "", loadState: null };
@@ -4769,10 +4769,18 @@ window.__ModuleLoader__.load({
 		function createTavernFrameSlashExecutor(ctx, hostWindow) {
 			hostWindow = hostWindow || window;
 			return function (line, sessionId) {
+                if (/^\/ejs(?:-refresh)?(?:\s|$)/.test(String(line))) return rpc("executeFullTemplateCommand", {text:line}, sessionId).then(function(result){return result.pipe;});
 				const draftMatch = /^\/setinput(?: ([\s\S]*))?$/.exec(String(line || ""));
 				const match = /^\/send\s+([\s\S]+)\|\s*\/trigger\s*$/.exec(String(line || ""));
 				const triggerOnly = /^\/trigger\s*$/.test(String(line || ""));
-				if (!draftMatch && !triggerOnly && (!match || !match[1].trim())) return Promise.reject(new Error("消息界面只允许调用 /setinput、/trigger 或 /send …|/trigger"));
+				if (!draftMatch && !triggerOnly && (!match || !match[1].trim())) {
+                    if (!ctx.remote?.commands?.execute) return Promise.reject(new Error("当前酒馆没有注册这条命令"));
+                    return ctx.remote.commands.execute(sessionId, String(line), []).then(function (execution) {
+                        if (!execution) throw new Error("当前酒馆没有注册这条命令");
+                        if (execution.result?.kind === "error") throw new Error(execution.result.text || "命令执行失败");
+                        return String(execution.result?.text || "");
+                    });
+                }
 				const actx = ctx.sessions.scope(sessionId);
 				const conversation = ctx.get("conversation");
 				if (!actx || !conversation) return Promise.reject(new Error("当前对话输入框不可用"));
@@ -4872,7 +4880,7 @@ window.__ModuleLoader__.load({
 				});
 				const time = Number.isFinite(Number(data.time)) ? new Date(Number(data.time)).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
 				return React.createElement("div", { className: "dsh-tavern-user-row" },
-					React.createElement("div", { className: "dsh-tavern-user-stack" }, renderedImages, (text !== "" || extras.length > 0) ? React.createElement("div", { className: "dsh-tavern-user-bubble" }, React.createElement(DshUi.MessageText, { text: text }), extras) : null),
+					React.createElement("div", { className: "dsh-tavern-user-stack" }, renderedImages, (text !== "" || extras.length > 0) ? React.createElement("div", { className: "dsh-tavern-user-bubble" }, liveState.view?.inputTemplateDisplays?.[turn] ? React.createElement(TavernMessageFrame, {content:liveState.view.inputTemplateDisplays[turn],sessionId:props.sessionId,turn:turn,partIndex:"user-template",eager:true}) : React.createElement(DshUi.MessageText, { text: text }), extras) : null),
 					React.createElement("div", { className: "dsh-tavern-user-actions" }, time ? React.createElement("span", null, time) : null, React.createElement(DshUi.Tooltip, { label: copied ? "已复制" : "复制", side: "bottom" }, React.createElement("button", { type: "button", className: "dsh-tavern-user-copy", "aria-label": copied ? "已复制" : "复制", onClick: copy }, React.createElement(copied ? DshUi.IconCheckOutline16 : DshUi.IconCopyOutline16, null))))
 				);
 			}
@@ -5077,7 +5085,7 @@ window.__ModuleLoader__.load({
 						React.createElement(DshUi.IconBranchOutline16, null)));
 			}
 			function register(input) {
-				const scriptOwner = createTavernScriptSessionOwner({ sessions: input.ctx.sessions });
+				const scriptOwner = createTavernScriptSessionOwner({ sessions: input.ctx.sessions, executeSlash: createTavernFrameSlashExecutor(input.ctx) });
 				const executeSlash = createTavernFrameSlashExecutor(input.ctx);
 				input.ctx.effect(function () {
 					scriptOwner.start();
@@ -6452,6 +6460,7 @@ window.__ModuleLoader__.load({
 			return React.createElement("div", { className: "dsh-tavern-settings-section" },
 				React.createElement("p", { className: "dsh-tavern-settings-intro" }, "设置通用游戏选项。后台配置请在顶栏“本局设置”中调整。"),
                 React.createElement("p", { className: "dsh-tavern-settings-intro" }, "建议前台和后台先使用 Low 推理强度：等待更短，也可能让续写更自然、任务执行更直接。遇到复杂情节或规则处理不佳时，再尝试提高。"),
+                React.createElement("button", { onClick: function () { const detail = {handled:false}; window.dispatchEvent(new CustomEvent("dsh-template-settings", {detail:detail})); if (!detail.handled) setState(function(current){return Object.assign({},current,{error:"请先打开一局游戏，再进入提示词模板设置。"});}); } }, "提示词模板设置与编辑器"),
                 React.createElement(TavernTextColorSettings),
                 React.createElement(ContextCompactionSettings),
 				state.sceneImages ? React.createElement(SceneImageSettings, null) : null,

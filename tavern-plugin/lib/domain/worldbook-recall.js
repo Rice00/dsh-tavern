@@ -126,6 +126,22 @@ export function constantWorldBookContext(input = {}) {
   }
 }
 
+/** Let the upstream plugin preprocess/filter its decorators before native keyword selection. */
+export async function prepareTemplateWorldbook(worldBook, runtime, chat, globals = {}) {
+  if (!worldBook?.view || worldBook.templatePrepared || !runtime.prepareWorldbook) return worldBook
+  const entries = allEntries(worldBook)
+  if (!entries.some(entry => /@@|\[(?:GENERATE:|RENDER:|InitialVariables|Preprocessing)|@INJECT/.test(entry.content + '\n' + (entry.comment || entry.title)))) return worldBook
+  const result = await runtime.prepareWorldbook(entries.map(entry => templateResource(entry, worldBook.view.displayName)), {
+    worldBookEntries: entries.map(entry => templateResource(entry, worldBook.view.displayName)),
+    scopes: {global: globals, local: chat.variables || {}, initial: chat.promptTemplateInitialVariables || {}, message: lastTavernHelperVariables(chat.promptTemplateInput?.message ? [chat.promptTemplateInput.message] : chat.messages) || {}}
+  })
+  const transformed = result.entries.flatMap(entry => {
+    const original = entries.find(item => String(item.sourceUid ?? item.ref) === String(entry.uid))
+    return original ? [{ ...original, ...entry, ref: original.ref, content: entry.content, enabled: !entry.disable, primaryKeys: entry.key || [], secondaryKeys: entry.keysecondary || [], constant: original.constant }] : []
+  })
+  return { ...worldBook, templatePrepared: true, templateScopes: result.scopes, templateActivationRequests: (result.activationRequests || []).map(request => ({...request, sourceRef:"[GENERATE:BEFORE]"})), view: { ...worldBook.view, entries: transformed } }
+}
+
 /** Resolve enabled constant EJS controllers for one request.
  * includeConstants also projects plain entries and shares their macro state with
  * the caller, so constant setters can feed subsequently recalled entries.
@@ -141,11 +157,11 @@ export async function projectWorldBookTemplates(input = {}) {
   }))
   const { foregroundRefs, prefixRefs } = worldbookPlacement([...resources.filter(entry => !isMvuUpdateEntry(entry)), ...controllers.filter(entry => entry.enabled === false).map(entry => ({ ...entry, enabled: true }))])
   const projectedEntries = []
-  let scopes = {
+  let scopes = input.worldBook?.templateScopes || {
     global: clone(input.globalVariables || {}),
     initial: clone(input.chat && input.chat.promptTemplateInitialVariables || {}),
     local: clone(input.chat && input.chat.variables || {}),
-    message: lastTavernHelperVariables(input.chat && input.chat.messages) || {}
+    message: lastTavernHelperVariables(input.chat?.promptTemplateInput?.message ? [input.chat.promptTemplateInput.message] : input.chat && input.chat.messages) || {}
   }
   let macroState = clone(input.chat?.macroState || {})
   const context = []

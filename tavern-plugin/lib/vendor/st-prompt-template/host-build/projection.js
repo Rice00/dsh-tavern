@@ -1,15 +1,17 @@
 import { entryRandom } from '../../../domain/worldbook-random-sequence.js'
-import { eventSource } from './host.js'
+import { mountTemplateMessages, formatTemplateMessage } from './dom.js'
+import { eventSource, withTemplateProjection } from './host.js'
 import { prepareContext, evalTemplate } from '../upstream/src/function/ejs.ts'
 import { STATE } from '../upstream/src/function/variables.ts'
 import { handleInitialVariables } from '../upstream/src/features/initial-variables.ts'
-import { getEnabledWorldInfoEntries, deactivateActivateWorldInfo, getActivatedWIEntries } from '../upstream/src/function/worldinfo.ts'
+import { parseDecorators, getEnabledWorldInfoEntries, deactivateActivateWorldInfo, getActivatedWIEntries } from '../upstream/src/function/worldinfo.ts'
 import { chat, chat_metadata, extension_settings } from './host.js'
 
 const copy = value => structuredClone(value || {})
 
 /** Native projection adapter; parsing, evaluation, variables and worldbook APIs are upstream-owned. */
 export async function projectTemplate(operation, input) {
+  if (operation === 'command') return (await import('./commands.js')).executeTemplateSlash(input.text)
   const context = input.context || {}
   if (context.scopes) {
     extension_settings.variables ||= {}
@@ -30,6 +32,26 @@ export async function projectTemplate(operation, input) {
   })
   const scopes = () => ({ global: copy(extension_settings.variables?.global), local: copy(chat_metadata.variables),
     initial: copy(STATE.initialVariables), message: copy(chat.at(-1)?.variables?.[chat.at(-1)?.swipe_id || 0]) })
+  if (operation === 'input') return withTemplateProjection(async () => {
+    const previous = chat.at(-1)
+    const message = {mes:input.text,name:context.userName || '你',is_user:true,is_system:false,swipe_id:0,swipes:[input.text],variables:[copy(previous?.variables?.[previous.swipe_id || 0])]}
+    const index = chat.length; chat.push(message)
+    try {
+      mountTemplateMessages()
+      await eventSource.emit('MESSAGE_SENT', index)
+      await eventSource.emit('USER_MESSAGE_RENDERED', String(index), 'template-input', false)
+      const html = document.querySelector(`.mes[mesid="${index}"] .mes_text`)?.innerHTML || ''
+      if (html !== formatTemplateMessage(message.mes)) message.template_display = {source:message.mes,swipe:0,html}
+      return {message:copy(message),scopes:scopes()}
+    } finally { chat.pop(); mountTemplateMessages() }
+  })
+  if (operation === 'worldbook') {
+    const entries = input.entries.map(entry => { const [decorators, content] = parseDecorators(entry.content); return {vectorized:false,...entry,decorators,content} })
+    const data = {characterLore:entries,globalLore:[],chatLore:[],personaLore:[],type:context.generateType || 'normal'}
+    await eventSource.emit('GENERATION_AFTER_COMMANDS', data.type, {}, false)
+    await eventSource.emit('WORLDINFO_ENTRIES_LOADED', data)
+    return { entries:[...data.characterLore,...data.globalLore,...data.chatLore,...data.personaLore], scopes:scopes(), activationRequests:activations() }
+  }
   if (operation === 'initialize') {
     await handleInitialVariables(env, await getEnabledWorldInfoEntries())
     return { initial: copy(STATE.initialVariables), scopes: scopes(), evaluated: 1, diagnostics: [] }

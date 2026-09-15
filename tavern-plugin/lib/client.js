@@ -4962,18 +4962,19 @@ window.__ModuleLoader__.load({
 		// The selected game's executor belongs to the plugin, not its disposable header.
 		// Descendant navigation shares its owner; unrelated games never share a sandbox.
 		// A production instance of the complete upstream plugin, owned by the selected play session.
-		function createFullTemplateExecutor({ window: hostWindow, rpc: invoke }) {
+		function createFullTemplateExecutor({ window: hostWindow, rpc: invoke, executeSlash }) {
 		  let owner = null;
 		  function dispose() {
 		    if (!owner) return;
 		    const old = owner; owner = null;
 		    hostWindow.removeEventListener('message', old.receive);
+		    hostWindow.removeEventListener('dsh-template-settings', old.open);
 		    old.frame.remove();
 		    void invoke('releaseFullTemplateRuntime', { runtimeId: old.token }, old.sessionId).catch(() => {});
 		  }
 		  function sync(sessionId, view) {
 		    if (!hostWindow.document || !view || !view.chatId || !isPlayMode(view.mode || 'story')) { dispose(); return; }
-		    if (owner && owner.sessionId === sessionId) return;
+		    if (owner && owner.sessionId === sessionId) { owner.frame.contentWindow?.postMessage({token:owner.token,type:'template-dirty'},'*'); return; }
 		    dispose();
 		    const frame = hostWindow.document.createElement('iframe');
 		    const token = hostWindow.crypto.randomUUID();
@@ -4983,16 +4984,19 @@ window.__ModuleLoader__.load({
 		    const record = { frame, token, sessionId };
 		    record.receive = async event => {
 		      const data = event.data;
-		      if (owner !== record || event.source !== frame.contentWindow || data?.token !== token || data.type !== 'full-template-rpc') return;
+		      if (owner !== record || event.source !== frame.contentWindow || data?.token !== token || !['full-template-rpc','template-close'].includes(data.type)) return;
+		      if(data.type === 'template-close') { frame.hidden=true; return; }
 		      try {
-		        if (!['getFullPromptTemplateState','saveFullPromptTemplateState','saveFullPromptTemplateSettings','saveFullPromptTemplateGlobals','countFullTemplateTokens','claimFullTemplateWork','startFullTemplateWork','completeFullTemplateWork'].includes(data.method)) throw new Error('Unsupported template RPC');
-		        const result = await invoke(data.method, data.args || {}, sessionId);
+		        if (!['getFullPromptTemplateState','saveFullPromptTemplateState','saveFullPromptTemplateSettings','saveFullPromptTemplateGlobals','countFullTemplateTokens','claimFullTemplateWork','startFullTemplateWork','completeFullTemplateWork','getFullTemplateWorldbook','replaceFullTemplateWorldbook','executeTemplateHostCommand'].includes(data.method)) throw new Error('Unsupported template RPC');
+		        const result = data.method === 'executeTemplateHostCommand' ? {pipe: await executeSlash(data.args.text, sessionId).then(value => typeof value === 'string' ? value : '')} : await invoke(data.method, data.args || {}, sessionId);
 		        if (result?.ok === false) throw new Error(result.error || 'Template RPC failed');
 		        if (owner === record) frame.contentWindow.postMessage({ token, requestId: data.requestId, result }, '*');
 		      } catch (error) {
 		        if (owner === record) frame.contentWindow.postMessage({ token, requestId: data.requestId, error: String(error.message || error) }, '*');
 		      }
 		    };
+		    record.open = event => { if(event?.detail)event.detail.handled=true; frame.hidden=false; Object.assign(frame.style,{position:'fixed',inset:'3vh 3vw',width:'94vw',height:'94vh',zIndex:'2147483000',border:'1px solid #777',borderRadius:'12px'});frame.contentWindow.postMessage({token,type:'template-open'},'*'); };
+		    hostWindow.addEventListener('dsh-template-settings',record.open);
 		    owner = record;
 		    hostWindow.addEventListener('message', record.receive);
 		    frame.srcdoc = `<!doctype html><meta charset="utf-8"><div id="extensions_settings"></div>
@@ -5000,19 +5004,22 @@ window.__ModuleLoader__.load({
 		<script src="/api/dsh-tavern/vendor/runtime-assets/lodash/lodash.min.js"></script>
 		<script type="module">
 		import * as YAML from '/api/dsh-tavern/vendor/runtime-assets/yaml/index.mjs';
-		import {connectTemplateSession,createTemplateServices} from '/api/dsh-tavern/vendor/st-prompt-template/index.js';
+		import {connectTemplateSession,createTemplateServices,createTemplatePanel,templateHost} from '/api/dsh-tavern/vendor/st-prompt-template/index.js';
 		const token=${JSON.stringify(token)},sessionId=${JSON.stringify(sessionId)},runtimeId=token;
-		let sequence=0,context,plugin;const pending=new Map();
+		let sequence=0,context,plugin,panel,dirty=true,panelRequested=false,lastSync=0;const pending=new Map();
 		const rpc=(method,args={})=>new Promise((resolve,reject)=>{const requestId=++sequence;pending.set(requestId,{resolve,reject});parent.postMessage({type:'full-template-rpc',token,requestId,method,args},'*')});
-		addEventListener('message',event=>{if(event.source!==parent||event.data?.token!==token)return;const data=event.data,item=pending.get(data.requestId);if(!item)return;pending.delete(data.requestId);data.error?item.reject(new Error(data.error)):item.resolve(data.result)});
+		addEventListener('message',event=>{if(event.source!==parent||event.data?.token!==token)return;const data=event.data;if(data.type==='template-dirty'){dirty=true;return}if(data.type==='template-open'){panelRequested=true;return}const item=pending.get(data.requestId);if(!item)return;pending.delete(data.requestId);data.error?item.reject(new Error(data.error)):item.resolve(data.result)});
 		window.toastr=Object.fromEntries(['info','success','warning','error'].map(key=>[key,message=>console[key==='error'?'error':'log'](message)]));
 		window.YAML=YAML;
-		window.SillyTavern={getContext:()=>context};
+		window.SillyTavern={getContext:()=>Object.assign({},context,templateHost)};
 		async function run(){
 		 try {
 		  const settingsHtml=await fetch('/api/dsh-tavern/vendor/st-prompt-template/settings.html').then(r=>r.text());
 		  plugin=await connectTemplateSession({sessionId,rpc,settingsHtml,libraries:{yaml:YAML},services:createTemplateServices(()=>context,rpc)});context=plugin.context;
+		  panel=createTemplatePanel({rpc,plugin,close:()=>parent.postMessage({token,type:'template-close'},'*')});
 		  while(true){
+		   if(panelRequested){panelRequested=false;await panel.open()}
+		   if(!sessionId.startsWith('opening:') && dirty && Date.now()-lastSync>1000){dirty=false;lastSync=Date.now();try{const result=await plugin.synchronize();if(result.deferred)dirty=true;}catch(error){console.error('模板消息同步失败',error);dirty=true;}}
 		   const work=await rpc('claimFullTemplateWork',{runtimeId,ready:true});
 		   if(work.event){const event=work.event;await rpc('startFullTemplateWork',{runtimeId,eventId:event.id,leaseToken:work.leaseToken});
 		    try{await plugin.refresh();context=plugin.context;if(event.args[0]?.request?.model)context.dsh.model=event.args[0].request.model;const result=await plugin.project(event.name,event.args[0]);await rpc('completeFullTemplateWork',{runtimeId,eventId:event.id,leaseToken:work.leaseToken,args:[result]});}
@@ -5044,7 +5051,7 @@ window.__ModuleLoader__.load({
 			const hostWindow = options.window || window;
 			const sessions = options.sessions;
 			const views = options.liveView || liveTavernView;
-            const template = createFullTemplateExecutor({ window: hostWindow, rpc: options.rpc || rpc });
+            const template = createFullTemplateExecutor({ window: hostWindow, rpc: options.rpc || rpc, executeSlash: options.executeSlash });
 			const transition = options.transition || tavernSessionTransition;
 			const listeners = new Set();
 			let snapshot = { sessionId: "", loadState: null };
@@ -5915,10 +5922,18 @@ window.__ModuleLoader__.load({
 		function createTavernFrameSlashExecutor(ctx, hostWindow) {
 			hostWindow = hostWindow || window;
 			return function (line, sessionId) {
+                if (/^\/ejs(?:-refresh)?(?:\s|$)/.test(String(line))) return rpc("executeFullTemplateCommand", {text:line}, sessionId).then(function(result){return result.pipe;});
 				const draftMatch = /^\/setinput(?: ([\s\S]*))?$/.exec(String(line || ""));
 				const match = /^\/send\s+([\s\S]+)\|\s*\/trigger\s*$/.exec(String(line || ""));
 				const triggerOnly = /^\/trigger\s*$/.test(String(line || ""));
-				if (!draftMatch && !triggerOnly && (!match || !match[1].trim())) return Promise.reject(new Error("消息界面只允许调用 /setinput、/trigger 或 /send …|/trigger"));
+				if (!draftMatch && !triggerOnly && (!match || !match[1].trim())) {
+                    if (!ctx.remote?.commands?.execute) return Promise.reject(new Error("当前酒馆没有注册这条命令"));
+                    return ctx.remote.commands.execute(sessionId, String(line), []).then(function (execution) {
+                        if (!execution) throw new Error("当前酒馆没有注册这条命令");
+                        if (execution.result?.kind === "error") throw new Error(execution.result.text || "命令执行失败");
+                        return String(execution.result?.text || "");
+                    });
+                }
 				const actx = ctx.sessions.scope(sessionId);
 				const conversation = ctx.get("conversation");
 				if (!actx || !conversation) return Promise.reject(new Error("当前对话输入框不可用"));
@@ -6018,7 +6033,7 @@ window.__ModuleLoader__.load({
 				});
 				const time = Number.isFinite(Number(data.time)) ? new Date(Number(data.time)).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
 				return React.createElement("div", { className: "dsh-tavern-user-row" },
-					React.createElement("div", { className: "dsh-tavern-user-stack" }, renderedImages, (text !== "" || extras.length > 0) ? React.createElement("div", { className: "dsh-tavern-user-bubble" }, React.createElement(DshUi.MessageText, { text: text }), extras) : null),
+					React.createElement("div", { className: "dsh-tavern-user-stack" }, renderedImages, (text !== "" || extras.length > 0) ? React.createElement("div", { className: "dsh-tavern-user-bubble" }, liveState.view?.inputTemplateDisplays?.[turn] ? React.createElement(TavernMessageFrame, {content:liveState.view.inputTemplateDisplays[turn],sessionId:props.sessionId,turn:turn,partIndex:"user-template",eager:true}) : React.createElement(DshUi.MessageText, { text: text }), extras) : null),
 					React.createElement("div", { className: "dsh-tavern-user-actions" }, time ? React.createElement("span", null, time) : null, React.createElement(DshUi.Tooltip, { label: copied ? "已复制" : "复制", side: "bottom" }, React.createElement("button", { type: "button", className: "dsh-tavern-user-copy", "aria-label": copied ? "已复制" : "复制", onClick: copy }, React.createElement(copied ? DshUi.IconCheckOutline16 : DshUi.IconCopyOutline16, null))))
 				);
 			}
@@ -6223,7 +6238,7 @@ window.__ModuleLoader__.load({
 						React.createElement(DshUi.IconBranchOutline16, null)));
 			}
 			function register(input) {
-				const scriptOwner = createTavernScriptSessionOwner({ sessions: input.ctx.sessions });
+				const scriptOwner = createTavernScriptSessionOwner({ sessions: input.ctx.sessions, executeSlash: createTavernFrameSlashExecutor(input.ctx) });
 				const executeSlash = createTavernFrameSlashExecutor(input.ctx);
 				input.ctx.effect(function () {
 					scriptOwner.start();
@@ -7598,6 +7613,7 @@ window.__ModuleLoader__.load({
 			return React.createElement("div", { className: "dsh-tavern-settings-section" },
 				React.createElement("p", { className: "dsh-tavern-settings-intro" }, "设置通用游戏选项。后台配置请在顶栏“本局设置”中调整。"),
                 React.createElement("p", { className: "dsh-tavern-settings-intro" }, "建议前台和后台先使用 Low 推理强度：等待更短，也可能让续写更自然、任务执行更直接。遇到复杂情节或规则处理不佳时，再尝试提高。"),
+                React.createElement("button", { onClick: function () { const detail = {handled:false}; window.dispatchEvent(new CustomEvent("dsh-template-settings", {detail:detail})); if (!detail.handled) setState(function(current){return Object.assign({},current,{error:"请先打开一局游戏，再进入提示词模板设置。"});}); } }, "提示词模板设置与编辑器"),
                 React.createElement(TavernTextColorSettings),
                 React.createElement(ContextCompactionSettings),
 				state.sceneImages ? React.createElement(SceneImageSettings, null) : null,

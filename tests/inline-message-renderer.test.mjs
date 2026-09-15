@@ -277,7 +277,7 @@ test('消息界面的 /send …|/trigger 通过当前 composer 提交并等待�
   listeners.forEach(listener => listener())
   assert.deepEqual(JSON.parse(JSON.stringify(await completed)), { submitted: true })
   assert.equal(listeners.size, 0)
-  await assert.rejects(execute('/compact', 'session-magic-fairy'), /只允许调用/)
+  await assert.rejects(execute('/compact', 'session-magic-fairy'), /没有注册这条命令/)
 })
 
 test('大凉入局按钮的带空格管道发送开局消息', async () => {
@@ -306,7 +306,7 @@ test('大凉入局按钮的带空格管道发送开局消息', async () => {
   listeners.forEach(listener => listener())
   assert.deepEqual(JSON.parse(JSON.stringify(await completed)), { submitted: true })
   assert.equal(listeners.size, 0)
-  await assert.rejects(execute('/compact', 'session-magic-fairy'), /只允许调用/)
+  await assert.rejects(execute('/compact', 'session-magic-fairy'), /没有注册这条命令/)
 })
 
 test('消息 iframe 首次缺少 Helper Context 时，在上下文抵达后重建为可交互文档', () => {

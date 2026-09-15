@@ -198,9 +198,9 @@ export function createTavernScriptHostAdapter(options = {}) {
     return { updated: true, targets: created, context: projectTavernHelperContext(chat) }
   }
 
-  async function worldbookRecord(sessionId, requestedName) {
+  async function worldbookRecord(sessionId, requestedName, template = false) {
     const chat = await resolveChat(sessionId)
-    await assertScriptEnabled(chat)
+    if (template) assertTemplateChat(chat); else await assertScriptEnabled(chat)
     const card = await options.readCard(chat)
     const record = await options.worldBooks.bound(chat.cardPath, card, chat)
     if (record === null) throw new Error('当前人物卡没有绑定世界书')
@@ -220,15 +220,15 @@ export function createTavernScriptHostAdapter(options = {}) {
     finally { if (mutationTails.get(key) === current) mutationTails.delete(key) }
   }
 
-  async function getWorldbook(sessionId, name) {
-    const resolved = await worldbookRecord(sessionId, name)
+  async function getWorldbook(sessionId, name, template = false) {
+    const resolved = await worldbookRecord(sessionId, name, template)
     return { worldbook: projectTavernHelperWorldbook(resolved.record.view) }
   }
 
-  async function replaceWorldbook(sessionId, name, entries, expectedEntries) {
-    const initial = await worldbookRecord(sessionId, name)
+  async function replaceWorldbook(sessionId, name, entries, expectedEntries, template = false) {
+    const initial = await worldbookRecord(sessionId, name, template)
     return await serializeWorldbook(worldbookKey(initial.record), async function () {
-      const resolved = await worldbookRecord(sessionId, name)
+      const resolved = await worldbookRecord(sessionId, name, template)
       if (worldbookKey(resolved.record) !== worldbookKey(initial.record)) throw new Error('世界书绑定已变化，请重新读取后重试')
       if (expectedEntries !== undefined && JSON.stringify(projectTavernHelperWorldbook(resolved.record.view).entries) !== JSON.stringify(expectedEntries)) {
         throw new Error('世界书已被其他操作修改，请重新读取后重试')
@@ -333,10 +333,10 @@ export function createTavernScriptHostAdapter(options = {}) {
     return {
       state: projectFullPromptTemplateState(chat),
       environment: { characters: [character], name1: str(chat.macroState?.userName) || '你', name2: str(card.name),
-        this_chid: 0, extension_settings: extensionSettings,
+        this_chid: '0', extension_settings: extensionSettings,
         world_names: worldName ? [worldName] : [], selected_world_info: [],
         worldbooks: worldName && book ? { [worldName]: book } : {},
-        dsh: { cardPath: chat.cardPath, model: options.modelFor ? await options.modelFor(chat) : chat.model?.model || chat.model || '', regexScripts: card.extensions?.regex_scripts || [] } }
+        dsh: { settling: settlementTransactions.has(str(sessionId)) || ['pending', 'running'].includes(chat.settleStatus), cardPath: chat.cardPath, model: options.modelFor ? await options.modelFor(chat) : chat.model?.model || chat.model || '', regexScripts: card.extensions?.regex_scripts || [] } }
     }
   }
 
@@ -372,9 +372,11 @@ export function createTavernScriptHostAdapter(options = {}) {
       assertTemplateChat(latest)
       if (settlementTransactions.has(str(sessionId))) throw new Error('MVU 结算进行中，模板存档不能覆盖结算事务')
       if (str(latest.sessionId) !== str(sessionId)) throw new Error('模板聊天已切换')
-      return applyFullPromptTemplateState(latest, baseline, request)
+      const next = applyFullPromptTemplateState(latest, baseline, request)
+      return options.prepareTemplateHistory ? await options.prepareTemplateHistory(latest, next) : next
     }, { source: 'prompt-template.state' })
     if (!saved) throw new Error('模板聊天已不存在')
+    await options.synchronizeTemplateHistory?.(saved)
     return { updated: true, state: projectFullPromptTemplateState(saved) }
   }
 

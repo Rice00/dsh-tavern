@@ -128,6 +128,7 @@ function harness(mode, options = {}) {
       return result.text
     } : undefined,
     resolvePresetRegexScripts: options.resolvePresetRegexScripts,
+    projectUserTemplate: options.projectUserTemplate,
     projectReply: projectReplyPresentation,
     projectWorldBookTemplates: options.projectWorldBookTemplates,
     projectForegroundWorldbook: options.projectForegroundWorldbook,
@@ -852,4 +853,29 @@ test('世界书日志收据进入不可变 Frame；日志写入失败不阻断�
   if(fail)assert.equal(result.frame.source.worldBook.recallLogError,'磁盘不可写')
   else assert.equal(result.frame.source.worldBook.recallLog,'worldbook-recalls/chat/op.json')
  }
+})
+
+test('玩家模板先于本轮召回，重试不重复执行；提交后只产生一条玩家消息', async () => {
+  for (const compatibility of [false,true]) {
+    let calls=0
+    const run=harness('story',{projectUserTemplate:async()=>{
+      calls++
+      return {message:{role:'user',text:'进入少林',variables:[{place:'少林'}],tavernPluginData:{is_ejs_processed:[true]}},scopes:{local:{place:'少林'},initial:{}}}
+    },projectForegroundWorldbook:async({chat,userText})=>{
+      assert.equal(chat.variables.place,'少林');assert.equal(userText,'进入少林')
+      return {context:'少林名册',activation:{refs:[]},refs:[],reads:{}}
+    }})
+    const input={sessionId:'session-1',turn:2,userText:'原始模板'}
+    const start=compatibility?'beginCompatibility':'prepare'
+    const first=await run.orchestrator[start](input)
+    await run.orchestrator[start](input)
+    assert.equal(calls,1)
+    assert.equal(first.userText,'进入少林')
+    assert.equal(run.chat().messages.length,0)
+    await run.orchestrator.finalize({...input,assistantText:'少林的僧人迎上前。'})
+    assert.equal(run.chat().messages.length,2)
+    assert.equal(run.chat().messages[0].text,'进入少林')
+    assert.equal(run.chat().messages[0].variables[0].place,'少林')
+    assert.equal(run.chat().promptTemplateInput,undefined)
+  }
 })

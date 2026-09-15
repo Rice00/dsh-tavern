@@ -23,6 +23,9 @@ export function createFullTemplateRuntime({ publishSignal }) {
   function forSession(sessionId) {
     sessions.add(sessionId)
     return {
+      renderInput: (text, context = {}) => invoke(sessionId, 'input', {text, context}),
+      prepareWorldbook: (entries, context = {}) => invoke(sessionId, 'worldbook', { entries, context }),
+      command: text => invoke(sessionId, 'command', { text }),
       render: (template, context = {}) => invoke(sessionId, 'render', { template, context: JSON.parse(JSON.stringify(context)) }),
       renderMessages: (messages, context = {}) => invoke(sessionId, 'messages', { messages, context }),
       projectRequest: request => invoke(sessionId, 'request', { request }),

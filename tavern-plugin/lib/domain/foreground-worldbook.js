@@ -2,13 +2,13 @@ import { worldbookRandomState, hasWorldbookRandom } from './worldbook-random.js'
 import { estimateWorldBookTokens } from './worldbook-activation.js'
 import { compactRecallDiagnostics, describeRecallEntries } from './worldbook-recall-log.js'
 import { isMvuUpdateEntry } from './worldbook-recall.js'
-import { prepareWorldBookRecall, projectWorldBookTemplates } from './worldbook-recall.js'
+import { prepareTemplateWorldbook, prepareWorldBookRecall, projectWorldBookTemplates } from './worldbook-recall.js'
 
 /** One request uses one bound-book snapshot for both selection and rendering. */
 export function createForegroundWorldbook({ bound, runtime, globalVariables, scanText = () => '', filterCandidates }) {
   return async function project({ chat, card, userText, userTextInHistory = false, worldBook: snapshot }) {
     try {
-      const worldBook = snapshot || await bound(chat.cardPath, card, chat)
+      let worldBook = snapshot || await bound(chat.cardPath, card, chat)
       const turn = Number([...(chat.messages || [])].reverse().find(message => message.role === 'assistant')?.turn) || 0
       const randomState = worldbookRandomState(chat, turn)
       // Older versions recorded the next-turn preview as a read. Let the first
@@ -20,7 +20,9 @@ export function createForegroundWorldbook({ bound, runtime, globalVariables, sca
         }
       }
       const templateRuntime = await runtime(chat.sessionId), globals = await globalVariables()
-      let activationRequests = [], recalled, projected
+      worldBook = await prepareTemplateWorldbook(worldBook, templateRuntime, chat, globals)
+      const preparedActivations = worldBook?.templateActivationRequests || []
+      let activationRequests = preparedActivations, recalled, projected
       const tokenCosts = {}
       let screeningDone = !filterCandidates, screening, allowedRefs
       const protectedRefs = () => new Set(activationRequests.flatMap(request => [request.ref, request.sourceRef]))
@@ -42,7 +44,7 @@ export function createForegroundWorldbook({ bound, runtime, globalVariables, sca
           if (tokenCosts[entry.ref] !== cost) costsChanged = true
           tokenCosts[entry.ref] = cost
         }
-        const next = projected.activationRequests || []
+        const next = [...preparedActivations, ...(projected.activationRequests || [])]
         const key = requests => JSON.stringify(requests.map(request => [request.sourceRef, request.ref, request.force]).sort())
         if (pass > 0 && !costsChanged && key(next) === key(activationRequests)) {
           if (!screeningDone) {

@@ -306,8 +306,16 @@ export function createTurnOrchestrator(options) {
       const presetRegexScripts = await resolvePresetRegexScripts(chat)
       const regexScripts = (Array.isArray(extensions && extensions.regexScripts) ? extensions.regexScripts : []).concat(presetRegexScripts)
       runtimeUserText = projectBackgroundInput(runtimeUserText, regexScripts, 1).text
+      if (typeof options.projectUserTemplate === 'function' && runtimeUserText !== '') {
+        const projected = await options.projectUserTemplate({chat,card,turn,text:runtimeUserText})
+        runtimeUserText = projected.message.text
+        chat.promptTemplateInput = {turn,source:userText,message:projected.message}
+        chat.variables = projected.scopes.local
+        chat.promptTemplateInitialVariables = projected.scopes.initial
+      }
       rememberRuntimeInput(chat, turn, userText, runtimeUserText)
       chatChanged = true
+      if (chat.promptTemplateInput?.turn === turn) await store.writeChat(chat, {source:'prompt-template.input'})
     }
     let scriptReference = null
 
@@ -409,9 +417,20 @@ export function createTurnOrchestrator(options) {
       operation.sceneWorldbook = await options.captureSceneWorldbook(chat, await store.readCard(cardPathOf(chat)))
     }
     chat.foregroundError = null
-    rememberRuntimeInput(chat, turn, userText, userText)
+    let projectedText = runtimeInputFor(chat, turn, userText)
+    if (projectedText === null) {
+      projectedText = userText
+      if (typeof options.projectUserTemplate === 'function' && userText !== '') {
+        const projected = await options.projectUserTemplate({chat,card:await store.readCard(cardPathOf(chat)),turn,text:userText})
+        projectedText = projected.message.text
+        chat.promptTemplateInput = {turn,source:userText,message:projected.message}
+        chat.variables = projected.scopes.local
+        chat.promptTemplateInitialVariables = projected.scopes.initial
+      }
+      rememberRuntimeInput(chat, turn, userText, projectedText)
+    }
     await store.writeChat(chat)
-    return { ready: true, mode, userText }
+    return { ready: true, mode, userText: projectedText }
   }
 
   // Tool writes are immediate, so a subsequent validation reads these bytes.
@@ -510,7 +529,7 @@ export function createTurnOrchestrator(options) {
     }
     if (mode === 'story' || mode === 'script') {
       if (renderMacros !== null && assistantText.includes('{{')) assistantText = renderMacros(assistantText, chat)
-      previousMvuVariables = lastTavernHelperVariables(chat.messages)
+      previousMvuVariables = chat.promptTemplateInput?.turn === turn ? lastTavernHelperVariables([chat.promptTemplateInput.message]) : lastTavernHelperVariables(chat.messages)
       const extensions = typeof store.readCardExtensions === 'function'
         ? await store.readCardExtensions(cardPathOf(chat))
         : null
@@ -615,8 +634,10 @@ export function createTurnOrchestrator(options) {
         if (userText !== '') {
           const userMessage = { role: 'user', text: userText, ts: now(), native: true }
           if (previousMvuVariables !== undefined) Object.assign(userMessage, { swipeId: 0, swipes: [userText], variables: [clone(previousMvuVariables)] })
+          if (draft.promptTemplateInput?.turn === turn) Object.assign(userMessage, clone(draft.promptTemplateInput.message), {templateInputSource:userText})
           draft.messages.push(userMessage)
         }
+        delete draft.promptTemplateInput
         const assistantMessage = {
           role: 'assistant',
           text: assistantText,

@@ -9,6 +9,8 @@ export async function initializeTemplatePlugin({ snapshot, callbacks, libraries 
     const { modules } = await import('./upstream-entry.js')
     for (const module of modules) { initialized.push(module); await module.init() }
     if (!globalThis.EjsTemplate?.evalTemplate) throw new Error('Official template exports did not initialize')
+    const { createTemplateLifecycle } = await import('./lifecycle.js')
+    const synchronize = createTemplateLifecycle()
     let disposed = false
     let tail = Promise.resolve()
     const run = action => {
@@ -21,6 +23,7 @@ export async function initializeTemplatePlugin({ snapshot, callbacks, libraries 
     }
     return {
       version: '1.17.9',
+      synchronize: snapshot => run(() => synchronize(snapshot)),
       project: (operation, input) => run(async () => (await import('./projection.js')).projectTemplate(operation, input)),
       refresh: snapshot => run(() => refreshTemplateSnapshot(snapshot)),
       api: globalThis.EjsTemplate,
@@ -52,7 +55,20 @@ export async function initializeTemplatePlugin({ snapshot, callbacks, libraries 
 export async function connectTemplateSession({ sessionId, rpc, services, settingsHtml, libraries }) {
   const connection = await createNativeTemplateConnection({ sessionId, rpc, services, settingsHtml })
   const plugin = await initializeTemplatePlugin({ ...connection, libraries })
-  try { await connection.flush(); return { ...plugin, context: connection.snapshot, refresh: async () => plugin.refresh(await connection.refresh()) } } catch(error) { await plugin.dispose(); throw error }
+  let tail = Promise.resolve()
+  const connected = action => { const next = tail.then(action); tail = next.catch(() => {}); return next }
+  try {
+    await connection.flush()
+    return { ...plugin, context: connection.snapshot, flush: () => connected(() => connection.flush()),
+      synchronize: () => connected(async () => { const snapshot = await connection.refresh(); await plugin.refresh(snapshot); return plugin.synchronize(snapshot) }),
+      refresh: () => connected(async () => plugin.refresh(await connection.refresh())),
+      project: (operation, input) => connected(async () => { await plugin.refresh(await connection.refresh()); return plugin.project(operation, input) })
+    }
+  } catch(error) { await plugin.dispose(); throw error }
 }
 
 export { createTemplateServices } from './services.js'
+
+export { createTemplatePanel } from './panel.js'
+
+export * as templateHost from './host.js'

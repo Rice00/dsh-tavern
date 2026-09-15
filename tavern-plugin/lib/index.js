@@ -1,3 +1,4 @@
+import { prepareTemplateHistory, synchronizeTemplateHistory } from './domain/template-history.js'
 import { createFullTemplateRuntime } from './domain/full-template-runtime.js'
 import { estimateWorldBookTokens } from './domain/worldbook-activation.js'
 import { createWorldbookFilterPrototype, WORLD_BOOK_FILTER_TOOLS } from './domain/worldbook-filter-prototype.js'
@@ -133,7 +134,7 @@ import { resourceWorkspaceContext } from './domain/workspace-resources.js'
 import { createWorldBookLibrary } from './domain/worldbook-library.js'
 import { createWorldbookRecallLog, compactRecallDiagnostics } from './domain/worldbook-recall-log.js'
 import { createForegroundWorldbook } from './domain/foreground-worldbook.js'
-import { mvuUpdateRulesFromWorldBook, prepareWorldBookRecall, projectWorldBookTemplates } from './domain/worldbook-recall.js'
+import { prepareTemplateWorldbook, mvuUpdateRulesFromWorldBook, prepareWorldBookRecall, projectWorldBookTemplates } from './domain/worldbook-recall.js'
 import {
   createBackgroundTaskCoordinator,
   isOpeningAwaitingSettlement
@@ -181,6 +182,18 @@ export async function apply(ctx) {
   const fullTemplateRuntime = createFullTemplateRuntime({ publishSignal: (id, signal) => sessionSignals.publish(id, signal) })
   ctx.effect(() => () => fullTemplateRuntime.dispose())
   async function promptTemplateRuntime(sessionId) { return fullTemplateRuntime.forSession(sessionId) }
+  const commands = ctx.get('commands')
+  if (commands) ctx.effect(function* () {
+    for (const name of ['ejs', 'ejs-refresh']) yield commands.register({
+      name, description: name === 'ejs' ? '执行提示词模板' : '刷新提示词模板世界书',
+      handler: async invocation => {
+        try {
+          const result = await fullTemplateRuntime.forSession(invocation.agent.session.id).command('/' + name + ' ' + invocation.rawInput)
+          return { kind: 'success', text: String(result.pipe ?? '') }
+        } catch (error) { return { kind: 'error', text: String(error.message || error) } }
+      }
+    })
+  })
   const sourceRoot = fileURLToPath(new URL('../../', import.meta.url))
   const dataRoot = resolveTavernDataRoot()
   const stablePrefixStorage = createSessionStablePrefixStorage(dataRoot + '/session-prefixes')
@@ -1139,6 +1152,14 @@ export async function apply(ctx) {
     writeChat,
     updateChat,
     readChatRevision,
+    synchronizeTemplateHistory: async chat => {
+      const session = sessionStore.get(chat.sessionId) || agentRegistry.get(chat.sessionId)?.session
+      if (session) await synchronizeTemplateHistory(session, chat, session => sessionStore.flush(session))
+    },
+    prepareTemplateHistory: (before, after) => {
+      const session = sessionStore.get(before.sessionId) || agentRegistry.get(before.sessionId)?.session
+      return session ? prepareTemplateHistory(session, before, after) : after
+    },
     readCard: readChatCard,
     modelFor: chat => modelSelection(chat.sessionId)?.model || '',
     worldBooks,
@@ -1267,10 +1288,24 @@ export async function apply(ctx) {
     }
     for (const [turn, messageId] of messagesByTurn) if (messageId) forkTurnsByMessageId[messageId] = turn
     const inputSources = {}
+    const inputTemplateDisplays = {}
+    let inputTurn = 1
+    for (const message of chat.messages || []) {
+      if (message.role !== "user") continue
+      inputTurn++
+      const display = message.tavernPluginData?.template_display
+      if (display && display.source === (message.sourceText ?? message.text) && display.swipe === (message.swipeId || 0)) inputTemplateDisplays[inputTurn] = display.html
+    }
     const runtimeInputs = chat.runtimeInputs && typeof chat.runtimeInputs === 'object' ? chat.runtimeInputs : {}
     for (const turn of Object.keys(runtimeInputs)) {
       const input = runtimeInputs[turn]
       inputSources[turn] = str(input && input.source)
+    }
+    inputTurn = 1
+    for (const message of chat.messages || []) {
+      if (message.role !== 'user') continue
+      inputTurn++
+      if (message.templateHistoryEdit || message.templateInputSource) inputSources[inputTurn] = message.sourceText ?? message.text
     }
     const currentCardDigest = cardContentDigest(card)
     const helperEnabled = hasTavernScriptRuntime(chat, cardExtensions.helperScripts)
@@ -1314,6 +1349,7 @@ export async function apply(ctx) {
       forkTurnsByMessageId,
       latestAssistantTurn: latestStoryTurn,
       inputSources,
+      inputTemplateDisplays,
       canClearIncompleteReply,
       canRollback: hasRollbackMessages(chat.messages) || canClearIncompleteReply,
       presentation: null,
@@ -1804,12 +1840,14 @@ export async function apply(ctx) {
     }
     if (!worldBook || !worldBook.view) return { context: '', refs: [], diagnostics: [] }
     try {
+      const runtime = await promptTemplateRuntime(chat.sessionId)
+      worldBook = await prepareTemplateWorldbook(worldBook, runtime, chat, await readPromptTemplateGlobalVariables())
       return projectWorldBookTemplates({
         includeConstants: true,
         randomSeed: chat.worldBookRandomState?.seed,
         randomOutputs: chat.worldBookRandomState?.outputs,
         worldBook,
-        runtime: await promptTemplateRuntime(chat.sessionId),
+        runtime,
         globalVariables: await readPromptTemplateGlobalVariables(),
         card,
         chat
@@ -2426,6 +2464,13 @@ export async function apply(ctx) {
     renderMacros: function (text, chat) {
       return renderCardText(text, { name: chat.cardName }, chat.macroState)
     },
+    projectUserTemplate: async ({chat,text}) => {
+      const global = await readPromptTemplateGlobalVariables()
+      const result = await fullTemplateRuntime.forSession(chat.sessionId).renderInput(text, {userName:chat.macroState?.userName || '你',scopes:{global,local:chat.variables || {},initial:chat.promptTemplateInitialVariables || {},message:lastTavernHelperVariables(chat.messages) || {}}})
+      const row = result.message
+      await tavernScriptHostAdapter.saveFullPromptTemplateGlobals(chat.sessionId, result.scopes.global, global)
+      return {scopes:result.scopes,message:{role:'user',text:row.mes,sourceText:row.mes,swipeId:row.swipe_id,swipes:row.swipes,variables:row.variables,tavernPluginData:Object.fromEntries(['is_ejs_processed','variables_initialized','template_display'].filter(key=>row[key]!==undefined).map(key=>[key,row[key]]))}}
+    },
     projectReply: projectRuntimeReply,
     projectWorldBookTemplates: input => nativeWorldBookTemplateContext(input.chat, input.card),
     projectForegroundWorldbook,
@@ -2870,6 +2915,9 @@ export async function apply(ctx) {
       case 'claimFullTemplateWork': return fullTemplateRuntime.dispatch.claim(args.sessionId, args.runtimeId, args.ready, args.initializationError)
       case 'startFullTemplateWork': return fullTemplateRuntime.dispatch.start(args.sessionId, args.eventId, args.leaseToken, args.runtimeId)
       case 'completeFullTemplateWork': return { completed: fullTemplateRuntime.dispatch.complete(args.sessionId, args.eventId, args.args, args.runtimeId, args.leaseToken, args.error) }
+      case 'getFullTemplateWorldbook': return await tavernScriptHostAdapter.getWorldbook(args.sessionId, args.name, true)
+      case 'replaceFullTemplateWorldbook': return await tavernScriptHostAdapter.replaceWorldbook(args.sessionId, args.name, args.entries, args.expectedEntries, true)
+      case 'executeFullTemplateCommand': return await fullTemplateRuntime.forSession(args.sessionId).command(args.text)
       case 'countFullTemplateTokens': return { tokens: estimateWorldBookTokens(args.text), estimator: 'unicode-estimate' }
       case 'getFullPromptTemplateState': if (args.sessionId?.startsWith('opening:')) return openingPreparation.templateState(args.sessionId.slice(8)); return await tavernScriptHostAdapter.readFullPromptTemplateState(args && args.sessionId)
       case 'saveFullPromptTemplateGlobals': if (args.sessionId?.startsWith('opening:')) return openingPreparation.saveTemplateGlobals(args.sessionId.slice(8), args.variables); return await tavernScriptHostAdapter.saveFullPromptTemplateGlobals(args && args.sessionId, args && args.variables, args && args.expectedVariables)
@@ -3500,7 +3548,7 @@ export async function apply(ctx) {
         const messageId = Math.max(0, context.messages.length - 1)
         await tavernScriptHostAdapter.dispatchEvent({ sessionId: input.sessionId, context, name: 'MESSAGE_SENT', args: [messageId] })
       },
-      beginTurn: async function (input) { await turnOrchestrator.beginCompatibility(input) },
+      beginTurn: async function (input) { return await turnOrchestrator.beginCompatibility(input) },
       chatForSession,
       compileTurn: compileCompatibilityTurn,
       persistCompiled: async function (input) {
@@ -3571,6 +3619,7 @@ export async function apply(ctx) {
     const decision = await next()
     if (decision.kind === 'reject') return decision
     const chat = await chatForSession(sessionId)
+    if (chat) await synchronizeTemplateHistory(payload.agent.session, chat, session => sessionStore.flush(session))
     if (chat) await synchronizeBodyEdits(payload.agent.session, chat, session => sessionStore.flush(session))
     return await foregroundStrategies.prepareStep({
       sessionId,
@@ -3725,6 +3774,7 @@ export async function apply(ctx) {
     if (agent === undefined || agent.session === undefined) return assembly
     if (backgroundAgentRunner.owns(agent.session.id)) return assembly
     const chat = await chatForSession(agent.session.id)
+    if (chat) await synchronizeTemplateHistory(agent.session, chat, session => sessionStore.flush(session))
     if (chat) await synchronizeBodyEdits(agent.session, chat, session => sessionStore.flush(session))
     if (chat && chat.requestMode !== 'sillytavern' && ['story', 'script'].includes(await turnOrchestrator.modeFor(agent.session.id))) {
       await ensureNativeSystemPrefix(agent.session, chat)

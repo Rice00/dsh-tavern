@@ -70,13 +70,15 @@ test('回退或正文替换后的旧模板保存被拒绝，不影响新的剧�
   assert.deepEqual(await persistence.read('chat'),before)
 })
 
-test('变量存档不能夹带聊天正文修改，失败时其他变量也不落盘',async t=>{
+test('官方模板永久改写正文与变量原子保存',async t=>{
   const {adapter,persistence}=await fixture(t)
   const {state}=await adapter.readFullPromptTemplateState('session')
-  state.chat[0].variables[0].hp=99;state.chat[0].mes='伪造正文'
-  const before=await persistence.read('chat')
-  await assert.rejects(adapter.saveFullPromptTemplateState('session',state),error=>error.code==='PROMPT_TEMPLATE_HISTORY_UNSUPPORTED')
-  assert.deepEqual(await persistence.read('chat'),before)
+  state.chat[0].variables[0].hp=99;state.chat[0].mes='模板改写正文'
+  const result=await adapter.saveFullPromptTemplateState('session',state)
+  assert.equal(result.state.chat[0].mes,'模板改写正文')
+  assert.equal(result.state.chat[0].variables[0].hp,99)
+  const saved=await persistence.read('chat')
+  assert.equal(saved.messages[0].sourceText,'模板改写正文')
 })
 
 
@@ -125,4 +127,34 @@ test('纯 EJS 人物卡无需启用 MVU 或配套脚本即可读取和保存模�
   state.chat_metadata.variables.local=3
   await adapter.saveFullPromptTemplateState('session',state)
   assert.equal((await persistence.read('chat')).variables.local,3)
+})
+
+test('模板移除回复版本时，同步移除对应变量槽，保存后不复活已删除版本',async t=>{
+  const {adapter,persistence}=await fixture(t)
+  await persistence.update('chat', chat => {
+    chat.messages[0].swipes=['原正文','第二版'];chat.messages[0].swipeId=0
+    chat.messages[0].variables=[{hp:7},{hp:8}];return chat
+  })
+  const {state}=await adapter.readFullPromptTemplateState('session')
+  state.chat[0].swipes.splice(1,1);state.chat[0].variables.splice(1,1)
+  const saved=await adapter.saveFullPromptTemplateState('session',state)
+  assert.equal(saved.state.chat[0].swipes.length,1)
+  assert.equal(saved.state.chat[0].variables.length,1)
+  assert.equal(saved.state.chat[0].variables[0].hp,7)
+})
+
+test('生成中的玩家模板变量保存到待提交输入，不覆盖上一条回复或增加历史楼层',async t=>{
+  const {adapter,persistence}=await fixture(t)
+  await persistence.update('chat', chat => {
+    chat.promptTemplateInput={turn:2,source:'原始输入',message:{role:'user',text:'已渲染输入',variables:[{hp:7}],swipes:['已渲染输入'],swipeId:0}}
+    return chat
+  })
+  const {state}=await adapter.readFullPromptTemplateState('session')
+  assert.equal(state.chat.length,2)
+  state.chat[1].variables[0].hp=8
+  await adapter.saveFullPromptTemplateState('session',state)
+  const chat=await persistence.read('chat')
+  assert.equal(chat.messages.length,1)
+  assert.equal(chat.promptTemplateInput.message.variables[0].hp,8)
+  assert.notEqual(chat.messages[0].variables[0].hp,8)
 })

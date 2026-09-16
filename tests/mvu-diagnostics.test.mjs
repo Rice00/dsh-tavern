@@ -325,3 +325,17 @@ test('模块加载详情只保留限量脱敏资源和 HTTP 状态', async () =>
   assert.match(zipText(zip.buffer),/404/);
   assert.doesNotMatch(zipText(zip.buffer),/PRIVATE/);
 });
+
+test('诊断包包含本局预设与正则并脱敏，过大时仍可导出其他日志', async () => {
+  const result = await createMvuDiagnosticExport({sessionId:'s',store:createMvuDiagnosticStore(storage()),presetDiagnostics:{
+    preset:{presetName:'本局预设',apiKey:'PRIVATE_PRESET_KEY'},regex:{ordered:[{source:'preset',rule:{findRegex:'/x/g',replaceString:'<div>状态栏</div>'}}]}
+  }})
+  const text=zipText(result.buffer)
+  assert.match(text,/preset\/context.json/)
+  assert.match(text,/本局预设/)
+  assert.match(text,/<div>状态栏<\/div>/)
+  assert.doesNotMatch(text,/PRIVATE_PRESET_KEY/)
+  const large=await createMvuDiagnosticExport({sessionId:'s',store:createMvuDiagnosticStore(storage()),presetDiagnostics:{preset:{content:'x'.repeat(8*1024*1024)}}})
+  assert.match(zipText(large.buffer),/预设及正则资料超过 8 MiB/)
+  assert.match(zipText(large.buffer),/mvu\/diagnostics.json/)
+})

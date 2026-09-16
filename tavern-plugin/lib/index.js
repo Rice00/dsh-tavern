@@ -74,6 +74,8 @@ import { createFileResourceStore, normalizeResourcePath, resourceKind } from './
 import { createMobileCardImport } from './domain/mobile-card-import.js'
 import { createForegroundHandoff } from './domain/foreground-handoff.js'
 import { createForegroundFrameBuilder } from './domain/agent-input-frame.js'
+import { retireForegroundFrames } from './domain/foreground-frame-retirement.js'
+import { compactionFailureMessage } from './domain/compaction-failure.js'
 import { createForegroundFrameSessionAdapter } from './domain/foreground-frame-session-adapter.js'
 import { HISTORY_RECALL_OUTPUT_SCHEMA, HISTORY_RECALL_TOOL, createHistoryRecall, renderHistoryRecall } from './domain/history-recall.js'
 import { dshParameterFields } from './domain/dsh-tool-schema.js'
@@ -1765,7 +1767,7 @@ export async function apply(ctx) {
         message: 'Compacted ' + result.shadowedSeqs.length + ' history items (~' + result.shadowedTokenCount + ' tokens).'
       }
     } catch (error) {
-      return { status: 'failed', message: str(error && error.message || error) || '后台压缩失败' }
+      return { status: 'failed', message: compactionFailureMessage(error) }
     }
   }
   const configuredCompactionEngines = new WeakSet()
@@ -1782,6 +1784,11 @@ export async function apply(ctx) {
     if (live) return work(live)
     const handle = await agentRegistry.resume({ resumeSessionId: id })
     try { return await work(handle.agent) } finally { await handle.dispose() }
+  }
+  async function retireOldForegroundFrames(agent, keepTurn) {
+    const count = retireForegroundFrames(agent.session, { keepTurn })
+    if (count) await sessionStore.flush(agent.session)
+    return count
   }
   autoCompaction = createAutoCompaction({
     readChat: chatForSession, updateChat,
@@ -1819,7 +1826,10 @@ export async function apply(ctx) {
     async compact(id, side, options, signal) {
       if (side === 'foreground' && options.openTurnCompact) return options.openTurnCompact()
       if (side === 'background') return backgroundAgentRunner.compact({ sessionId: id, signal })
-      return withCompactionSession(id, async agent => (await agentCompaction(agent)).compactNow(agent, signal))
+      return withCompactionSession(id, async agent => {
+        await retireOldForegroundFrames(agent, agent.phase?.kind === 'running' ? agent.phase.turn : undefined)
+        return (await agentCompaction(agent)).compactNow(agent, signal)
+      })
     }
   })
   async function configureAgentCompaction(agent) {
@@ -1841,6 +1851,7 @@ export async function apply(ctx) {
   ctx.on('agent/pre-step', async (payload, next) => {
     const id = payload.agent.session.id, background = backgroundAgentRunner.requestContext(id)
     const chat = background ? null : await chatForSession(id)
+    if (chat && ['story', 'script'].includes(chat.mode)) await retireOldForegroundFrames(payload.agent, payload.turn)
     if (background && ['image', 'phone'].includes(background.task)) return next()
     if (background || chat && ['story', 'script'].includes(chat.mode)) {
       const engine = await configureAgentCompaction(payload.agent)

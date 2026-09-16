@@ -1,3 +1,4 @@
+import { compactionFailureMessage } from './compaction-failure.js'
 import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 
@@ -30,7 +31,7 @@ export function createAutoCompaction(deps) {
     const job = execute(chat, options)
     jobs.set(chat.id, job)
     try { return await job } catch (error) {
-      await save(chat.id, old => ({ ...old, warning: String(error.message || error).slice(0, 500) }))
+      await save(chat.id, old => ({ ...old, warning: compactionFailureMessage(error) }))
       throw error
     } finally { jobs.delete(chat.id); reserved.delete(chat.id) }
   }
@@ -120,7 +121,7 @@ export function createAutoCompaction(deps) {
             await save(chat.id, old => ({ ...old, operation: structuredClone(operation), warning: '' }))
             return operation
           }
-          operation[side] = { status: 'failed', message: String(error.message || error).slice(0, 500) }
+          operation[side] = { status: 'failed', message: compactionFailureMessage(error) }
         }
         await save(chat.id, old => ({ ...old, operation: structuredClone(operation) }))
       }

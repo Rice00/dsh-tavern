@@ -1,3 +1,4 @@
+import { restoredSurfaceSeqs } from './surface-restoration.js'
 import { sessionEvents, appendSessionEvent, surfaceReplacementRange } from './session-events.js'
 import { randomUUID } from 'node:crypto'
 
@@ -72,6 +73,7 @@ export function abortedRegenerationTurns(input) {
 // its original streamed assistant node. Follow that provenance to hide the
 // interrupted turn too; stopping alone must retain its visible error/partial reply.
 export function rolledBackSurfaceTurns(events) {
+  const restored = restoredSurfaceSeqs(events)
   const bySeq = new Map(events.filter(event => Number.isSafeInteger(event?.seq)).map(event => [event.seq, event]))
   const turns = new Set()
   const visited = new Set()
@@ -85,7 +87,7 @@ export function rolledBackSurfaceTurns(events) {
     if (event.surfaceOp?.op === 'replace') for (const source of event.sourceEventSeqs || []) visit(source)
   }
   for (const event of events) {
-    if (!isRollbackAssistantTombstone(event, events)) continue
+    if (restored.has(event.seq) || !isRollbackAssistantTombstone(event, events)) continue
     for (const seq of event.sourceEventSeqs || []) visit(seq)
   }
   return [...turns].sort((left, right) => left - right)

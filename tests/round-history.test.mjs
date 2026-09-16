@@ -14,7 +14,7 @@ import { createMvuDiagnosticStore, createMvuDiagnosticExport } from '../tavern-p
 import { Session } from './fixtures/dsh-session-host.mjs'
 import { appendSessionEvent, sessionEvents } from '../tavern-plugin/lib/domain/session-events.js'
 
-function harness({ checkpoint = false, mode = 'story' } = {}) {
+function harness({ checkpoint = false, mode = 'story', journal = false } = {}) {
   const calls = [], revisions = new Map()
   let counter = 0
   const timeline = createStoryTimeline({ id: prefix => prefix + '-' + (++counter) })
@@ -26,6 +26,7 @@ function harness({ checkpoint = false, mode = 'story' } = {}) {
     chat = timeline.complete({ chat: begun.chat, operationId: begun.value.operationId, basedOn: begun.value.basedOn, outcome: { status: 'success' }, apply(draft) { draft.messages.push(...pair); draft.posture = '门内' } }).chat
     const settlement = timeline.apply({ chat, intent: { kind: 'agent.begin', role: 'settlement' } })
     chat = timeline.complete({ chat: settlement.chat, operationId: settlement.value.operationId, basedOn: settlement.value.basedOn, outcome: { status: 'success' } }).chat
+    if (journal) chat._storageRevision = 2
   } else chat.messages.push(...pair)
   const model = { kind: 'model', provider: 'fixture', model: 'fixture' }
   const events = [
@@ -64,7 +65,7 @@ function harness({ checkpoint = false, mode = 'story' } = {}) {
     read: async () => structuredClone(chat), forSession: async () => structuredClone(chat), readCard: async () => ({ name: '角色' }),
     readRevision: async (_id, revision) => { calls.push('readRevision'); return revisions.get(revision) },
     write: async (value, metadata) => { calls.push(metadata.source); chat = structuredClone(value); return structuredClone(chat) },
-    update: async (_id, mutate, metadata) => { calls.push(metadata.source); chat = mutate(structuredClone(chat)); return structuredClone(chat) }
+    update: async (_id, mutate, metadata) => { calls.push(metadata.source); const revision = chat._storageRevision; if (journal) revisions.set(revision, structuredClone(chat)); chat = mutate(structuredClone(chat)); if (journal) chat._storageRevision = revision + 1; return structuredClone(chat) }
   }
   const options = { chats, sessions: { get: () => agent }, timeline, scripts: {
     read: async () => ({ chunks: ['一', '二'] }), continuity: { transition: () => { calls.push('script.restore'); return { state: { cursor: 0 } } } },
@@ -336,6 +337,10 @@ test('真实 journal 持久化：消息面失败后 checkpoint 可恢复、重�
   Object.assign(h.options.chats, { read: reopened.read, readRevision: reopened.readRevision, write: reopened.write, update: reopened.update })
   assert.equal((await h.create().rollback('session', 'chat')).messages.length, 1)
   assert.equal((await reopened.read('chat')).messages.length, 1)
+  const undoStore = createChatPersistence({ store: createChatJournalStore({ dataRoot: root }) })
+  Object.assign(h.options.chats, { read: undoStore.read, readRevision: undoStore.readRevision, write: undoStore.write, update: undoStore.update })
+  await h.create().undoRollback('session', 'chat')
+  assert.deepEqual((await undoStore.read('chat')).messages, original.messages)
 })
 
 test('完整重生成先独立替换唯一正文，再执行后台结算', async () => {
@@ -648,4 +653,58 @@ for (const first of [true, false]) test(`请求 HTTP 500 且没有正文时仅�
   assert.deepEqual(result.clearedIncompleteTurns, [turn])
   assert.deepEqual(h.chat.messages, before.messages)
   assert.deepEqual(h.chat.timeline, before.timeline)
+})
+
+test('误回退后撤销恢复正文、变量和 checkpoint，并保留原生日志', async () => {
+  const h = harness({ checkpoint: true, journal: true })
+  h.chat._storageRevision = 9
+  h.revisions.set(9, structuredClone(h.chat))
+  const before = structuredClone(h.chat), originalEvents = structuredClone(h.session.events)
+  const history = h.create()
+  await history.rollback('session', 'chat')
+  assert.equal(h.chat.messages.length, 1)
+  await history.undoRollback('session', 'chat')
+  assert.deepEqual(h.chat.messages, before.messages)
+  assert.equal(h.chat.posture, before.posture)
+  assert.equal(h.chat.timeline.checkpoints.length, before.timeline.checkpoints.length)
+  assert.ok(h.chat.timeline.revision > before.timeline.revision)
+  assert.deepEqual(h.session.events.slice(0, originalEvents.length), originalEvents)
+  assert.deepEqual(h.session.surface.nodes.map(seq => h.session.events[seq].data.message?.content || h.session.events[seq].data.content),
+    originalEvents.map(event => event.data.message?.content || event.data.content))
+  await assert.rejects(history.undoRollback('session', 'chat'), /没有|失效/)
+})
+
+for (const mutation of ['empty-generation', 'edit']) test(`新操作使撤销恢复点失效：${mutation}`, async () => {
+  const h = harness({ checkpoint: true, journal: true })
+  const history = h.create()
+  await history.rollback('session', 'chat')
+  if (mutation === 'empty-generation') h.session.append('turn/start', { turn: 3 })
+  else h.chat._storageRevision++
+  const before = structuredClone(h.chat), nodes = [...h.session.surface.nodes]
+  await assert.rejects(history.undoRollback('session', 'chat'), /失效/)
+  assert.deepEqual(h.chat, before)
+  assert.deepEqual(h.session.surface.nodes, nodes)
+})
+
+test('回退目标轮次已变化时拒绝删除', async () => {
+  const h = harness({ checkpoint: true, journal: true })
+  const before = structuredClone(h.chat), events = structuredClone(h.session.events)
+  await assert.rejects(h.create().rollback('session', 'chat', 7), /目标已经变化/)
+  assert.deepEqual(h.chat, before)
+  assert.deepEqual(h.session.events, events)
+})
+
+test('撤销保存失败时恢复回退后的模型上下文，不覆盖正文', async () => {
+  const h = harness({ checkpoint: true, journal: true })
+  await h.create().rollback('session', 'chat')
+  const before = structuredClone(h.chat)
+  const update = h.options.chats.update
+  h.options.chats.update = (...args) => {
+    if (args[2].source === 'rollback.undo') throw new Error('撤销保存失败')
+    return update(...args)
+  }
+  await assert.rejects(h.create().undoRollback('session', 'chat'), /撤销保存失败/)
+  assert.deepEqual(h.chat, before)
+  assert.equal(h.session.surface.nodes.length, 1)
+  assert.deepEqual(h.session.events[h.session.surface.nodes[0]].data.message.content, [])
 })

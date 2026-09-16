@@ -32,6 +32,7 @@ function harness(rows) {
   } }
   const projection = client.createTurnHistoryProjection({ root: () => document, storage: () => ({ getItem: () => '{}' }) })
   return {
+    restore: view => projection.restored('test-session', view),
     applySuppressedDshTurns: turns => projection.apply('test-session', turns),
     applyRegeneration: (turns, regeneratedDshTurns) => projection.apply('test-session', turns, regeneratedDshTurns)
   }
@@ -110,4 +111,14 @@ for (const alpha of [false, true]) test(`${alpha ? 'alpha' : 'main'} 中断残�
     assert.ok(interrupted.every(item => item.style.display === 'none'), '中断的半截正文不应留在界面')
     assert.ok(kept.every(item => item.style.display === ''), '保留回合不受影响')
   }
+})
+
+for (const alpha of [false, true]) test(`${alpha ? 'alpha' : 'main'} 撤销回退恢复整轮显示并保留其他回退轮次`, () => {
+  const older = ['user', 'assistant-step', 'turn-tail'].map(kind => row(kind, 3, alpha))
+  const latest = ['system-prompt', 'user', 'assistant-step', 'turn-tail'].map(kind => row(kind, 4, alpha))
+  const projection = harness([...older, ...latest])
+  projection.applySuppressedDshTurns([3, 4])
+  projection.restore({ undoneRollback: { turn: 4 }, suppressedDshTurns: [3] })
+  assert.ok(older.every(item => item.style.display === 'none'))
+  assert.ok(latest.every(item => item.style.display === ''))
 })

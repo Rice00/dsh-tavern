@@ -1,3 +1,4 @@
+import { restoredSurfaceSeqs } from './surface-restoration.js'
 import { sessionEvents, appendSessionEvent, surfaceReplacementRange } from './session-events.js'
 import { randomUUID } from 'node:crypto'
 
@@ -44,7 +45,9 @@ export function rewindBackgroundSurface(session, boundary) {
 // rollbacks performed before the UI projection existed. Keep raw events intact.
 export function backgroundSuppressedTurns(events) {
   const ranges = []
+  const restored = restoredSurfaceSeqs(events)
   for (const event of events) {
+    if (restored.has(event.seq)) continue
     const op = event.surfaceOp
     if (event.type !== 'assistant/message' || op?.op !== 'replace' || event.data?.message?.content?.length !== 0) continue
     const range = surfaceReplacementRange(op)

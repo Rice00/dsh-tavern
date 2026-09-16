@@ -1,3 +1,4 @@
+import { canUndoRollback } from './domain/surface-restoration.js'
 import { createSessionViewSync } from './domain/session-view-sync.js'
 import { setFailedErrorVisibility } from './domain/failed-error-visibility.js'
 import { createManualCharacterDesign } from './domain/manual-character-design.js'
@@ -1388,6 +1389,8 @@ export async function apply(ctx) {
       inputTemplateDisplays,
       canClearIncompleteReply,
       canRollback: hasRollbackMessages(chat.messages) || canClearIncompleteReply,
+      rollbackTargetTurn: latestStoryTurn,
+      undoRollbackTurn: canUndoRollback(chat, liveSession) ? chat.rollbackUndo.turn : null,
       presentation: null,
       replyProjections: replyDisplay.projections,
       tavernStatusView: replyDisplay.statusView || null,
@@ -2632,7 +2635,7 @@ export async function apply(ctx) {
     void mvuSettlementReconciler.scan()
   }
   // ---------- 重新生成正文（生成即替换，无确认） ----------
-  const { regenerate: regenBody, rollback: rollbackTurn } = createRoundHistory({
+  const { regenerate: regenBody, rollback: rollbackTurn, undoRollback: undoRollbackTurn } = createRoundHistory({
     diagnostics: mvuDiagnostics,
     chats: { read: readChat, forSession: chatForSession, readCard: readChatCard,
       readRevision: readChatRevision, write: writeChat, update: updateChat },
@@ -3132,7 +3135,8 @@ export async function apply(ctx) {
         await updateChat(chat.id, current => setFailedErrorVisibility(current, events, args.turn, args.hidden), { source: 'ui.error-visibility' })
         return { view: await sessionView(sessionId) }
       }
-      case 'rollbackTurn': return { view: await rollbackTurn(args && args.sessionId, args && args.chatId) }
+      case 'undoRollbackTurn': return { view: await undoRollbackTurn(args && args.sessionId, args && args.chatId) }
+      case 'rollbackTurn': return { view: await rollbackTurn(args && args.sessionId, args && args.chatId, args && args.expectedTurn) }
       case 'stopBackground': return { view: await stopBackground(args && args.sessionId, args && args.operationId) }
       case 'retrySettlement': return { view: await retrySettlement(args && args.sessionId, args && args.turn, args && args.guidance) }
       case 'retryMvuSettlement': return { view: await retrySettlement(args && args.sessionId, args && args.turn, args && args.guidance) }

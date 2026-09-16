@@ -1,3 +1,4 @@
+import { canUndoRollback, restoreSurface, preflightSurfaceRestore } from './surface-restoration.js'
 import { rewindBackgroundSurface } from './background-surface.js'
 import { sessionEvents, appendSessionEvent } from './session-events.js'
 import { randomUUID } from 'node:crypto'
@@ -268,16 +269,16 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
   }
 
   // ---------- 回退本轮（删除最近一次用户输入 + LLM 输出） ----------
-  async function rollbackTurn(sessionId, chatId) {
+  async function rollbackTurn(sessionId, chatId, expectedTurn) {
     const chat = str(chatId) === '' ? await chatForSession(sessionId) : await readChat(chatId)
     if (chat === undefined) throw new Error('聊天不存在: ' + chatId)
     if (pendingRollbacks.has(chat.id)) throw new Error('正在回退本轮，请等待完成')
     pendingRollbacks.add(chat.id)
-    try { return await rollbackChat(chat) }
+    try { return await rollbackChat(chat, expectedTurn) }
     finally { pendingRollbacks.delete(chat.id) }
   }
 
-  async function rollbackChat(chat) {
+  async function rollbackChat(chat, requestedTurn) {
     await stopRollbackGeneration(chat)
     chat = await readChat(chat.id)
     const originalChat = structuredClone(chat)
@@ -321,6 +322,7 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
     if (assistantIndex < 0 || assistantIndex - 1 < 0) throw new Error('没有可回退的用户输入与正文组合')
     if (msgs[assistantIndex - 1] === null || typeof msgs[assistantIndex - 1] !== 'object' || msgs[assistantIndex - 1].role !== 'user') throw new Error('最后一组消息不是用户输入 + 正文')
     const expectedTurn = Number(msgs[assistantIndex].turn)
+    if (Number(requestedTurn) > 0 && Number(requestedTurn) !== expectedTurn) throw new Error('回退目标已经变化，请刷新后确认实际轮次')
     if (expectedTurn > 0 && hiddenTurn !== expectedTurn && hiddenTurn !== Number(regeneratedDshTurns[String(expectedTurn)])) {
       throw new Error('该轮已不在当前模型上下文中，不能直接回退；历史正文仍可通过 history_recall 检索')
     }
@@ -380,8 +382,16 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
         try { worker.cancel({ kind: 'parent' }) } catch { /* Old results are rejected by the new branch. */ }
       }
     }
+    const undo = {
+      version: 1, id: randomUUID(), ready: false, turn: expectedTurn || hiddenTurn,
+      beforeRevision: Number(originalChat._storageRevision || 0),
+      ...(Number(originalChat._storageRevision || 0) ? {} : { before: structuredClone(originalChat) }),
+      foreground: { sessionId: session.id || chat.sessionId, nodes: [...nodes] }, background: []
+    }
+    if (undo.before) delete undo.before.rollbackUndo
     const rolled = storyTimeline.apply({ chat, intent: rollbackIntent })
     chat = rolled.chat
+    chat.rollbackUndo = undo
     chat.regenInProgress = false
     if (rollbackCommitKey !== '') delete chat.nativeCommits[rollbackCommitKey]
     chat.tavernHelperLifecycleRevision = Math.max(0, Number(chat.tavernHelperLifecycleRevision) || 0) + 1
@@ -449,7 +459,10 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
           } finally { clearTimeout(timeout) }
         }
         if (typeof sessions.flush !== 'function') throw new Error('当前宿主未提供后台会话保存接口')
+        const checkpoint = { sessionId: participant.sessionId, nodes: [...background.surface.nodes] }
         rewindBackgroundSurface(background, participant.rewindTo)
+        checkpoint.afterCount = sessionEvents(background).length
+        undo.background.push(checkpoint)
         await sessions.flush(background)
       } catch (error) {
         rollbackWarning = [rollbackWarning, '正文已回退，后台上下文回退未完成：' + str(error?.message || error)].filter(Boolean).join('；')
@@ -464,11 +477,82 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
     try {
       await tavernScriptHostAdapter.dispatchEvent({ sessionId: chat.sessionId, chat, name: 'MESSAGE_DELETED', args: [(chat.messages || []).length] })
     } catch (error) { rollbackWarning = '回退已完成，但脚本联动失败：' + str(error?.message || error) }
+    try {
+      if (typeof sessions.flush === 'function') await sessions.flush(session)
+      chat = await updateChat(chat.id, current => {
+        if (current.timeline?.branchId !== chat.timeline?.branchId || current.timeline?.revision !== chat.timeline?.revision) return current
+        current.rollbackUndo = { ...undo, ready: true, branchId: current.timeline.branchId, revision: current.timeline.revision,
+          lifecycleRevision: Number(current.tavernHelperLifecycleRevision || 0),
+          storageRevision: Number(current._storageRevision || 0) + 1,
+          foreground: { ...undo.foreground, afterCount: sessionEvents(session).length } }
+        return current
+      }, { source: 'rollback.undo-point' })
+    } catch (error) { rollbackWarning = [rollbackWarning, '回退已完成，但撤销恢复点保存失败：' + str(error?.message || error)].filter(Boolean).join('；') }
     const result = await view(chat, card)
     if (rollbackWarning !== '') result.rollbackWarning = rollbackWarning
     result.rolledBack = { hiddenTurn: hiddenTurn, removedUserText: removedUserText, removedAssistantText: removedAssistantText }
     return result
   }
 
-  return Object.freeze({ regenerate: regenBody, rollback: rollbackTurn })
+  async function undoRollback(sessionId, chatId) {
+    const chat = str(chatId) === '' ? await chatForSession(sessionId) : await readChat(chatId)
+    if (!chat || pendingRollbacks.has(chat.id)) throw new Error('没有可撤销的回退，或正在处理回退')
+    const agent = sessions.get(chat.sessionId)
+    if (agent?.phase?.kind === 'running' || !canUndoRollback(chat, agent?.session)) throw new Error('撤销回退已失效：对话已有新操作，请刷新页面')
+    pendingRollbacks.add(chat.id)
+    const handles = []
+    const changed = []
+    let committed = false
+    try {
+      const saved = chat.rollbackUndo
+      const before = saved.before || await readChatRevision(chat.id, saved.beforeRevision)
+      if (!before || before.id !== chat.id) throw new Error('找不到回退前的恢复点')
+      const targets = [{ session: agent.session, saved: saved.foreground }]
+      for (const checkpoint of saved.background) {
+        let worker = sessions.get(checkpoint.sessionId)
+        let background = worker?.session || sessions.getSession?.(checkpoint.sessionId)
+        if (!background && sessions.resume) {
+          const handle = await sessions.resume(checkpoint.sessionId)
+          handles.push(handle); worker = handle.agent; background = worker?.session
+        }
+        if (!background || worker?.phase?.kind === 'running' || sessionEvents(background).length !== checkpoint.afterCount) throw new Error('后台上下文已有变化，不能撤销回退')
+        targets.push({ session: background, saved: checkpoint })
+      }
+      for (const target of targets) preflightSurfaceRestore(target.session, target.saved.nodes)
+      for (const target of targets) {
+        changed.push({ session: target.session, nodes: [...target.session.surface.nodes] })
+        restoreSurface(target.session, target.saved.nodes)
+        if (sessions.flush) await sessions.flush(target.session)
+      }
+      const restored = await updateChat(chat.id, current => {
+        assertRollbackSnapshot(current, chat)
+        const result = storyTimeline.apply({ chat: current, intent: { kind: 'replacement.abort', restoreChat: before } }).chat
+        delete result.rollbackUndo
+        result.tavernHelperLifecycleRevision = Number(current.tavernHelperLifecycleRevision || 0) + 1
+        for (const participant of Object.values(result.timeline.participants)) {
+          const target = targets.find(item => item.saved.sessionId === participant.sessionId)
+          if (target) Object.assign(participant, { status: 'current', syncedRevision: result.timeline.revision,
+            boundary: target.session.surface.nodes.at(-1) ?? -1, rewindTo: null })
+        }
+        return result
+      }, { source: 'rollback.undo' })
+      committed = true
+      const result = await view(restored, await readChatCard(restored))
+      result.undoneRollback = { turn: saved.turn }
+      return result
+    } catch (error) {
+      if (committed) throw new Error('已撤销回退，但界面刷新失败：' + str(error?.message || error), { cause: error })
+      // A rejected Chat write must not leave the model on the restored branch.
+      for (const target of changed.reverse()) {
+        restoreSurface(target.session, target.nodes)
+        if (sessions.flush) await sessions.flush(target.session)
+      }
+      throw error
+    } finally {
+      pendingRollbacks.delete(chat.id)
+      for (const handle of handles) await handle.dispose()
+    }
+  }
+
+  return Object.freeze({ regenerate: regenBody, rollback: rollbackTurn, undoRollback })
 }

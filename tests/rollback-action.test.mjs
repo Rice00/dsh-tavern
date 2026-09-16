@@ -7,7 +7,7 @@ const source = await readFile(new URL('../tavern-plugin/lib/client.js', import.m
 const component = source.slice(source.indexOf('function CandidateAction('), source.indexOf('function CandidateDockActions('))
 
 function harness() {
-  let running = true, activity = { phase: 'idle', busy: false, role: '' }, regen = null, fail = false, warning = '', canRollback = true
+  let running = true, activity = { phase: 'idle', busy: false, role: '' }, regen = null, fail = false, warning = '', canRollback = true, undoTurn = null
   const states = [], calls = []
   let cursor = 0
   const context = {
@@ -22,12 +22,12 @@ function harness() {
     },
     useCandidatePanel: () => null, useRegenPanel: () => regen,
     useTavernSessionMode: () => 'story', latestTavernAssistantMessageId: () => 'reply',
-    useLiveTavernView: () => ({ view: { canRollback } }),
+    useLiveTavernView: () => ({ view: { canRollback, undoRollbackTurn: undoTurn } }),
     useTavernCoordination: () => ({ view: { activity } }),
     describeTavernActivity: value => value, isPlayMode: () => true,
     window: { confirm: () => { calls.push('confirm'); return true } },
     rpc: async () => { calls.push('rpc'); if (fail) throw new Error('本次回复未完成'); return { view: { rollbackWarning: warning } } },
-    historyProjection: { rolledBack: () => calls.push('project') },
+    historyProjection: { rolledBack: () => calls.push('project'), restored: () => calls.push('restore') },
     setCandidatePanel() {}, setRegenPanel() {}, setCandidateGuidePanel() {},
     liveTavernView: { invalidate: () => calls.push('refresh-view') },
     tavernCoordination: { invalidate: () => calls.push('refresh-activity') },
@@ -35,9 +35,11 @@ function harness() {
     tavernErrorHub: { report: (name, error) => calls.push(name + ': ' + error.message) },
     TavernCompactionAction: function TavernCompactionAction() {}
   }
-  const actions = vm.runInNewContext(component + '; ({ CandidateAction, TavernRollbackAction, TavernMoreActions })', context)
+  const actions = vm.runInNewContext(component + '; ({ CandidateAction, TavernRollbackAction, TavernUndoRollbackAction, TavernMoreActions })', context)
   return {
     calls,
+    undoTurn(value) { undoTurn = value },
+    undo() { cursor = 0; return actions.TavernUndoRollbackAction({ sessionId: 'session', useSession: select => select({ running }) }) },
     playerRound(value) { canRollback = value },
     running(value) { running = value },
     background(value) { activity = value ? { phase: 'running', busy: true, role: 'settlement' } : { phase: 'idle', busy: false, role: '' } },
@@ -87,7 +89,7 @@ test('更多菜单收起回退和压缩，并可再次关闭', () => {
   assert.equal(more.children[0].props['aria-expanded'], true)
   assert.equal(more.children[1].props.hidden, false)
   assert.equal(more.children[1].props.role, 'menu')
-  assert.deepEqual(more.children[1].children.map(child => child.type.name || child.children[0]), ['TavernStopBackgroundAction', 'TavernEditBodyAction', 'TavernRollbackAction', 'TavernCompactionAction'])
+  assert.deepEqual(more.children[1].children.map(child => child.type.name || child.children[0]), ['TavernStopBackgroundAction', 'TavernEditBodyAction', 'TavernRollbackAction', 'TavernUndoRollbackAction', 'TavernCompactionAction'])
 })
 
 test('实际回退组件在前台、后台和重生成期间禁用，完成后允许点击', async () => {
@@ -143,4 +145,19 @@ test('脚本联动警告保留成功回退投影，不显示为回退失败', as
   assert.ok(h.calls.includes('project'))
   assert.ok(h.calls.includes('回退提示: 回退已完成，但脚本联动失败'))
   assert.ok(!h.calls.some(call => call.startsWith('回退本轮:')))
+})
+
+test('回退到开场白后仍可撤销，运行期间禁用', async () => {
+  const h = harness()
+  h.running(false); h.playerRound(false)
+  assert.equal(h.undo(), null)
+  h.undoTurn(2)
+  assert.match(h.undo().children[0], /恢复第 2 轮/)
+  h.running(true)
+  assert.equal(h.undo().props.disabled, true)
+  await h.undo().props.onClick()
+  assert.deepEqual(h.calls, [])
+  h.running(false)
+  await h.undo().props.onClick()
+  assert.ok(h.calls.includes('restore'))
 })

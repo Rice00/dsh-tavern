@@ -8221,10 +8221,31 @@ window.__ModuleLoader__.load({
 				if (adopted && Number(adopted.syntheticTurn) > 0) forgetHiddenTurn(HIDDEN_REGEN_USER_TURNS_KEY, sessionId, Number(adopted.syntheticTurn));
 				apply(sessionId, view && view.suppressedDshTurns, view && view.regeneratedDshTurns);
 			}
+            function restored(sessionId, view) {
+                const turn = Number(view && view.undoneRollback && view.undoneRollback.turn);
+                const turns = [turn].concat(Object.values(view && view.regeneratedDshTurns || {})).map(String);
+                for (const restoredTurn of turns) {
+                    forgetHiddenTurn(ROLLED_BACK_TURNS_KEY, sessionId, restoredTurn);
+                    forgetHiddenTurn(HIDDEN_TURNS_KEY, sessionId, restoredTurn);
+                }
+                const tails = root().querySelectorAll('[data-chat-flow-kind="turn-tail"]');
+                for (const tail of tails) {
+                    if (!turns.includes(tailTurnOf(tail))) continue;
+                    tail.style.display = "";
+                    const owner = tail.getAttribute("data-chat-turn");
+                    let row = tail.previousElementSibling;
+                    while (row && row.getAttribute("data-chat-flow-kind") !== "turn-tail") {
+                        const rowTurn = row.getAttribute("data-chat-turn");
+                        if (owner && rowTurn && owner !== rowTurn) break;
+                        row.style.display = ""; row = row.previousElementSibling;
+                    }
+                }
+                apply(sessionId, view && view.suppressedDshTurns, view && view.regeneratedDshTurns);
+            }
 			function rolledBack(sessionId, view) {
 				apply(sessionId, view && view.suppressedDshTurns, view && view.regeneratedDshTurns);
 			}
-			return Object.freeze({ apply: apply, regenerated: regenerated, rolledBack: rolledBack });
+			return Object.freeze({ apply: apply, regenerated: regenerated, rolledBack: rolledBack, restored: restored });
 		}
 		function applyBodyRegenerationResult(options) {
 			options.liveTavernView.setView(options.sessionId, options.view);
@@ -8885,13 +8906,15 @@ window.__ModuleLoader__.load({
 			const canRollback = rollbackViewState.view && rollbackViewState.view.canRollback === true;
             const clearIncomplete = rollbackViewState.view && rollbackViewState.view.canClearIncompleteReply === true;
 			const regenBusy = regenPanelState !== null && regenPanelState.sessionId === props.sessionId && regenPanelState.phase === "loading";
+			const targetTurn = Number(rollbackViewState.view && rollbackViewState.view.rollbackTargetTurn) || 0;
+            const targetLabel = targetTurn > 0 ? "回退第 " + targetTurn + " 轮" : "回退本轮";
 			const blocked = rolling || frontRunning || regenBusy || activity.busy || settlementActive;
 			async function rollback() {
 				if (!canRollback || blocked) return;
-				if (!window.confirm(clearIncomplete ? "清除未完成回复？\n仅清除末尾失败或停止的回复，保留上一轮完整剧情和状态。" : "回退本轮？\n将删除你最近一次输入和这段 LLM 输出，并同步回退故事状态与剧本游标。")) return;
+				if (!window.confirm(clearIncomplete ? "清除未完成回复？\n仅清除末尾失败或停止的回复，保留上一轮完整剧情和状态。" : targetLabel + "？\n将删除这一轮的玩家输入和正文，并回退对应状态。当前未输出正文时，目标仍可能是上一轮已完成的对话。")) return;
 				setRolling(true);
 				try {
-					const result = await rpc("rollbackTurn", {}, props.sessionId);
+					const result = await rpc("rollbackTurn", { expectedTurn: clearIncomplete ? null : targetTurn }, props.sessionId);
 					historyProjection.rolledBack(props.sessionId, result && result.view);
 					setCandidatePanel(null);
 					setRegenPanel(null);
@@ -8903,8 +8926,29 @@ window.__ModuleLoader__.load({
 				} finally { setRolling(false); liveTavernView.invalidate(props.sessionId); tavernCoordination.invalidate(props.sessionId); }
 			}
 			if (!canRollback) return null;
-			return React.createElement("button", { className: "danger", role: "menuitem", disabled: blocked, title: blocked ? "请等待当前生成或后台处理完成后再回退" : clearIncomplete ? "清除未完成回复，保留已完成剧情" : "删除最近一次用户输入和这段 LLM 输出", onClick: rollback }, rolling ? "处理中…" : clearIncomplete ? "清除未完成回复" : "回退本轮");
+			return React.createElement("button", { className: "danger", role: "menuitem", disabled: blocked, title: blocked ? "请等待当前生成或后台处理完成后再回退" : clearIncomplete ? "清除未完成回复，保留已完成剧情" : "删除最近一次用户输入和这段 LLM 输出", onClick: rollback }, rolling ? "处理中…" : clearIncomplete ? "清除未完成回复" : targetLabel);
 		}
+
+        function TavernUndoRollbackAction(props) {
+            const [busy, setBusy] = React.useState(false);
+            const running = props.useSession(function (state) { return state.running === true; });
+            const live = useLiveTavernView(props.sessionId, "undo:" + String(running));
+            const turn = Number(live.view && live.view.undoRollbackTurn) || 0;
+            if (!turn) return null;
+            async function undo() {
+                if (busy || running) return;
+                setBusy(true);
+                try {
+                    const result = await rpc("undoRollbackTurn", {}, props.sessionId);
+                    historyProjection.restored(props.sessionId, result && result.view);
+                    setCandidatePanel(null); setRegenPanel(null); setCandidateGuidePanel(null);
+                    notifyTavernDataChanged(["sessions"], "play-controls");
+                } catch (error) { tavernErrorHub.report("撤销回退", error); }
+                finally { setBusy(false); liveTavernView.invalidate(props.sessionId); tavernCoordination.invalidate(props.sessionId); }
+            }
+            return React.createElement("button", { role: "menuitem", disabled: busy || running, onClick: undo,
+                title: "恢复第 " + turn + " 轮正文和状态；新的操作会使此恢复点失效" }, busy ? "恢复中…" : "撤销回退（恢复第 " + turn + " 轮）");
+        }
 
 		const bodyEditPanel = { value: null, listeners: new Set() };
 		function setBodyEditPanel(value) {
@@ -9153,6 +9197,7 @@ window.__ModuleLoader__.load({
                     React.createElement(TavernStopBackgroundAction, Object.assign({}, props, { inMenu: true })),
 					React.createElement(TavernEditBodyAction, props),
 					React.createElement(TavernRollbackAction, props),
+                    React.createElement(TavernUndoRollbackAction, props),
 					React.createElement(TavernCompactionAction, Object.assign({}, props, { inMenu: true })))
 			);
 		}

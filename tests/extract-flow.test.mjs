@@ -137,7 +137,7 @@ test('游玩中可修改玩家称呼，Tavern 不接管正文发送状态', () =
 
 test('本局设置显示本局预设并通过已有接口切换', () => {
   const player = between(clientSource, 'function TavernConversationPreset', 'function TavernConversationSettingsTab')
-  const view = between(serverSource, 'async function view(chat, card)', 'function replyProjectionsOf')
+  const view = between(serverSource, 'async function view(chat, card,', 'function replyProjectionsOf')
 
   assert.match(view, /groupOfMode\(chat\.mode\) === 'play' && chat\.runtimePresetSnapshot/)
   assert.match(view, /runtimePreset: activePresetSnapshot === null \? null : \{ id: activePresetSnapshot\.presetPath, name: activePresetSnapshot\.presetName \}/)
@@ -268,11 +268,11 @@ test('Tavern 错误面板只保留最新错误，左侧栏连接恢复后撤销�
 })
 
 test('展示投影通过正式消息 renderer 渲染，并在配置变化后重算历史', () => {
-  const view = between(serverSource, 'async function view(chat, card)', 'function replyProjectionsOf')
+  const view = between(serverSource, 'async function view(chat, card,', 'function replyProjectionsOf')
   const renderer = between(clientSource, 'function createTavernAssistantRendererFeatureModule', 'function createTavernShellFeatureModule')
 
   assert.match(serverSource, /function replyProjectionsOf\(chat\)/)
-  assert.match(view, /projectRuntimeReplyHistory\(chat\.messages/)
+  assert.match(view, /incrementalReplyView\.project\(persistedProjection \? chat/)
   assert.match(view, /replyProjections: replyDisplay\.projections/)
   assert.match(view, /inputSources/)
   assert.match(renderer, /key: "assistant-step"/)
@@ -349,7 +349,7 @@ test('酒馆状态读取 MVU 回执时使用当前模块可用的复制能力', 
 test('失败的最新后台结算可以按原任务类型原地重试', () => {
 	const retry = between(serverSource, 'async function retrySettlement', 'async function pullBackgroundCycle')
 	const settlement = between(serverSource, 'async function runSettlement', 'function queueSettlement')
-	const view = between(serverSource, 'async function view(chat, card)', 'function replyProjectionsOf')
+	const view = between(serverSource, 'async function view(chat, card,', 'function replyProjectionsOf')
 	assert.match(retry, /只能重试当前最新正文的后台结算/)
 	assert.match(retry, /target\.message\.mvu = \{ pending: true/)
 	assert.match(retry, /void queueSettlement\(chat\.id\)/)
@@ -1139,7 +1139,7 @@ test('人物卡持久状态栏由酒馆状态面板承载，不再覆盖对话�
 
 test('本局人物设计由用户手动触发，档案以只读折叠项进入酒馆状态', () => {
 	const statusPanel = between(clientSource, 'function TavernStatusPanel', 'function TavernStatusTab')
-	const view = between(serverSource, 'async function view(chat, card)', 'function replyProjectionsOf')
+	const view = between(serverSource, 'async function view(chat, card,', 'function replyProjectionsOf')
 	assert.match(view, /characterDesigns: projectCharacterDesignDocument\(chat\.characterDesignDocument\)/)
 	assert.match(statusPanel, /"人物设计档案（"/)
 	assert.match(statusPanel, /view\.characterDesigns\.characters\.map/)
@@ -1152,7 +1152,7 @@ test('本局人物设计由用户手动触发，档案以只读折叠项进入�
 
 test('酒馆状态只服务游玩模式，卡片工作台面板暂不复用该侧栏', () => {
   const status = between(clientSource, 'function TavernStatusPanel', 'function TavernStatusTab')
-  const view = between(serverSource, 'async function view(chat, card)', 'function replyProjectionsOf')
+  const view = between(serverSource, 'async function view(chat, card,', 'function replyProjectionsOf')
   assert.match(status, /if \(view\.mode === "card"\) return null;/)
   assert.match(view, /worldBookError: chat\.worldBookError \|\| null/)
   assert.match(status, /世界书召回失败：/)

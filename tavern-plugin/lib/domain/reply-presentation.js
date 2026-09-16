@@ -342,10 +342,12 @@ export function createReplyHistoryProjector({ maxCacheBytes = 16 * 1024 * 1024, 
     }
     return item.value
   }
-  function projectHistory(messages, options = {}) {
-    const signature = digest(JSON.stringify({ regexScripts: options.regexScripts || [],
+  function signatureOf(options) {
+    return digest(JSON.stringify({ regexScripts: options.regexScripts || [],
       charName: options.charName, userName: options.macroState?.userName,
       placement: options.placement, isEdit: options.isEdit, depth: options.depth }))
+  }
+  function projectHistory(messages, options = {}, signature = signatureOf(options)) {
     const projections = []
     let inferredTurn = 1
     let latestSourceBacked = false
@@ -390,6 +392,10 @@ export function createReplyHistoryProjector({ maxCacheBytes = 16 * 1024 * 1024, 
     }
 
     return { projections, presentation: null, latestSourceBacked }
+  }
+  projectHistory.prepare = options => {
+    const snapshot = structuredClone(options), signature = signatureOf(snapshot)
+    return messages => projectHistory(messages, snapshot, signature)
   }
   projectHistory.cacheStats = () => ({ entries: cache.size, estimatedBytes: bytes, hits, misses, copies })
   return projectHistory

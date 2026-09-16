@@ -360,3 +360,23 @@ test('changed-floor synchronization equals full projection through append, varia
  received=applyTemplateSync(received,await adapter.readFullPromptTemplateState('session',received.cursor))
  assert.deepEqual(received.state,(await adapter.readFullPromptTemplateState('session')).state)
 })
+
+test('回退改变生命周期后旧模板保存被拒，刷新可恢复并保存新修改', async t => {
+  const { adapter, persistence } = await fixture(t)
+  const connection = await createNativeTemplateConnection({ sessionId: 'session', services: { onPersistenceError() {} }, rpc: async (method, args) => {
+    if (method === 'getFullPromptTemplateState') return adapter.readFullPromptTemplateState(args.sessionId, args.cursor)
+    if (method === 'saveFullPromptTemplateState') return adapter.saveFullPromptTemplateState(args.sessionId, args.state)
+    throw new Error(method)
+  } })
+  connection.snapshot.chat[0].variables[0].hp = 99
+  await persistence.update('chat', chat => { chat.tavernHelperLifecycleRevision++; chat.messages[0].variables[0].hp = 8; return chat })
+  await assert.rejects(connection.callbacks.saveChatConditional(connection.snapshot), /过期|生命周期/)
+  await assert.rejects(connection.flush(), /过期|生命周期/)
+  assert.equal((await persistence.read('chat')).messages[0].variables[0].hp, 8)
+  await connection.refresh()
+  await connection.flush()
+  assert.equal(connection.snapshot.chat[0].variables[0].hp, 8)
+  connection.snapshot.chat[0].variables[0].hp = 9
+  await connection.callbacks.saveChatConditional(connection.snapshot)
+  assert.equal((await persistence.read('chat')).messages[0].variables[0].hp, 9)
+})

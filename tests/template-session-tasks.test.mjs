@@ -96,3 +96,25 @@ test('回执传输失败不再次发送失败回执或执行模板',async()=>{
   assert.equal(h.trace.filter(x=>x.startsWith('project:')).length,1)
   h.runtime.dispose();await rejected;await h.tasks.dispose()
 })
+
+test('一次保存冲突后可重新同步历史并处理新任务，不重放失败模板', async () => {
+  const saveGate = deferred(), h = await harness({ saveGate })
+  const output = h.runtime.forSession('s').render('save')
+  const rejected = assert.rejects(output, /模板读取版本已过期/)
+  await new Promise(resolve => setImmediate(resolve))
+  const draining = h.tasks.processNext()
+  await new Promise(resolve => setImmediate(resolve))
+  saveGate.reject(new Error('模板读取版本已过期'))
+  await draining
+  await rejected
+  assert.equal(h.state().chat[0].variables[0].hp, 7)
+  await h.tasks.synchronize()
+  const next = h.runtime.forSession('s').render('fresh')
+  await new Promise(resolve => setImmediate(resolve))
+  await h.tasks.processNext()
+  assert.equal((await next).text, 'render')
+  assert.equal(h.trace.filter(value => value === 'saveFullPromptTemplateState').length, 1)
+  assert.equal(h.state().chat[0].variables[0].hp, 7)
+  await h.tasks.dispose()
+  h.runtime.dispose()
+})

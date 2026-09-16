@@ -95,7 +95,11 @@ export async function createNativeTemplateConnection({ sessionId, rpc, services 
     })
   }
   return {snapshot,callbacks,flush:()=>latest,displayChanges:()=>pendingRows,acknowledgeDisplay:()=>{pendingRows=new Set()},async refresh() {
-    await latest
+    const previousSave = latest
+    // flush still reports the failed operation. A new explicit refresh must
+    // drain the queue and reload authoritative state instead of replaying that
+    // same rejection forever. Never retry the template's side effects.
+    await saves
     const response=await rpc('getFullPromptTemplateState',{sessionId,cursor:initial.cursor})
     if (!response.delta) pendingRows=null
     else for(const [index] of response.delta.chat.set) changedRow(index)
@@ -104,6 +108,7 @@ export async function createNativeTemplateConnection({ sessionId, rpc, services 
     settingsBaseline=clone(initial.environment.extension_settings.EjsTemplate)
     globalBaseline=clone(initial.environment.extension_settings.variables?.global)
     restoreSnapshot(snapshot,{...initial.state,...initial.environment},changedRow)
+    if (latest === previousSave) latest = saves
     return snapshot
   }}
 }

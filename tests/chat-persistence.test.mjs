@@ -272,3 +272,41 @@ test('journal 的过期写入按需读取持久版本，不长期保留每轮完
   await persistence.write(a)
   await assert.rejects(persistence.write(b),error=>error.code==='DSH_TAVERN_CHAT_CONFLICT')
 })
+
+for (const anotherToggle of [false, true]) test('复用已合并的草稿不会撤销隐藏状态或产生伪冲突：' + anotherToggle, async () => {
+  const app = harness({ id: 'chat-1', messages: [], hiddenDshErrorTurns: [], _storageRevision: 1 })
+  const draft = await app.persistence.read('chat-1')
+  await app.persistence.update('chat-1', current => ({ ...current, hiddenDshErrorTurns: [1] }))
+  draft.foregroundError = { turn: 2 }
+  await app.persistence.write(draft)
+  if (anotherToggle) await app.persistence.update('chat-1', current => ({ ...current, hiddenDshErrorTurns: [1, 2] }))
+  draft.foregroundError = { turn: 3 }
+  await app.persistence.write(draft)
+  assert.deepEqual(app.stored().hiddenDshErrorTurns, anotherToggle ? [1, 2] : [1])
+})
+
+test('保存合并同步嵌套字段和删除，同时保留草稿已有对象引用', async () => {
+  const app = harness({ id: 'chat-1', settings: { old: 1, local: 0 }, _storageRevision: 1 })
+  const draft = await app.persistence.read('chat-1'), settings = draft.settings
+  await app.persistence.update('chat-1', current => { delete current.settings.old; current.settings.remote = 2; return current })
+  draft.settings.local = 1
+  await app.persistence.write(draft)
+  assert.equal(draft.settings, settings)
+  assert.deepEqual(settings, { local: 1, remote: 2 })
+  settings.local = 3
+  await app.persistence.write(draft)
+  assert.deepEqual(app.stored().settings, { local: 3, remote: 2 })
+})
+
+test('保存等待期间的新编辑不被合并结果覆盖', async () => {
+  const app = harness({ id: 'chat-1', settings: { local: 0, remote: 0 }, _storageRevision: 1 })
+  const draft = await app.persistence.read('chat-1')
+  await app.persistence.update('chat-1', current => { current.settings.remote = 2; return current })
+  draft.settings.local = 1
+  const pending = app.persistence.write(draft)
+  draft.settings.local = 3
+  await pending
+  assert.deepEqual(draft.settings, { local: 3, remote: 2 })
+  await app.persistence.write(draft)
+  assert.deepEqual(app.stored().settings, { local: 3, remote: 2 })
+})

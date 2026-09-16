@@ -93,6 +93,23 @@ function mergeValue(base, latest, desired, path, chatId) {
   throw conflict(chatId, path)
 }
 
+// A reused draft must describe its new storage revision, including fields
+// merged from other writers. Preserve edits made by its owner during the await.
+function refreshDraft(input, desired, saved) {
+  for (const key of new Set([...Object.keys(desired), ...Object.keys(saved)])) {
+    const before = Object.hasOwn(desired, key) ? desired[key] : MISSING
+    const after = Object.hasOwn(saved, key) ? saved[key] : MISSING
+    if (same(before, after)) continue
+    const current = Object.hasOwn(input, key) ? input[key] : MISSING
+    if (object(current) && object(before) && object(after)) {
+      refreshDraft(current, before, after)
+    } else if (same(current, before)) {
+      if (after === MISSING) delete input[key]
+      else input[key] = clone(after)
+    }
+  }
+}
+
 /**
  * Persist the authoritative Tavern Chat with optimistic three-way merging.
  * Callers keep a small read/write interface; revision tracking, stale-write
@@ -185,6 +202,7 @@ export function createChatPersistence(options = {}) {
       return next
     }, metadata)
     const normalized = remember(normalize(clone(saved)))
+    refreshDraft(input, desired, normalized)
     input[STORAGE_REVISION] = normalized[STORAGE_REVISION]
     input.updatedAt = normalized.updatedAt
     return normalized

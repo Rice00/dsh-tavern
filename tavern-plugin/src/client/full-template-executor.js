@@ -69,6 +69,8 @@ function createFullTemplateExecutor({ window: hostWindow, rpc: invoke, executeSl
     const old = owner; owner = null;
     hostWindow.removeEventListener('message', old.receive);
     hostWindow.removeEventListener('dsh-template-settings', old.open);
+    for (const pending of old.pending.values()) { hostWindow.clearTimeout(pending.timer); pending.controller.abort(); }
+    old.pending.clear();
     old.frame.remove();
     void invoke('releaseFullTemplateRuntime', { runtimeId: old.token }, old.sessionId).catch(() => {});
   }
@@ -81,18 +83,28 @@ function createFullTemplateExecutor({ window: hostWindow, rpc: invoke, executeSl
     frame.hidden = true;
     frame.title = '完整提示词模板';
     frame.setAttribute('sandbox', 'allow-scripts allow-same-origin');
-    const record = { frame, token, sessionId };
+    const record = { frame, token, sessionId, pending: new Map() };
     record.receive = async event => {
       const data = event.data;
-      if (owner !== record || event.source !== frame.contentWindow || data?.token !== token || !['full-template-rpc','template-close'].includes(data.type)) return;
+      if (owner !== record || event.source !== frame.contentWindow || data?.token !== token || !['full-template-rpc','full-template-cancel','template-close'].includes(data.type)) return;
       if(data.type === 'template-close') { frame.hidden=true; return; }
+      if (data.type === 'full-template-cancel') { record.pending.get(data.requestId)?.controller.abort(); return; }
+      const controller = new hostWindow.AbortController();
+      let expired = false;
+      // The iframe deadline alone only rejects its Promise. Abort the real fetch
+      // too, or retries can consume every HTTP connection and starve heartbeats.
+      const timer = hostWindow.setTimeout(() => { expired = true; controller.abort(); }, 15000);
+      record.pending.set(data.requestId, { controller, timer });
       try {
         if (!['getFullTemplateRuntimeInfo','getFullPromptTemplateState','saveFullPromptTemplateState','saveFullPromptTemplateSettings','saveFullPromptTemplateGlobals','countFullTemplateTokens','heartbeatFullTemplateRuntime','claimFullTemplateWork','startFullTemplateWork','completeFullTemplateWork','getFullTemplateWorldbook','replaceFullTemplateWorldbook','executeTemplateHostCommand'].includes(data.method)) throw new Error('Unsupported template RPC');
-        const result = data.method === 'executeTemplateHostCommand' ? {pipe: await executeSlash(data.args.text, sessionId, {waitForCompletion:false}).then(value => typeof value === 'string' ? value : '')} : await invoke(data.method, data.args || {}, sessionId);
+        const result = data.method === 'executeTemplateHostCommand' ? {pipe: await executeSlash(data.args.text, sessionId, {waitForCompletion:false}).then(value => typeof value === 'string' ? value : '')} : await invoke(data.method, data.args || {}, sessionId, { signal: controller.signal });
         if (result?.ok === false) throw new Error(result.error || 'Template RPC failed');
         if (owner === record) frame.contentWindow.postMessage({ token, requestId: data.requestId, result }, '*');
       } catch (error) {
-        if (owner === record) frame.contentWindow.postMessage({ token, requestId: data.requestId, error: String(error.message || error) }, '*');
+        if (owner === record) frame.contentWindow.postMessage({ token, requestId: data.requestId, error: expired ? '模板 RPC 超时：' + data.method : String(error.message || error) }, '*');
+      } finally {
+        hostWindow.clearTimeout(timer);
+        record.pending.delete(data.requestId);
       }
     };
     record.open = event => { if(event?.detail)event.detail.handled=true; frame.hidden=false; Object.assign(frame.style,{position:'fixed',inset:'3vh 3vw',width:'94vw',height:'94vh',zIndex:'2147483000',border:'1px solid #777',borderRadius:'12px'});frame.contentWindow.postMessage({token,type:'template-open'},'*'); };
@@ -108,7 +120,7 @@ import * as YAML from '/api/dsh-tavern/vendor/runtime-assets/yaml/index.mjs';
 const token=${JSON.stringify(token)},sessionId=${JSON.stringify(sessionId)},runtimeId=token;
 let sequence=0,context,plugin,panel,templateHost,dirty=true,panelRequested=false,lastSync=0;const pending=new Map();
 const idleWait=(${createTemplateIdleWait.toString()})();
-const rpc=(method,args={})=>new Promise((resolve,reject)=>{const requestId=++sequence;const timer=setTimeout(()=>{pending.delete(requestId);reject(new Error('模板 RPC 超时：'+method))},15000);pending.set(requestId,{resolve,reject,timer});parent.postMessage({type:'full-template-rpc',token,requestId,method,args},'*')});
+const rpc=(method,args={})=>new Promise((resolve,reject)=>{const requestId=++sequence;const timer=setTimeout(()=>{pending.delete(requestId);parent.postMessage({type:'full-template-cancel',token,requestId},'*');reject(new Error('模板 RPC 超时：'+method))},15000);pending.set(requestId,{resolve,reject,timer});parent.postMessage({type:'full-template-rpc',token,requestId,method,args},'*')});
 addEventListener('message',event=>{if(event.source!==parent||event.data?.token!==token)return;const data=event.data;if(data.type==='template-dirty'){dirty=true;idleWait.wake();return}if(data.type==='template-open'){panelRequested=true;idleWait.wake();return}const item=pending.get(data.requestId);if(!item)return;pending.delete(data.requestId);clearTimeout(item.timer);data.error?item.reject(new Error(data.error)):item.resolve(data.result)});
 const heartbeat=(${createTemplateHeartbeat.toString()})({rpc,runtimeId});
 addEventListener('pagehide',()=>heartbeat.dispose(),{once:true});

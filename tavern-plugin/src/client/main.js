@@ -3739,10 +3739,10 @@ window.__ModuleLoader__.load({
 			const signals = options && options.signals || tavernSessionSignals;
 			const invalidate = options && options.invalidate || function (sessionId) { liveTavernView.invalidate(sessionId); };
 			const createRuntime = options && options.createRuntime || createTavernHelperScriptRuntime;
-			const requestTimeoutMs = Math.max(100, Number(options && (options.requestTimeoutMs || options.pollRequestTimeoutMs)) || 3000);
+			const requestTimeoutMs = Math.max(100, Number(options && (options.requestTimeoutMs || options.pollRequestTimeoutMs)) || 15000);
 			const startHeartbeat = options && options.startHeartbeat || (typeof hostWindow.setInterval === "function" ? function (run, delay) { return hostWindow.setInterval(run, delay); } : null);
 			const stopHeartbeat = options && options.stopHeartbeat || (typeof hostWindow.clearInterval === "function" ? function (timer) { hostWindow.clearInterval(timer); } : function () {});
-			const heartbeatIntervalMs = Math.max(1000, Number(options && options.heartbeatIntervalMs) || 30000);
+			const heartbeatIntervalMs = Math.max(1000, Number(options && options.heartbeatIntervalMs) || 10000);
 			let runtime = null;
 			let lease = null;
 			let workStop = null;
@@ -3888,18 +3888,6 @@ window.__ModuleLoader__.load({
 					if (lease === currentLease && claimRequested) { claimRequested = false; void claimWork(); }
 				}
 			}
-			async function heartbeat() {
-				if (!lease || !runtime || !input) return;
-				const currentLease = lease;
-				try {
-					const result = await invokeWithDeadline("heartbeatTavernScriptRuntime", currentLease, runtime.inspect());
-					if (lease === currentLease && Boolean(result && result.active) !== active) {
-						active = Boolean(result && result.active);
-						runtime.sync(input.sessionId, active ? input.view : inactiveView(input.view));
-					}
-				}
-				catch (error) { if (lease === currentLease) console.warn("Tavern Script lease 心跳失败", error); }
-			}
 			function sync(sessionId, view) {
 				const nextSessionId = String(sessionId || "");
 				if (!nextSessionId || !hasScriptRuntime(view)) { dispose(); return; }
@@ -3907,7 +3895,8 @@ window.__ModuleLoader__.load({
 				const currentRuntime = ensureRuntime(nextSessionId);
 				input = { sessionId: nextSessionId, view: view };
 				currentRuntime.sync(nextSessionId, active ? view : inactiveView(view));
-				if (heartbeatTimer === null && startHeartbeat) heartbeatTimer = startHeartbeat(function () { void heartbeat(); }, heartbeatIntervalMs);
+				// Claim also renews the lease and recovers work when its signal was lost.
+				if (heartbeatTimer === null && startHeartbeat) heartbeatTimer = startHeartbeat(function () { void claimWork(); }, heartbeatIntervalMs);
 				void claimWork();
 			}
 			return Object.freeze({

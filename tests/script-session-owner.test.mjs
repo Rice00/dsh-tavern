@@ -12,13 +12,15 @@ function store(value) {
     set(next) { value = next; for (const fn of listeners) fn() } }
 }
 const view = revision => ({ tavernHelperScripts: [{ id: 'companion', content: 'void 0' }], tavernHelper: { stateRevision: revision } })
-function harness({ holdReleases = false } = {}) {
+function harness({ holdReleases = false, dropSignals = false, claimTimeoutMs } = {}) {
   const timers = new Map(), events = new Map(), runtimes = [], calls = []
+  const heartbeats = new Map()
   let sequence = 0, descriptor
   let allowRelease
   const releaseBarrier = holdReleases ? new Promise(resolve => { allowRelease = resolve }) : Promise.resolve()
   const window = { crypto: { randomUUID: () => 'lease-' + ++sequence },
     setTimeout(fn) { timers.set(++sequence, fn); return sequence }, clearTimeout(id) { timers.delete(id) },
+    setInterval(fn, delay) { heartbeats.set(++sequence, { fn, delay }); return sequence }, clearInterval(id) { heartbeats.delete(id) },
     addEventListener(type, fn) { events.set(type, fn) }, removeEventListener(type) { events.delete(type) },
     __ModuleLoader__: { load(d) { descriptor = d } } }
   vm.runInNewContext(source, { window, console })
@@ -35,7 +37,7 @@ function harness({ holdReleases = false } = {}) {
     update(id, value) { views.set(id, value); for (const sub of subscriptions) if (sub.active && sub.id === id) sub.fn({ phase: 'ready', view: value }) }
   }
   let runtimeWorkListener = null
-  const gate = createTavernScriptDispatch({ publishSignal(_sessionId, signal) { if (signal.kind === 'runtime-work') runtimeWorkListener?.(signal) } })
+  const gate = createTavernScriptDispatch({ claimTimeoutMs, publishSignal(_sessionId, signal) { if (!dropSignals && signal.kind === 'runtime-work') runtimeWorkListener?.(signal) } })
   const options = { window, sessions, liveView, transition,
     signals: { subscribe(_sessionId, kind, listener) { if (kind === 'runtime-work') runtimeWorkListener = listener; return () => { if (runtimeWorkListener === listener) runtimeWorkListener = null } } },
     createExecution: settings => client.createTavernScriptExecutionModule({ ...settings, window,
@@ -58,10 +60,72 @@ function harness({ holdReleases = false } = {}) {
           retryMvuLoad() { return true }, dispose() { this.disposed++ }, settings }
         runtimes.push(runtime); return runtime
       } }) }
-  return { client, options, list, transition, liveView, subscriptions, gate, runtimes, calls, events, uiStops,
+  return { client, options, list, transition, liveView, subscriptions, gate, runtimes, calls, events, uiStops, heartbeats,
+    heartbeat() { for (const { fn } of heartbeats.values()) fn() },
     allowReleases() { allowRelease?.() },
     async poll() { await new Promise(resolve => setImmediate(resolve)); await new Promise(resolve => setImmediate(resolve)) } }
 }
+
+test('丢失全部工作通知时，存活页面通过心跳领取同一任务，执行一次且不需要刷新', async t => {
+  const h = harness({ dropSignals: true, claimTimeoutMs: 100 })
+  const owner = h.client.createTavernScriptSessionOwner(h.options)
+  t.after(() => owner.dispose())
+  owner.start(); await h.poll()
+  const pending = h.gate.dispatch('A', 'MESSAGE_RECEIVED', [1])
+  await h.poll()
+  assert.equal(h.runtimes[0].emissions.length, 0, 'notification was deliberately lost')
+  h.heartbeat()
+  await h.poll()
+  assert.equal((await pending).handled, true, 'a live heartbeat must recover queued work before it expires')
+  h.heartbeat(); h.heartbeat(); await h.poll()
+  assert.deepEqual(h.runtimes[0].emissions, ['MESSAGE_RECEIVED'])
+  assert.equal(h.runtimes.length, 1)
+  owner.dispose()
+  assert.equal(h.heartbeats.size, 0)
+})
+
+test('执行期间的心跳合并领取请求，不重复执行变量事件', async t => {
+  const h = harness({ dropSignals: true })
+  const owner = h.client.createTavernScriptSessionOwner(h.options)
+  t.after(() => owner.dispose())
+  owner.start(); await h.poll()
+  let finish
+  h.runtimes[0].emit = async function (name, args) {
+    this.emissions.push(name)
+    await new Promise(resolve => { finish = resolve })
+    return args
+  }
+  const pending = h.gate.dispatch('A', 'MESSAGE_RECEIVED', [1])
+  h.heartbeat(); await h.poll()
+  const claims = h.calls.filter(call => call.method === 'claimTavernScriptWork').length
+  h.heartbeat(); h.heartbeat(); await h.poll()
+  assert.equal(h.calls.filter(call => call.method === 'claimTavernScriptWork').length, claims)
+  assert.deepEqual(h.runtimes[0].emissions, ['MESSAGE_RECEIVED'])
+  finish(); await h.poll()
+  assert.equal((await pending).handled, true)
+  assert.deepEqual(h.runtimes[0].emissions, ['MESSAGE_RECEIVED'])
+  assert.equal(h.calls.filter(call => call.method === 'completeTavernHelperEvent').length, 1)
+})
+
+test('默认领取窗口覆盖首次兜底心跳与短暂积压，离线仍有明确终点', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const h = harness({ dropSignals: true })
+  const owner = h.client.createTavernScriptSessionOwner(h.options)
+  t.after(() => owner.dispose())
+  owner.start(); await h.poll()
+  let ended = false
+  const pending = h.gate.dispatch('A', 'MESSAGE_RECEIVED', [1]).then(result => { ended = true; return result })
+  const interval = [...h.heartbeats.values()][0].delay
+  t.mock.timers.tick(interval + 8000)
+  await h.poll()
+  assert.equal(ended, false, 'first fallback plus a slow response must fit inside the claim budget')
+  h.heartbeat(); await h.poll()
+  assert.equal((await pending).handled, true)
+  const offline = h.gate.dispatch('A', 'MESSAGE_RECEIVED', [2])
+  t.mock.timers.tick(60000)
+  assert.equal((await offline).claimTimedOut, true)
+  assert.deepEqual(h.runtimes[0].emissions, ['MESSAGE_RECEIVED'])
+})
 
 test('viewing a child and returning keeps one game executor; events complete while its header is unmounted', async () => {
   const h = harness(), owner = h.client.createTavernScriptSessionOwner(h.options)

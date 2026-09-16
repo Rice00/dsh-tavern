@@ -176,6 +176,23 @@ test('temporarily rejected script ownership retries promptly instead of waiting 
   h.module.dispose()
 })
 
+test('8 秒的短暂请求积压恢复后仍领取同一执行器，不被旧 3 秒超时打断', async t => {
+  const h = execution(), response = deferred()
+  t.after(() => h.module.dispose())
+  h.respond(method => method === 'claimTavernScriptWork' ? response.promise : {})
+  h.module.sync('A', view())
+  await tick()
+  // Replay an 8-second response delay without waiting on wall-clock time.
+  for (const [id, timer] of [...h.timers]) {
+    if (timer.delay <= 8000) { h.timers.delete(id); timer.run() }
+  }
+  await h.settle()
+  response.resolve({ active: true })
+  await h.settle()
+  assert.equal(h.module.inspect().active, true)
+  assert.equal(h.calls.filter(call => call.method === 'claimTavernScriptWork').length, 1)
+})
+
 test('script readiness without a chat identity never cancels MVU initialization with an undefined transition', async () => {
   const h = execution(), input = view()
   delete input.chatId

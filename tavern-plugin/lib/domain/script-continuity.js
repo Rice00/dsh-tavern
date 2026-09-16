@@ -56,10 +56,36 @@ function openingCursor(script, opening) {
   return best.hits >= 3 && best.score >= 0.08 ? best.cursor : 0
 }
 
+function migrateChunkPosition(script, state) {
+  if (!script?.chunkingVersion || state.chunkingVersion === script.chunkingVersion || !Array.isArray(script.legacyChunkStarts)) return state
+  const starts = script.chunkStarts, old = script.legacyChunkStarts
+  function position(value) {
+    const index = Math.max(0, Math.floor(Number(value) || 0))
+    if (index >= old.length) return starts.length
+    const offset = old[index]
+    let low = 0, high = starts.length
+    while (low < high) { const middle = (low + high) >>> 1; if (starts[middle] <= offset) low = middle + 1; else high = middle }
+    return Math.max(0, low - 1)
+  }
+  function reference(value) {
+    if (!value || value.chunkingVersion === script.chunkingVersion) return value
+    const before = Number(value.cursorBefore ?? value.order) || 0
+    const cursor = position(before)
+    return { ...value, order: cursor, cursorBefore: cursor, cursorAfter: position(before + 1),
+      chunkId: value.ended ? '' : (script.chunks[cursor]?.id || ''), chunkingVersion: script.chunkingVersion }
+  }
+  return { ...state, cursor: position(state.cursor), initialCursor: position(state.initialCursor),
+    recalledChunkIds: [...new Set((Array.isArray(state.recalledChunkIds) ? state.recalledChunkIds : []).map(id => {
+      const match = /^chunk-(\d+)$/.exec(id)
+      return match ? script.chunks[position(Number(match[1]) - 1)]?.id : id
+    }).filter(Boolean))], prepared: reference(state.prepared), lastReference: reference(state.lastReference), chunkingVersion: script.chunkingVersion }
+}
+
 function normalizedState(script, source) {
   const chunks = chunksOf(script)
   const total = chunks.length
-  const incoming = source !== null && typeof source === 'object' ? clone(source) : {}
+  let incoming = source !== null && typeof source === 'object' ? clone(source) : {}
+  if ((Number(incoming.scriptVersion) || 0) === scriptVersion(script)) incoming = migrateChunkPosition(script, incoming)
   const initialCursor = Math.max(0, Math.min(Math.max(0, total - 1), Number(incoming.initialCursor) || 0))
   const version = scriptVersion(script)
   if ((Number(incoming.scriptVersion) || 0) !== version) {
@@ -71,7 +97,7 @@ function normalizedState(script, source) {
       lastReference: null,
       totalChunks: total,
       title: str(script && script.title),
-      scriptVersion: version
+      scriptVersion: version, ...(script?.chunkingVersion ? { chunkingVersion: script.chunkingVersion } : {})
     }
   }
   // cursor === total 是明确的“剧本已结束”位置；不能钳回最后一块，否则末块会被无限重复。
@@ -161,7 +187,7 @@ export function createScriptContinuity() {
       recalledChunkIds: [],
       prepared: null,
       lastReference: null,
-      scriptVersion: scriptVersion(script)
+      scriptVersion: scriptVersion(script), ...(script?.chunkingVersion ? { chunkingVersion: script.chunkingVersion } : {})
     })
   }
 
@@ -203,6 +229,7 @@ export function createScriptContinuity() {
           preparedAt: Date.now()
         }
       }
+      if (script?.chunkingVersion) reference.chunkingVersion = script.chunkingVersion
       state.prepared = reference
       return { state, reference: clone(reference), changed: true }
     }
@@ -249,9 +276,10 @@ export function createScriptContinuity() {
           order: Number(prepared.order) || 0,
           text: prepared.text,
           userText: str(event.userText),
+          ...(script?.chunkingVersion ? { chunkingVersion: script.chunkingVersion } : {}),
           recalledAt: Date.now()
         }
-        state.cursor = Math.min(chunks.length, Math.max(state.cursor, (Number(prepared.cursorBefore) || 0) + 1))
+        state.cursor = Math.min(chunks.length, Math.max(state.cursor, (Number.isInteger(prepared.cursorAfter) ? prepared.cursorAfter : (Number(prepared.cursorBefore) || 0) + 1)))
       }
       state.prepared = null
       return { state, reference, revision, changed: true }
@@ -263,7 +291,8 @@ export function createScriptContinuity() {
         restored.prepared = null
         return { state: restored, changed: true }
       }
-      const reference = event.reference
+      const reference = script?.chunkingVersion && event.reference && !event.reference.chunkingVersion
+        ? migrateChunkPosition(script, { prepared: event.reference }).prepared : event.reference
       state.prepared = null
       if (reference !== null && typeof reference === 'object' && reference.ended !== true && str(reference.chunkId) !== '') {
         state.cursor = Math.max(0, Number(reference.cursorBefore) || 0)

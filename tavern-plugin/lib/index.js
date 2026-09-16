@@ -1,3 +1,4 @@
+import { scriptChunkLayout } from './domain/script-chunks.js'
 import { createScriptNavigation } from './domain/script-navigation.js'
 import { createSessionInventory } from './domain/session-inventory.js'
 import { canUndoRollback } from './domain/surface-restoration.js'
@@ -482,51 +483,6 @@ export async function apply(ctx) {
   }
 
   // ---------- 角色卡 ----------
-  function splitNovelText(source, requestedSize) {
-    const target = clampInt(requestedSize, 300, 800, 500)
-    const minSize = Math.max(220, Math.floor(target * 0.7))
-    const maxSize = Math.min(1000, Math.floor(target * 1.4))
-    const text = str(source).replace(/\r\n?/g, '\n').trim()
-    if (text === '') return []
-    const units = []
-    for (const paragraph of text.split(/\n+/).map(function (item) { return item.trim() }).filter(Boolean)) {
-      if (paragraph.length <= maxSize) {
-        units.push(paragraph)
-        continue
-      }
-      let rest = paragraph
-      while (rest.length > maxSize) {
-        let cut = -1
-        const lower = Math.max(minSize, target - 120)
-        const upper = Math.min(rest.length, maxSize)
-        for (let i = upper; i >= lower; i--) {
-          if ('。！？；…!?;'.includes(rest[i - 1])) { cut = i; break }
-        }
-        if (cut < 0) cut = Math.min(target, rest.length)
-        units.push(rest.slice(0, cut).trim())
-        rest = rest.slice(cut).trim()
-      }
-      if (rest !== '') units.push(rest)
-    }
-    const packed = []
-    let current = ''
-    for (const unit of units) {
-      if (current !== '' && current.length + 1 + unit.length > maxSize) {
-        packed.push(current)
-        current = ''
-      }
-      current = current === '' ? unit : current + '\n' + unit
-      if (current.length >= target && current.length >= minSize) {
-        packed.push(current)
-        current = ''
-      }
-    }
-    if (current !== '') {
-      if (packed.length > 0 && current.length < Math.floor(minSize / 2) && packed[packed.length - 1].length + 1 + current.length <= maxSize) packed[packed.length - 1] += '\n' + current
-      else packed.push(current)
-    }
-    return packed.map(function (text, index) { return { id: 'chunk-' + String(index + 1).padStart(5, '0'), order: index, text: text } })
-  }
   async function readIndex() {
     const idx = await readJson('index.json')
     return (idx !== undefined && typeof idx === 'object') ? idx : { cards: [], chats: [] }
@@ -577,8 +533,7 @@ export async function apply(ctx) {
     if (kind !== 'source' && kind !== 'script') throw new Error('剧本引用必须指向剧本文件')
     const source = await fileResources.readText(normalizeResourcePath(scriptPath, kind))
     if (source === undefined) return undefined
-    const chunks = splitNovelText(source, 500)
-    return { path: scriptPath, title: scriptPath.split('/').pop(), sourceChars: source.length, chunkSize: 500, chunks }
+    return { path: scriptPath, title: scriptPath.split('/').pop(), sourceChars: source.length, ...scriptChunkLayout(source) }
   }
   function prepareTextImport(payload, emptyMessage) {
     const source = payload !== null && typeof payload === 'object' ? payload : {}
@@ -621,7 +576,7 @@ export async function apply(ctx) {
     const normalized = normalizeResourcePath(sourcePath, 'source')
     const source = await fileResources.readText(normalized)
     if (source === undefined) return undefined
-    return { path: normalized, title: normalized.split('/').pop(), sourceChars: source.length, chunkSize: 500, chunks: splitNovelText(source, 500) }
+    return { path: normalized, title: normalized.split('/').pop(), sourceChars: source.length, ...scriptChunkLayout(source) }
   }
   async function listSources() {
     return await Promise.all((await fileResources.list('source')).map(async function (sourcePath) {

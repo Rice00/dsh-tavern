@@ -1,5 +1,8 @@
 // Presentation only: keep host-owned error nodes and append-only history intact.
+const turnErrorControlOwners = new WeakMap();
 function createTurnErrorControls(root, options) {
+    turnErrorControlOwners.get(root)?.dispose();
+    let disposed = false;
     const key = 'dsh-tavern-hidden-errors:' + options.sessionId;
     let hidden = new Set();
     try {
@@ -16,6 +19,7 @@ function createTurnErrorControls(root, options) {
         entry.panel.remove();
     }
     function apply() {
+        if (disposed) return;
         const rows = new Set(root.querySelectorAll('[data-chat-flow-kind="turn-error"]'));
         for (const [row, entry] of owned) if (!rows.has(row)) { remove(row, entry); owned.delete(row); }
         for (const row of rows) {
@@ -37,6 +41,7 @@ function createTurnErrorControls(root, options) {
                 toggle.onclick = function () {
                     const dismiss = !hidden.has(id);
                     function commit() {
+                        if (disposed) return;
                         if (dismiss) hidden.add(id); else hidden.delete(id);
                         save(); apply();
                     }
@@ -67,5 +72,13 @@ function createTurnErrorControls(root, options) {
             if (entry.toggle.textContent !== toggleText) entry.toggle.textContent = toggleText;
         }
     }
-    return { apply, dispose() { for (const [row, entry] of owned) remove(row, entry); owned.clear(); } };
+    const controls = { apply, dispose() {
+        if (disposed) return;
+        disposed = true;
+        for (const [row, entry] of owned) remove(row, entry);
+        owned.clear();
+        if (turnErrorControlOwners.get(root) === controls) turnErrorControlOwners.delete(root);
+    } };
+    turnErrorControlOwners.set(root, controls);
+    return controls;
 }

@@ -241,3 +241,12 @@ test('Markdown 转换转义原始 HTML，只允许安全链接，生成语义表
   assert.match(result, /href="#play"/)
   assert.match(result, /<th scope="col">名称/)
 })
+
+test('本局设置是游玩模式下独立可访问的带图页面', () => {
+  const page = pages.find(p => p.id === 'local-settings')
+  assert.equal(page.group, 'play')
+  assert.match(page.body, /玩家称呼/)
+  assert.match(page.body, /写作 Skill/)
+  assert.match(page.body, /local-settings-20260917.jpg/)
+  assert.match(html, /href="#local-settings"[^>]*>本局设置<\/a>/)
+})

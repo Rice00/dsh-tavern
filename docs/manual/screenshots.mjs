@@ -38,3 +38,10 @@ screenshots["local-settings"] = {"file": "local-settings-20260917.jpg", "title":
 
 screenshots["global-settings"] = {"file": "global-settings-20260917.jpg", "title": "全局酒馆设置", "alt": "DSH Tavern 设置中的正文分色与上下文压缩", "caption": "分色即时应用于当前浏览器；压缩模式需点击保存压缩设置。", "width": 794, "height": 795, "source": {"date": "2026-09-17", "runtime": "DSH Tavern v1.9.0 · 2ac3164", "label": "实际应用局部截图 · 无私人资源内容"}}
 Object.assign(pageScreenshots, { cards: ['library-skills', 'library-prompts'], play: ['local-settings', 'global-settings'], m05: ['library-skills'], l05: ['library-prompts'], l06: ['library-prompts'], d07: ['global-settings'], e04: ['local-settings'], m01: [], h01: [], h05: [], i02: [], i03: [], i04: [], i05: [], i06: [], j01: [], j02: [], j03: [], j05: [], k01: [], k02: [], k03: [], k04: [], l01: [], l02: [], l03: [], l04: [] })
+
+pageScreenshots['local-settings'] = ['local-settings', 'advanced-network']
+
+screenshots["install-terminal"] = {"file": "install-terminal-current.png", "title": "打开 DSH 终端", "alt": "打开 DSH 终端，操作位置已标红圈", "caption": "进入 Desktop 设置，在窗口顶部点击红圈标出的打开 DSH 终端。", "width": 1617, "height": 973, "source": {"date": "README 已核对", "runtime": "DSH Desktop 2.0.5", "label": "用户提供的 Desktop 设置截图"}}
+
+screenshots["install-profile"] = {"file": "install-profile-current.png", "title": "选择 tavern 配置", "alt": "选择 tavern 配置，操作位置已标红圈", "caption": "进入桌面设置，在 Profile 列表选择 tavern，旁边显示当前即为选中。", "width": 1567, "height": 1004, "source": {"date": "README 已核对", "runtime": "DSH Desktop 2.0.5", "label": "用户提供的 Desktop 设置截图"}}
+pageScreenshots.a02 = ['install-terminal', 'install-profile']

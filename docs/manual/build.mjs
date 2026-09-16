@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
-import { sections, help, overview, gettingStarted } from './navigation.mjs'
+import { sections, help, overview, gettingStarted, extraPages } from './navigation.mjs'
 import { topics as topicContent } from './topics.mjs'
 import { introduction, installation } from './introduction.mjs'
 import { adaptedDshVersion } from '../../bin/dsh-compatibility.mjs'
@@ -72,8 +72,9 @@ export function renderSite(inventory) {
     if (page.id === 'a01') page.content = introduction
     if (page.id === 'a02') page.content = installation.replaceAll('{{dshVersion}}', adaptedDshVersion)
   }
+  allPages.push(...extraPages)
   allPages.sort((a, b) => Number(b.group === gettingStarted.id) - Number(a.group === gettingStarted.id))
-  const navGroup = (group, index) => `<section class="nav-group" data-group="${group.id}"><div class="nav-group-heading">${link(group.id, `${index + 1}. ${group.title}`)}<button class="group-toggle" aria-expanded="true" aria-controls="nav-${group.id}" aria-label="折叠${group.title}">⌄</button></div><div id="nav-${group.id}" class="nav-children">${link(group.id, '概览', 'overview-link')}${group.chapters.map(([name, keys]) => `<details class="chapter"><summary>${escapeHTML(name)}</summary><div>${keys.split(' ').map(key => link(byId.get(key).id, byId.get(key).title)).join('')}</div></details>`).join('')}</div></section>`
+  const navGroup = (group, index) => `<section class="nav-group" data-group="${group.id}"><div class="nav-group-heading">${link(group.id, `${index + 1}. ${group.title}`)}<button class="group-toggle" aria-expanded="true" aria-controls="nav-${group.id}" aria-label="折叠${group.title}">⌄</button></div><div id="nav-${group.id}" class="nav-children">${link(group.id, '概览', 'overview-link')}${extraPages.filter(p => p.group === group.id).map(p => link(p.id, p.title, 'overview-link')).join('')}${group.chapters.map(([name, keys]) => `<details class="chapter"><summary>${escapeHTML(name)}</summary><div>${keys.split(' ').map(key => link(byId.get(key).id, byId.get(key).title)).join('')}</div></details>`).join('')}</div></section>`
   const article = page => {
     const group = groups.find(g => g.id === page.group)
     const figures = (pageScreenshots[page.id] || []).map(key => {

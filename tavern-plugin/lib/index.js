@@ -701,12 +701,19 @@ export async function apply(ctx) {
     return await updateChat(chat.id, current => adoptConversationFeatures(adoptConversationBackground(current, tavernSettingsDocument), tavernSettingsDocument, legacyImageEnabled), { source: 'background-config.adopt' })
   }
   const historyRecall = createHistoryRecall()
-  async function recallHistoryForSession(sessionId, args) {
+  const foregroundRecallScopes = new WeakMap()
+  async function recallHistoryForSession(sessionId, args, scope) {
     const chat = await chatForSession(sessionId)
     if (chat === undefined) throw new Error('当前 Session 没有对应的 Tavern Chat')
     const mode = chat.mode || 'story'
     if (mode !== 'story' && mode !== 'script') throw new Error('历史正文只能在游玩模式中检索')
-    return historyRecall.recall(Object.assign({ chat }, args || {}))
+    let result
+    await updateChat(chat.id, current => {
+      const previousCooldowns = current.historyRecallCooldowns
+      result = historyRecall.recall(Object.assign({}, args || {}, { chat: current, scope, trackCooldown: true }))
+      return current.historyRecallCooldowns === previousCooldowns ? undefined : current
+    }, { source: 'history-recall', touchUpdatedAt: false })
+    return result
   }
   resourceGraph = createResourceGraph({
     cardOrganization,
@@ -1630,7 +1637,7 @@ export async function apply(ctx) {
     sharedTools: [{
       tool: HISTORY_RECALL_TOOL,
       async execute({ input, args }) {
-        return renderHistoryRecall(await recallHistoryForSession(input.sessionId, args))
+        return renderHistoryRecall(await recallHistoryForSession(input.sessionId, args, input))
       }
     }],
     stablePrefixStorage,
@@ -3951,7 +3958,17 @@ export async function apply(ctx) {
       isConcurrencySafe: function () { return true },
       async execute(args, exec) {
         const sessionId = exec && exec.agent && exec.agent.session ? exec.agent.session.id : ''
-        return await recallHistoryForSession(sessionId, args)
+        const session = exec?.agent?.session
+        const turn = activeTurnOf(exec)
+        let scope
+        if (session && turn > 0) {
+          scope = foregroundRecallScopes.get(session)
+          if (!scope || scope.turn !== turn) {
+            scope = { turn }
+            foregroundRecallScopes.set(session, scope)
+          }
+        }
+        return await recallHistoryForSession(sessionId, args, scope)
       }
     }))
     tools.register(defineTool({

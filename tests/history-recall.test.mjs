@@ -82,3 +82,51 @@ test('重新生成和回退无需维护索引，检索结果直接服从最新 C
   rolledBack.messages = rolledBack.messages.slice(0, 1)
   assert.equal(recall.recall({ chat: rolledBack, query: '退还' }).found, false)
 })
+
+test('一次生成去重重叠正文，搜索后仍能读全文，新生成重新开放', () => {
+  const recall = createHistoryRecall()
+  const scope = {}
+  const source = chat()
+  assert.equal(recall.recall({ chat: source, query: '北门', scope }).matches.length, 1)
+  assert.deepEqual(recall.recall({ chat: source, turn: 2, radius: 0, scope }).rounds.map(r => r.turn), [2])
+  const overlap = recall.recall({ chat: source, turn: 2, radius: 1, scope })
+  assert.deepEqual(overlap.rounds.map(r => r.turn), [1, 3])
+  const duplicate = recall.recall({ chat: source, turn: 2, scope })
+  assert.equal(duplicate.rounds.length, 0)
+  assert.match(renderHistoryRecall(duplicate), /已读取/)
+  assert.equal(recall.recall({ chat: source, turn: 2, scope: {} }).rounds.length, 3)
+})
+
+test('重复调用计入预算且耗尽后不再返回正文或搜索结果', () => {
+  const recall = createHistoryRecall()
+  const scope = {}
+  for (let i = 0; i < 6; i++) recall.recall({ chat: chat(), turn: 2, scope })
+  const result = recall.recall({ chat: chat(), query: '北门', scope })
+  assert.equal(result.matches.length, 0)
+  assert.match(renderHistoryRecall(result), /预算已用尽/)
+})
+
+test('完整正文冷却持续十轮并可从存档恢复，摘要不触发冷却', () => {
+  const source = chat()
+  const read = (chat, args) => createHistoryRecall().recall({ chat, trackCooldown: true, ...args })
+  read(source, { query: '北门' })
+  assert.equal(source.historyRecallCooldowns, undefined)
+  assert.equal(read(source, { turn: 2, radius: 0 }).rounds.length, 1)
+  const restored = JSON.parse(JSON.stringify(source))
+  assert.equal(read(restored, { turn: 2, radius: 0 }).rounds.length, 0)
+  assert.equal(read(restored, { query: '北门' }).matches.length, 0)
+  restored.messages.push({role:'assistant', turn:13, text:'十轮后'})
+  assert.equal(read(restored, { turn: 2, radius: 0 }).rounds.length, 0)
+  restored.messages.push({role:'assistant', turn:14, text:'冷却结束'})
+  assert.equal(read(restored, { turn: 2, radius: 0 }).rounds.length, 1)
+})
+
+test('历史正文修改或剧情分支回退后允许重新召回', () => {
+  const source = chat()
+  const read = () => createHistoryRecall().recall({ chat: source, trackCooldown: true, turn: 2, radius: 0 })
+  read()
+  source.messages[2].text = '修改后的正文'
+  assert.equal(read().rounds.length, 1)
+  source.timeline = {branchId: 'rollback-branch'}
+  assert.equal(read().rounds.length, 1)
+})

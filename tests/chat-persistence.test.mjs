@@ -310,3 +310,15 @@ test('保存等待期间的新编辑不被合并结果覆盖', async () => {
   await app.persistence.write(draft)
   assert.deepEqual(app.stored().settings, { local: 3, remote: 2 })
 })
+
+test('批量隐藏与单条恢复并发时按顺序保留最新选择及剧情', async () => {
+  const { setAllFailedErrorVisibility, setFailedErrorVisibility } = await import('../tavern-plugin/lib/domain/failed-error-visibility.js')
+  const app = harness({ id: 'chat-1', messages: [{ text: '正文' }], hiddenDshErrorTurns: [], _storageRevision: 1 })
+  const events = [1, 2].map(turn => ({ type: 'turn/end', data: { turn, reason: { kind: 'error' } } }))
+  await Promise.all([
+    app.persistence.update('chat-1', chat => setAllFailedErrorVisibility(chat, events, true).chat),
+    app.persistence.update('chat-1', chat => setFailedErrorVisibility(chat, events, 1, false))
+  ])
+  assert.deepEqual(app.stored().hiddenDshErrorTurns, [2])
+  assert.deepEqual(app.stored().messages, [{ text: '正文' }])
+})

@@ -10848,6 +10848,26 @@ window.__ModuleLoader__.load({
 
 		function TavernMoreActions(props) {
 			const [open, setOpen] = React.useState(false);
+            const [visibilityBusy, setVisibilityBusy] = React.useState(false);
+            const [visibilityNotice, setVisibilityNotice] = React.useState("");
+            const visibilityGeneration = React.useRef(0);
+            React.useEffect(() => {
+                visibilityGeneration.current++; setVisibilityBusy(false); setVisibilityNotice("");
+                return () => { visibilityGeneration.current++; };
+            }, [props.sessionId]);
+            async function setErrorVisibility(hidden) {
+                const generation = visibilityGeneration.current;
+                setVisibilityBusy(true); setVisibilityNotice("");
+                try {
+                    const result = await rpc("setAllFailedErrorVisibility", { sessionId: props.sessionId, hidden });
+                    if (generation !== visibilityGeneration.current) return;
+                    liveTavernView.setView(props.sessionId, result.view);
+                    setVisibilityNotice(result.changedCount ? (hidden ? "已隐藏 " : "已恢复 ") + result.changedCount + " 轮错误提示" : "没有需要处理的错误提示");
+                } catch (error) {
+                    if (generation === visibilityGeneration.current) setVisibilityNotice("错误提示保存失败：" + String(error.message || error));
+                } finally { if (generation === visibilityGeneration.current) setVisibilityBusy(false); }
+            }
+
 			const root = React.useRef(null);
 			React.useEffect(function () {
 				if (!open) return;
@@ -10860,11 +10880,14 @@ window.__ModuleLoader__.load({
 			return React.createElement("div", { className: "dsh-tavern-more-actions", ref: root },
 				React.createElement("button", { type: "button", className: "dsh-tavern-choice-trigger", "aria-haspopup": "menu", "aria-expanded": open, onClick: function () { setOpen(function (value) { return !value; }); } }, "更多 ▾"),
 				React.createElement("div", { className: "dsh-tavern-more-menu", role: "menu", hidden: !open, onClick: function (event) { if (event.target && event.target.closest && event.target.closest("button:not(:disabled)")) setOpen(false); } },
+                    React.createElement("button", { type: "button", role: "menuitem", disabled: visibilityBusy, onClick: () => setErrorVisibility(true), title: "仅隐藏已结束轮次的错误提示，保留正文和历史" }, "隐藏全部错误提示"),
+                    React.createElement("button", { type: "button", role: "menuitem", disabled: visibilityBusy, onClick: () => setErrorVisibility(false) }, "恢复全部错误提示"),
                     React.createElement(TavernStopBackgroundAction, Object.assign({}, props, { inMenu: true })),
 					React.createElement(TavernEditBodyAction, props),
 					React.createElement(TavernRollbackAction, props),
                     React.createElement(TavernUndoRollbackAction, props),
-					React.createElement(TavernCompactionAction, Object.assign({}, props, { inMenu: true })))
+					React.createElement(TavernCompactionAction, Object.assign({}, props, { inMenu: true }))),
+                visibilityNotice ? React.createElement("span", { role: "status" }, visibilityNotice) : null
 			);
 		}
 

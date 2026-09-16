@@ -9,3 +9,18 @@ export function setFailedErrorVisibility(chat, events, turn, hidden) {
   else turns.delete(turn)
   return { ...chat, hiddenDshErrorTurns: [...turns].sort((a, b) => a - b) }
 }
+
+export function setAllFailedErrorVisibility(chat, events, hidden) {
+  if (typeof hidden !== 'boolean') throw new Error('无效的错误提示参数')
+  const failed = new Set(events.filter(event => event?.type === 'turn/end' && event.data?.reason?.kind === 'error')
+    .map(event => event.data.turn).filter(turn => Number.isSafeInteger(turn) && turn > 0))
+  const turns = new Set((chat.hiddenDshErrorTurns || []).filter(turn => Number.isSafeInteger(turn) && turn > 0))
+  let changedCount = 0
+  for (const turn of failed) {
+    if (hidden === turns.has(turn)) continue
+    if (hidden) turns.add(turn)
+    else turns.delete(turn)
+    changedCount++
+  }
+  return { chat: changedCount ? { ...chat, hiddenDshErrorTurns: [...turns].sort((a, b) => a - b) } : chat, changedCount }
+}

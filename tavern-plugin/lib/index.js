@@ -1,7 +1,7 @@
 import { createSessionInventory } from './domain/session-inventory.js'
 import { canUndoRollback } from './domain/surface-restoration.js'
 import { createSessionViewSync } from './domain/session-view-sync.js'
-import { setFailedErrorVisibility } from './domain/failed-error-visibility.js'
+import { setFailedErrorVisibility, setAllFailedErrorVisibility } from './domain/failed-error-visibility.js'
 import { createManualCharacterDesign } from './domain/manual-character-design.js'
 import { prepareTemplateHistory, synchronizeTemplateHistory } from './domain/template-history.js'
 import { createFullTemplateRuntime } from './domain/full-template-runtime.js'
@@ -3132,6 +3132,21 @@ export async function apply(ctx) {
       case 'getBodyEdit': return { edit: await bodyEditor.read(args && args.sessionId) }
       case 'saveBodyEdit': return { view: await bodyEditor.save(args && args.sessionId, args) }
       case 'regenBody': return { view: await regenBody(args && args.chatId, args && args.guidance, args && args.sessionId) }
+      case 'setAllFailedErrorVisibility': {
+        const sessionId = str(args && args.sessionId)
+        const chat = await chatForSession(sessionId)
+        if (!chat) throw new Error('请先打开游玩会话')
+        const session = sessionStore.get(sessionId) || agentRegistry.get(sessionId)?.session
+        if (!session) throw new Error('会话尚未就绪，请刷新后重试')
+        const events = sessionEvents(session)
+        let changedCount = 0
+        await updateChat(chat.id, current => {
+          const result = setAllFailedErrorVisibility(current, events, args.hidden)
+          changedCount = result.changedCount
+          return changedCount ? result.chat : undefined
+        }, { source: 'ui.error-visibility.batch' })
+        return { view: await sessionView(sessionId), changedCount }
+      }
       case 'setFailedErrorVisibility': {
         const sessionId = str(args && args.sessionId)
         const chat = await chatForSession(sessionId)

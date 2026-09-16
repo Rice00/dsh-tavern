@@ -217,11 +217,11 @@ test('搜索匹配中文正文、标题、大小写及多个关键词，处理�
 })
 
 test('生图与画像是高级功能，后台设计与搜索分别有独立页面', () => {
-  for (const id of ['e01', 'e04', 'd10', 'm02', 'f01', 'h07']) assert.equal(pages.find(p => p.id === id).group, 'advanced')
+  for (const id of ['e01', 'e04', 'd10', 'm02', 'f01', 'h07', 'h08', 'm04']) assert.equal(pages.find(p => p.id === id).group, 'advanced')
   assert.match(pages.find(p => p.id === 'e04').body, /默认关闭/)
-  assert.match(pages.find(p => p.id === 'e04').body, /不会改变已有游戏/)
-  assert.match(pages.find(p => p.id === 'd10').body, /没有独立玩家按钮/)
-  assert.match(pages.find(p => p.id === 'm02').body, /改设置不改变旧局/)
+  assert.match(pages.find(p => p.id === 'e04').body, /不会悄悄改变正在玩的游戏/)
+  assert.match(pages.find(p => p.id === 'd10').body, /点击“设计人物”/)
+  assert.match(pages.find(p => p.id === 'm02').body, /从后续请求生效/)
   assert.match(pages.find(p => p.id === 'f09').body, /重试保存/)
 })
 

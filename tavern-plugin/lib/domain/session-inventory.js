@@ -9,20 +9,41 @@ export function createSessionInventory({ persistence, sessions, agents, referenc
     const bySession = new Map()
     for (const link of links) {
       const refs = bySession.get(link.sessionId) || []
-      refs.push({ chatId: link.chatId, title: link.title || link.cardName, lastOpenedAt: link.lastOpenedAt || null })
+      refs.push({ chatId: link.chatId, title: link.title || link.cardName, lastOpenedAt: link.lastOpenedAt || null, relation: 'direct' })
       bySession.set(link.sessionId, refs)
     }
     const live = new Map((sessions.list?.() || []).map(session => [session.id, session]))
     const metas = new Map(headers.map(header => [header.id, header]))
     for (const [id, session] of live) if (!metas.has(id)) metas.set(id, session.header || { id })
     for (const link of links) if (!metas.has(link.sessionId)) metas.set(link.sessionId, { id: link.sessionId })
+    // Resolve the nearest linked ancestor from headers only. Cache each traversed
+    // path, and terminate missing parents/cycles without loading their histories.
+    const inherited = new Map()
+    function related(id) {
+      if (bySession.has(id)) return bySession.get(id)
+      if (inherited.has(id)) return inherited.get(id)
+      const path = [], seen = new Set()
+      let current = id, refs = []
+      while (current && !seen.has(current)) {
+        if (bySession.has(current)) {
+          refs = bySession.get(current).map(ref => ({ ...ref, relation: 'ancestor', viaSessionId: current }))
+          break
+        }
+        if (inherited.has(current)) { refs = inherited.get(current); break }
+        seen.add(current); path.push(current)
+        const parent = metas.get(current)?.parentSession
+        current = typeof parent === 'string' ? parent : ''
+      }
+      for (const item of path) inherited.set(item, refs)
+      return refs
+    }
     const archiveList = archived?.()
     const archivedIds = archiveList ? new Set(archiveList) : null
     const rows = []
     for (const [id, meta] of metas) {
       const agent = agents.get(id)
       const session = live.get(id) || sessions.get(id) || agent?.session
-      const refs = bySession.get(id) || []
+      const refs = related(id)
       let diskBytes = null, fileModifiedAt = null, storageError = null
       if (storedIds.has(id)) {
         try {
@@ -34,7 +55,7 @@ export function createSessionInventory({ persistence, sessions, agents, referenc
           }
         } catch (error) { storageError = error.code === 'ENOENT' ? '文件已不存在' : '文件属性读取失败' }
       }
-      rows.push({ sessionId: id, loaded: Boolean(session), running: agent?.phase?.kind === 'running',
+      rows.push({ sessionId: id, parentSessionId: typeof meta.parentSession === 'string' ? meta.parentSession : null, loaded: Boolean(session), running: agent?.phase?.kind === 'running',
         archived: archivedIds ? archivedIds.has(id) : null, eventCount: Number.isSafeInteger(session?.seq) ? session.seq : null,
         diskBytes, fileModifiedAt, references: refs, storageError })
     }

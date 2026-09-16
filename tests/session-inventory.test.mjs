@@ -43,3 +43,32 @@ test('并发统计只枚举一次，失败后可重新刷新', async () => {
   assert.equal(result.rows[0].diskBytes, null)
   assert.equal(result.rows[0].archived, null)
 })
+
+test('仅通过会话头追溯后台归属，区分直接关联与父会话关联并终止循环', async () => {
+  const forbidden = () => { throw new Error('不得加载历史') }
+  const headers = [{ id: 'front' }, { id: 'background', parentSession: 'front' },
+    { id: 'child', parentSession: 'background' }, { id: 'unknown', parentSession: 'absent' },
+    { id: 'cycle-a', parentSession: 'cycle-b' }, { id: 'cycle-b', parentSession: 'cycle-a' }]
+  const inventory = createSessionInventory({ persistence: { list: async () => headers, load: forbidden, inspect: forbidden },
+    sessions: { get() {} }, agents: { get() {}, resume: forbidden },
+    references: async () => [{ sessionId: 'front', chatId: 'game', title: '原来的游戏' }] })
+  const rows = new Map((await inventory.read()).rows.map(row => [row.sessionId, row]))
+  assert.equal(rows.get('front').references[0].relation, 'direct')
+  assert.deepEqual(rows.get('background').references, [{ chatId: 'game', title: '原来的游戏', lastOpenedAt: null, relation: 'ancestor', viaSessionId: 'front' }])
+  assert.deepEqual(rows.get('child').references, rows.get('background').references)
+  assert.equal(rows.get('child').parentSessionId, 'background')
+  for (const id of ['unknown', 'cycle-a', 'cycle-b']) assert.deepEqual(rows.get(id).references, [])
+})
+
+test('深层父链不递归加载；子会话自身直接关联优先，实时会话头补齐父关系', async () => {
+  const headers = Array.from({ length: 12000 }, (_, i) => ({ id: String(i), ...(i < 11999 ? { parentSession: String(i + 1) } : {}) }))
+  const inventory = createSessionInventory({ persistence: { list: async () => headers },
+    sessions: { list: () => [{ id: 'live', header: { parentSession: '0' } }], get() {} }, agents: { get() {} },
+    references: async () => [{ sessionId: '11999', chatId: 'root', title: '根游戏' }, { sessionId: '3', chatId: 'own', title: '独立游戏' }] })
+  const rows = new Map((await inventory.read()).rows.map(row => [row.sessionId, row]))
+  assert.equal(rows.get('0').references[0].chatId, 'own')
+  assert.equal(rows.get('0').references[0].viaSessionId, '3')
+  assert.equal(rows.get('3').references[0].relation, 'direct')
+  assert.equal(rows.get('4').references[0].chatId, 'root')
+  assert.equal(rows.get('live').references[0].chatId, 'own')
+})

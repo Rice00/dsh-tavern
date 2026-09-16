@@ -74,6 +74,6 @@ function ScriptNavigation(props) {
                 h("details", null, h("summary", null, (chunk.number === page.cursor + 1 ? "当前 · " : "") + "第 " + String(chunk.number).padStart(2, "0") + " 块"),
                     h("div", { className: "dsh-tavern-script-chunk-text", style: { whiteSpace: "pre-wrap" } }, chunk.text)),
                 h("button", { type: "button", className: "dsh-script-nav-choose", disabled: props.busy || loading || saving || chunk.number === page.cursor + 1, onClick: () => point(chunk.number), "aria-label": "切换游标到第 " + chunk.number + " 块" }, chunk.number === page.cursor + 1 ? "✓ 当前游标" : "切换游标位置"))),
-            h("div", { className: "dsh-script-nav-pages" }, h("button", { type: "button", disabled: loading || saving || page.from <= 1, onClick: () => load(Math.max(1, page.from - 6)) }, "前 10 块"),
-            h("button", { type: "button", disabled: loading || saving || page.to >= page.totalChunks, onClick: () => load(Math.min(page.totalChunks, page.from + 14)) }, "后 10 块"))) : null);
+            h("div", { className: "dsh-script-nav-pages" }, h("button", { type: "button", disabled: loading || saving || page.from <= 1, onClick: () => load(Math.max(1, page.from - 6)) }, "← 剧本块"),
+            h("button", { type: "button", disabled: loading || saving || page.to >= page.totalChunks, onClick: () => load(Math.min(page.totalChunks, page.from + 14)) }, "剧本块 →"))) : null);
 }

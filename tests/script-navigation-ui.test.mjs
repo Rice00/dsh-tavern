@@ -53,7 +53,7 @@ test('browse, paging and explicit idle-only cursor action remain separate', asyn
   effect(); await flush()
   assert.match(JSON.stringify(render()), /游标已设为第 500 块/)
   assert.match(JSON.stringify(render()), /当前游标：第 500 块/)
-  await render().find(n => n.children?.includes('后 10 块')).props.onClick()
+  await render().find(n => n.children?.includes('剧本块 →')).props.onClick()
   assert.match(JSON.stringify(render()), /506–515/)
   dispose()
 })

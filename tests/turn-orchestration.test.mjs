@@ -70,6 +70,11 @@ function harness(mode, options = {}) {
       value._storageRevision = revision
       history.set(revision, clone(chat))
     },
+    async updateChat(_id, mutation, metadata) {
+      const next = await mutation(clone(chat))
+      if (next !== undefined) await store.writeChat(next, metadata)
+      return clone(chat)
+    },
     async updateCard(_cardId, fields, revision, rawOperations) {
       const change = cards.update({ kind: 'card', card: cardWorkspace, patch: fields, revision, rawOperations })
       cardWorkspace = clone(change.card)

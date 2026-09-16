@@ -2556,6 +2556,7 @@ export async function apply(ctx) {
       readCardExtensions,
       readScript,
       writeChat,
+      updateChat,
       updateCard,
       createCard: createWorkspaceCard
     },

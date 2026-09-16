@@ -694,37 +694,41 @@ export function createTurnOrchestrator(options) {
   }
 
   async function discard(input) {
-    let chat = await store.chatForSession(input.sessionId)
-    if (chat === undefined) return false
+    const target = await store.chatForSession(input.sessionId)
+    if (target === undefined) return false
     const turn = Math.max(0, Number(input.turn) || 0)
     let changed = false
-    const stages = stagedMap(chat)
-    if (Object.prototype.hasOwnProperty.call(stages, String(turn))) {
-      delete stages[String(turn)]
-      changed = true
-    }
-    if ((chat.mode || 'story') === 'script' && chat.scriptState && chat.scriptState.prepared && Number(chat.scriptState.prepared.nativeTurn) === turn) {
-      const script = await store.readScript(cardPathOf(chat))
-      if (script !== undefined && Array.isArray(script.chunks)) {
-        chat.scriptState = scripts.transition({ script, state: chat.scriptState, event: { kind: 'restore', revision: null, reference: chat.scriptState.prepared } }).state
+    // Re-evaluate the operation under the same lock as its persistence. A late
+    // failure signal must not overwrite a completed or rolled-back body.
+    await store.updateChat(target.id, async function (chat) {
+      const stages = stagedMap(chat)
+      if (Object.prototype.hasOwnProperty.call(stages, String(turn))) {
+        delete stages[String(turn)]
         changed = true
       }
-    }
-    if ((chat.mode || 'story') === 'card' && chat.workspace && chat.workspace.prepared && Number(chat.workspace.prepared.nativeTurn) === turn) {
-      chat.workspace.prepared = null
-      changed = true
-    }
-    if ((chat.mode || 'story') === 'story' || (chat.mode || 'story') === 'script') {
-      const operation = Object.values(timeline.inspect({ chat }).operations).find(function (item) {
-        return item.kind === 'body' && item.status === 'running' && Number(item.turn) === turn
-      })
-      if (operation !== undefined) {
-        const failed = timeline.complete({ chat, operationId: operation.id, basedOn: operation.basedOn, outcome: { status: 'failed' } })
-        chat = failed.chat
+      if ((chat.mode || 'story') === 'script' && chat.scriptState && chat.scriptState.prepared && Number(chat.scriptState.prepared.nativeTurn) === turn) {
+        const script = await store.readScript(cardPathOf(chat))
+        if (script !== undefined && Array.isArray(script.chunks)) {
+          chat.scriptState = scripts.transition({ script, state: chat.scriptState, event: { kind: 'restore', revision: null, reference: chat.scriptState.prepared } }).state
+          changed = true
+        }
+      }
+      if ((chat.mode || 'story') === 'card' && chat.workspace && chat.workspace.prepared && Number(chat.workspace.prepared.nativeTurn) === turn) {
+        chat.workspace.prepared = null
         changed = true
       }
-    }
-    if (changed) await store.writeChat(chat, { source: 'foreground.discard' })
+      if ((chat.mode || 'story') === 'story' || (chat.mode || 'story') === 'script') {
+        const operation = Object.values(timeline.inspect({ chat }).operations).find(function (item) {
+          return item.kind === 'body' && item.status === 'running' && Number(item.turn) === turn
+        })
+        if (operation !== undefined) {
+          const failed = timeline.complete({ chat, operationId: operation.id, basedOn: operation.basedOn, outcome: { status: 'failed' } })
+          chat = failed.chat
+          changed = true
+        }
+      }
+      return changed ? chat : undefined
+    }, { source: 'foreground.discard' })
     return changed
   }
 

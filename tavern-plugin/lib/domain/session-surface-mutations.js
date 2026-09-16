@@ -22,11 +22,15 @@ export function replaceSessionSurface(session, type, data, { start, end, sourceE
       throw new Error('消息修改标识已用于不同内容，请重新读取上下文')
     }
   }
-  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start) throw new Error('消息替换范围无效')
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < 0) throw new Error('消息替换范围无效')
   const nodes = session.surface?.nodes
-  if (!Array.isArray(nodes) || !nodes.includes(start) || !nodes.includes(end)) throw new Error('消息替换目标已变化，请重新读取上下文')
+  const startIndex = Array.isArray(nodes) ? nodes.indexOf(start) : -1
+  const endIndex = Array.isArray(nodes) ? nodes.indexOf(end) : -1
+  if (startIndex < 0 || endIndex < startIndex) throw new Error('消息替换目标已变化，请重新读取上下文')
   const bySeq = new Map(events.flatMap(event => event ? [[event.seq, event]] : []))
-  const targets = nodes.filter(seq => seq >= start && seq <= end)
+  // Replacements keep their original position but receive new event IDs.
+  // Surface order is therefore not numeric event order.
+  const targets = nodes.slice(startIndex, endIndex + 1)
   if (!Array.isArray(sourceEventSeqs) || targets.some(seq => !sourceEventSeqs.includes(seq)) ||
       sourceEventSeqs.some(seq => !Number.isSafeInteger(seq) || !bySeq.has(seq))) throw new Error('消息替换缺少有效的来源引用')
   return appendSessionEvent(session, type, data, {

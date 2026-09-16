@@ -32,3 +32,22 @@ test('业务模块不再直接拼接 Surface replace 操作', async () => {
   const files = ['index.js', ...(await readdir(new URL('domain/', root))).filter(name => name.endsWith('.js') && name !== 'session-surface-mutations.js').map(name => 'domain/' + name)]
   for (const file of files) assert.doesNotMatch(await readFile(new URL(file, root), 'utf8'), /surfaceOp:\s*\{\s*op:\s*['"]replace['"]/, file)
 })
+
+test('编辑过旧楼层后重生成末轮，来源只需覆盖当前 Surface 中的连续目标', async () => {
+  const { planRegenerationSurface } = await import('../tavern-plugin/lib/domain/rollback-surface.js')
+  const session = fixture()
+  session.events.splice(0, 1, ...Array.from({length: 10}, (_, seq) => ({seq, type: 'assistant/message', data: {message: {id: String(seq), source: {kind: 'model'}}}})))
+  // seq 8 replaces an earlier floor; its numeric ID lies inside [5,9], but
+  // its position is outside the regeneration span in the current surface.
+  session.surface.nodes = [0, 8, 2, 5, 9]
+  const plan = planRegenerationSurface({events: session.events, nodes: session.surface.nodes, oldAssistantSeq: 5, eventStart: 9})
+  assert.deepEqual(plan.shadowedSeqs, [5, 9])
+  assert.doesNotThrow(() => replaceSessionSurface(session, 'assistant/message', data, {...plan, sourceEventSeqs: plan.shadowedSeqs}))
+})
+test('替换范围按 Surface 位置校验，允许事件序号倒序，拒绝位置倒序', () => {
+  const session = fixture()
+  session.events.push({seq: 1}, {seq: 2})
+  session.surface.nodes = [2, 0, 1]
+  assert.throws(() => replaceSessionSurface(session, 'assistant/message', data, {start: 1, end: 2, sourceEventSeqs: [1, 2]}), /目标已变化/)
+  assert.doesNotThrow(() => replaceSessionSurface(session, 'assistant/message', data, {start: 2, end: 0, sourceEventSeqs: [2, 0]}))
+})

@@ -9640,6 +9640,17 @@ window.__ModuleLoader__.load({
 			options = options || {};
 			const root = options.root || function () { return document; };
 			const storage = options.storage || function () { return window.localStorage; };
+        const hiddenRows = new Map();
+        function hideRow(row) {
+            if (!hiddenRows.has(row)) hiddenRows.set(row, row.style.display);
+            row.style.display = "none";
+        }
+        function restoreHiddenRows() {
+            for (const [row, previous] of hiddenRows) {
+                if (row.style.display === "none") row.style.display = previous;
+            }
+            hiddenRows.clear();
+        }
 		const HIDDEN_TURNS_KEY = "dsh-tavern-hidden-turns";
 		const ROLLED_BACK_TURNS_KEY = "dsh-tavern-rolled-back-turns";
 		const HIDDEN_REGEN_USER_TURNS_KEY = "dsh-tavern-hidden-regen-user-turns";
@@ -9658,7 +9669,7 @@ window.__ModuleLoader__.load({
 			while (sib) {
 				const kind = sib.getAttribute("data-chat-flow-kind");
 				if (kind === "user") {
-					sib.style.display = "none";
+					hideRow(sib);
 					break;
 				}
 				if (kind === "turn-tail") break;
@@ -9681,12 +9692,12 @@ window.__ModuleLoader__.load({
 		}
 		function hideTurnTail(el) {
 			if (!el) return;
-			el.style.display = "none";
+			hideRow(el);
 			let sib = el.previousElementSibling;
 			while (sib) {
 				const kind = sib.getAttribute("data-chat-flow-kind");
 				if (kind === "user" || kind === "turn-tail") break;
-				sib.style.display = "none";
+				hideRow(sib);
 				sib = sib.previousElementSibling;
 			}
 		}
@@ -9703,7 +9714,7 @@ window.__ModuleLoader__.load({
 		}
 		function hideTurnTailWithUser(el) {
 			if (!el) return;
-			el.style.display = "none";
+			hideRow(el);
 			const turn = el.getAttribute("data-chat-turn");
 			let sib = el.previousElementSibling;
 			while (sib) {
@@ -9713,7 +9724,7 @@ window.__ModuleLoader__.load({
 				if (turn && siblingTurn && siblingTurn !== turn) break;
 				// System prompts precede the user row. Hide through the turn boundary,
 				// not just through its input; alpha also supplies explicit ownership.
-				sib.style.display = "none";
+				hideRow(sib);
 				sib = sib.previousElementSibling;
 			}
 		}
@@ -9778,6 +9789,9 @@ window.__ModuleLoader__.load({
 			}
 		}
 			function apply(sessionId, turns, regeneratedDshTurns) {
+                // Reconcile both directions: an older observer may have hidden a
+                // restored turn after the action's immediate DOM update.
+                restoreHiddenRows();
 				applySuppressedDshTurns(turns, regeneratedDshTurns);
 				applyRegeneratedDshTurns(regeneratedDshTurns);
 				applyHiddenTurns(sessionId);

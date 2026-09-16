@@ -122,3 +122,25 @@ for (const alpha of [false, true]) test(`${alpha ? 'alpha' : 'main'} 撤销回�
   assert.ok(older.every(item => item.style.display === 'none'))
   assert.ok(latest.every(item => item.style.display === ''))
 })
+
+for (const alpha of [false, true]) test(`${alpha ? 'alpha' : 'main'} 撤销后旧显示回调迟到，最新投影仍能恢复正文`, () => {
+  const latest = ['system-prompt', 'user', 'assistant-step', 'turn-tail'].map(kind => row(kind, 6, alpha))
+  const projection = harness(latest)
+  projection.applySuppressedDshTurns([6])
+  projection.restore({undoneRollback: {turn: 6}, suppressedDshTurns: []})
+  // A MutationObserver callback still holding the old view can arrive before
+  // React installs the effect for the restored view.
+  projection.applySuppressedDshTurns([6])
+  projection.applySuppressedDshTurns([])
+  assert.ok(latest.every(item => item.style.display === ''), '最新投影必须撤销旧的隐藏样式')
+})
+test('撤销隐藏保留宿主原有显示样式和其他隐藏行', () => {
+  const rows = ['system-prompt', 'user', 'assistant-step', 'turn-tail'].map(kind => row(kind, 6, true))
+  rows[0].style.display = 'none'
+  rows[1].style.display = 'flex'
+  const projection = harness(rows)
+  projection.applySuppressedDshTurns([6])
+  projection.applySuppressedDshTurns([6])
+  projection.applySuppressedDshTurns([])
+  assert.deepEqual(rows.map(item => item.style.display), ['none', 'flex', '', ''])
+})

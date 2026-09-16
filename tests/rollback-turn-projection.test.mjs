@@ -27,8 +27,8 @@ function row(kind, turn, alpha) {
 function harness(rows) {
   rows.forEach((row, index) => { row.previousElementSibling = rows[index - 1] ?? null })
   const document = { querySelectorAll(selector) {
-    assert.equal(selector, '[data-chat-flow-kind="turn-tail"]')
-    return rows.filter(row => row.getAttribute('data-chat-flow-kind') === 'turn-tail')
+    assert.ok(['[data-chat-flow-kind="turn-tail"]', '[data-chat-flow-kind="context"]'].includes(selector))
+    return rows.filter(row => selector === '[data-chat-flow-kind="' + row.getAttribute('data-chat-flow-kind') + '"]')
   } }
   const projection = client.createTurnHistoryProjection({ root: () => document, storage: () => ({ getItem: () => '{}' }) })
   return {
@@ -143,4 +143,20 @@ test('撤销隐藏保留宿主原有显示样式和其他隐藏行', () => {
   projection.applySuppressedDshTurns([6])
   projection.applySuppressedDshTurns([])
   assert.deepEqual(rows.map(item => item.style.display), ['none', 'flex', '', ''])
+})
+
+ test('隐藏内部恢复上下文行，保留普通注入及包含标识的正文', () => {
+  const internal = row('context', 9, true)
+  internal.querySelector = selector => selector === '[data-context-source]' ? { textContent: 'dsh-tavern-surface-restore' } : null
+  const normal = row('context', 9, true)
+  normal.querySelector = selector => selector === '[data-context-source]' ? { textContent: 'dsh-tavern' } : null
+  const body = row('assistant-step', 9, true)
+  body.textContent = 'dsh-tavern-surface-restore'
+  const projection = harness([body, internal, normal])
+  for (let i = 0; i < 2; i++) {
+    projection.restore({ undoneRollback: { turn: 9 }, suppressedDshTurns: [] })
+    assert.equal(internal.style.display, 'none')
+    assert.equal(normal.style.display, '')
+    assert.equal(body.style.display, '')
+  }
 })

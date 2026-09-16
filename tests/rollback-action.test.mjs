@@ -90,7 +90,7 @@ test('更多菜单收起回退和压缩，并可再次关闭', () => {
   assert.equal(more.children[0].props['aria-expanded'], true)
   assert.equal(more.children[1].props.hidden, false)
   assert.equal(more.children[1].props.role, 'menu')
-  assert.deepEqual(more.children[1].children.map(child => child.type.name || child.children[0]), ['隐藏全部错误提示', '恢复全部错误提示', 'TavernStopBackgroundAction', 'TavernEditBodyAction', 'TavernRollbackAction', 'TavernUndoRollbackAction', 'TavernCompactionAction'])
+  assert.deepEqual(more.children[1].children.map(child => child.type.name || child.children[0]), ['TavernStopBackgroundAction', 'TavernEditBodyAction', 'TavernRollbackAction', 'TavernUndoRollbackAction', 'TavernCompactionAction'])
 })
 
 test('实际回退组件在前台、后台和重生成期间禁用，完成后允许点击', async () => {
@@ -106,6 +106,7 @@ test('实际回退组件在前台、后台和重生成期间禁用，完成后�
   assert.equal(h.button().props.disabled, false)
   await h.button().props.onClick()
   assert.ok(h.calls.includes('project'))
+  assert.ok(!h.calls.includes('confirm'), '点击回退直接执行，不弹确认框')
   assert.equal(h.button().props.disabled, false)
 })
 

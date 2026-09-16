@@ -21,10 +21,10 @@ async function harness(t) {
   return { ctx, Session }
 }
 const source = { kind: 'model', provider: 'fixture', model: 'text' }
-function completed(session) {
+function completed(session, usage) {
   session.append('turn/start', { turn: 1 })
   session.append('step/start', { turn: 1, step: 1 })
-  const e = appendSessionEvent(session, 'assistant/message', { turn: 1, step: 1, message: { id: 'body', role: 'assistant', content: [{ type: 'text', text: 'Story '.repeat(1000) }], source } }, { surfaceOp: 'append' })
+  const e = appendSessionEvent(session, 'assistant/message', { turn: 1, step: 1, ...(usage ? {usage} : {}), message: { id: 'body', role: 'assistant', content: [{ type: 'text', text: 'Story '.repeat(1000) }], source } }, { surfaceOp: 'append' })
   session.append('step/end', { turn: 1, step: 1 })
   session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
   return e
@@ -166,4 +166,34 @@ test('带明确来源的正文替换不依赖预设名，保持 assistant 角色
   t.after(installTavernTokenMeter(ctx.tokenMeter))
   assert.ok(ctx.tokenMeter.measure(session).totalTokens > 0)
   assert.equal(session.snapshotEvents().at(-1).data.message.role, 'assistant')
+})
+
+
+test('撤销回退恢复带 usage 的模型正文后仍可统计，历史和用量不重写', native, async t => {
+  const {restoreSurface} = await import('../tavern-plugin/lib/domain/surface-restoration.js')
+  const {ctx, Session} = await harness(t)
+  const session = Session.create('undo-meter', [], {...Session.create('undo-meter').header, agentPreset: 'tavern'})
+  const original = completed(session, {inputTokens: 100, outputTokens: 50, totalTokens: 150})
+  const target = [...session.surface.nodes]
+  appendSessionEvent(session, 'assistant/message', {turn: 1, step: 1, message: {id: 'rollback', role: 'assistant', content: [], source}}, {surfaceOp: {op: 'replace', start: original.seq, end: original.seq}, sourceEventSeqs: [original.seq]})
+  restoreSurface(session, target)
+  const before = JSON.stringify(session.snapshotEvents())
+  t.after(installTavernTokenMeter(ctx.tokenMeter))
+  assert.ok(ctx.tokenMeter.measure(session).totalTokens > 0)
+  assert.equal(JSON.stringify(session.snapshotEvents()), before)
+})
+
+
+test('后续切换预设不改变旧替换的归属，伪造恢复内容仍被拒绝', native, async t => {
+  const {ctx, Session} = await harness(t)
+  const session = Session.create('switch-after-edit')
+  session.append('agent-preset/selected', {agentPreset: 'tavern'})
+  const original = completed(session)
+  const edit = appendSessionEvent(session, 'assistant/message', {turn: 1, step: 1, message: {id: 'edit', role: 'assistant', content: [], source}}, {surfaceOp: {op: 'replace', start: original.seq, end: original.seq}, sourceEventSeqs: [original.seq]})
+  session.append('agent-preset/selected', {agentPreset: 'standard'})
+  t.after(installTavernTokenMeter(ctx.tokenMeter))
+  assert.doesNotThrow(() => ctx.tokenMeter.measure(session))
+  session.append('agent-preset/selected', {agentPreset: 'tavern'})
+  appendSessionEvent(session, 'assistant/message', {...original.data, message: {...original.data.message, content: [{type: 'text', text: '不是原文'}]}}, {surfaceOp: {op: 'replace', start: edit.seq, end: edit.seq}, sourceEventSeqs: [edit.seq, original.seq]})
+  assert.throws(() => ctx.tokenMeter.measure(session), /no matching step\/start/)
 })

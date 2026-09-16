@@ -3,6 +3,8 @@ import { access, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from '
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
+import { spawn } from 'node:child_process'
+import { once } from 'node:events'
 
 import { createChatJournalStore } from '../tavern-plugin/lib/domain/chat-journal-store.js'
 
@@ -18,6 +20,91 @@ function bump(store, chatId, mutate, metadata) {
     return next
   }, metadata)
 }
+
+for (const sealed of [false, true]) test(`损坏的新快照从旧快照与日志恢复，sealed=${sealed}`, async t => {
+  const root = await temporary()
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const store = createChatJournalStore({ dataRoot: root, frameLimit: sealed ? 1 : 200 })
+  await bump(store, 'chat', chat => { chat.counter = 1 })
+  await bump(store, 'chat', chat => { chat.counter = 2 })
+  const broken = path.join(root, 'chats/chat/snapshots/000000000002.json')
+  await writeFile(broken, '{"id":"chat",')
+  const recovered = createChatJournalStore({ dataRoot: root, logger: { warn() {} } })
+  assert.equal((await recovered.read('chat')).counter, 2)
+  assert.equal((await recovered.readRevision('chat', 2)).counter, 2)
+  assert.equal(await readFile(broken, 'utf8'), '{"id":"chat",')
+  await bump(recovered, 'chat', chat => { chat.counter++ })
+  assert.equal((await createChatJournalStore({ dataRoot: root, logger: { warn() {} } }).read('chat')).counter, 3)
+})
+
+for (const broken of [false, true]) test(`半迁移目录仍可读取旧存档并完成迁移，broken=${broken}`, async t => {
+  const root = await temporary()
+  t.after(() => rm(root, { recursive: true, force: true }))
+  await mkdir(path.join(root, 'chats/chat/journals'), { recursive: true })
+  await mkdir(path.join(root, 'chats/chat/snapshots'), { recursive: true })
+  const legacy = path.join(root, 'chats/chat.json')
+  await writeFile(legacy, JSON.stringify({ id: 'chat', _storageRevision: 5, counter: 5 }))
+  if (broken) await writeFile(path.join(root, 'chats/chat/snapshots/000000000005.json'), '{')
+  const store = createChatJournalStore({ dataRoot: root, logger: { warn() {} } })
+  assert.equal((await store.read('chat')).counter, 5)
+  // A cached legacy fallback must notice external changes despite the directory.
+  await writeFile(legacy, JSON.stringify({ id: 'chat', _storageRevision: 5, counter: 50 }))
+  assert.equal((await store.read('chat')).counter, 50)
+  await bump(store, 'chat', chat => { chat.counter++ })
+  const restarted = createChatJournalStore({ dataRoot: root })
+  assert.equal((await restarted.read('chat')).counter, 51)
+  assert.equal((await restarted.readRevision('chat', 5)).counter, 50)
+  await assert.rejects(access(legacy), { code: 'ENOENT' })
+})
+
+test('损坏快照缺少完整重放链时拒绝静默退回旧状态', async t => {
+  const root = await temporary()
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const store = createChatJournalStore({ dataRoot: root, logger: { warn() {} } })
+  await bump(store, 'chat', chat => { chat.counter = 1 })
+  await writeFile(path.join(root, 'chats/chat/snapshots/000000000003.json'), '{')
+  await assert.rejects(store.read('chat'), /snapshot|快照|revision/)
+})
+
+for (const phase of ['create', 'migrate', 'rotate']) test(`快照发布前进程中断可恢复：${phase}`, { timeout: 10000 }, async t => {
+  const root = await temporary()
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const original = { id: 'chat', _storageRevision: 1, counter: 1 }
+  await mkdir(path.join(root, 'chats'), { recursive: true })
+  if (phase === 'migrate') await writeFile(path.join(root, 'chats/chat.json'), JSON.stringify(original))
+  if (phase === 'rotate') await createChatJournalStore({ dataRoot: root }).update('chat', () => original)
+  const child = spawn(process.execPath, ['--input-type=module', '-e', `
+    import fs from 'node:fs/promises';
+    import { syncBuiltinESMExports } from 'node:module';
+    const rename = fs.rename;
+    fs.rename = async (from, to) => {
+      if (from.includes('.staging-')) {
+        process.send({ staged: from });
+        await new Promise(() => {});
+      }
+      return rename(from, to);
+    };
+    syncBuiltinESMExports();
+    const { createChatJournalStore } = await import(${JSON.stringify(new URL('../tavern-plugin/lib/domain/chat-journal-store.js', import.meta.url).href)});
+    await createChatJournalStore({ dataRoot: ${JSON.stringify(root)}, frameLimit: 1 }).update('chat', chat => ({
+      id: 'chat', _storageRevision: (chat?._storageRevision || 0) + 1, counter: (chat?.counter || 0) + 1
+    }));
+  `], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] })
+  t.after(() => { if (child.exitCode === null) child.kill('SIGKILL') })
+  const [message] = await Promise.race([
+    once(child, 'message'),
+    once(child, 'exit').then(([code]) => { throw new Error('writer exited before staging: ' + code) })
+  ])
+  assert.equal(JSON.parse(await readFile(message.staged, 'utf8')).id, 'chat')
+  const stopped = once(child, 'exit')
+  child.kill('SIGKILL')
+  await stopped
+  const restarted = createChatJournalStore({ dataRoot: root })
+  const recovered = await restarted.read('chat')
+  assert.equal(recovered?.counter, phase === 'create' ? undefined : phase === 'rotate' ? 2 : 1)
+  await bump(restarted, 'chat', chat => { chat.counter = 9 })
+  assert.equal((await createChatJournalStore({ dataRoot: root }).read('chat')).counter, 9)
+})
 
 test('首次保存写 snapshot，后续保存只追加 journal', async function (t) {
   const root = await temporary()

@@ -1,4 +1,6 @@
-import { appendFile, mkdir, readFile, readdir, rename, rm, stat, truncate, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, open, readFile, readdir, rename, rm, stat, truncate, writeFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { isDeepStrictEqual } from 'node:util'
 import path from 'node:path'
 
 import { applyJsonChanges, applyJsonChangesShared, diffJson } from './json-mutation.js'
@@ -142,17 +144,28 @@ export function createChatJournalStore(options = {}) {
   async function materializeDirectory(paths, targetRevision = Number.POSITIVE_INFINITY) {
     const snapshots = await snapshotRows(paths)
     const eligible = snapshots.filter(function (row) { return row.revision <= targetRevision })
-    const selected = eligible[eligible.length - 1]
-    if (selected === undefined) throw new Error('Chat Journal 缺少可用 snapshot: ' + paths.id)
-    let chat = await readJson(selected.path)
-    if (chat === undefined) throw new Error('Chat snapshot 不存在: ' + selected.path)
-    let revision = selected.revision
+    let selected = null, chat
+    for (const row of eligible.slice().reverse()) {
+      chat = await readSnapshot(paths, row)
+      if (chat !== undefined) { selected = row; break }
+    }
+    if (!selected) chat = await legacyRead(paths)
+    const journals = await journalRows(paths)
+    if (chat === undefined) {
+      // An interrupted first write may have left only staging files/directories.
+      if (snapshots.length === 0 && journals.length === 0) return null
+      throw new Error('Chat Journal 缺少可用 snapshot: ' + paths.id)
+    }
+    let revision = selected ? selected.revision : revisionOf(chat)
+    if (!selected && (chat === null || typeof chat !== 'object' || Array.isArray(chat) || chat.id !== paths.id)) {
+      throw new Error('Legacy Chat 不合法: ' + paths.id)
+    }
     let open = null
     let openFrameCount = 0
     let openValidBytes = 0
     let openInvalidLine = 0
     const changes = []
-    for (const row of await journalRows(paths)) {
+    for (const row of journals) {
       if (row.end <= revision || row.start > targetRevision) continue
       const parsed = await parseJournal(row, revision, targetRevision)
       for (const frame of parsed.frames) {
@@ -172,6 +185,10 @@ export function createChatJournalStore(options = {}) {
         openInvalidLine = parsed.invalidLine
       }
     }
+    // A corrupt published snapshot proves this revision once existed. Do not
+    // silently return an older state when its replay chain is missing.
+    const requiredRevision = eligible.at(-1)?.revision ?? revision
+    if (revision < requiredRevision) throw new Error('Chat snapshot 恢复缺少完整 journal，期望 revision ' + requiredRevision + ': ' + paths.id)
     if (targetRevision !== Number.POSITIVE_INFINITY && revision !== targetRevision) {
       const error = new Error('Chat Journal 找不到 revision ' + targetRevision + ': ' + paths.id)
       error.code = 'DSH_TAVERN_REVISION_NOT_FOUND'
@@ -181,7 +198,7 @@ export function createChatJournalStore(options = {}) {
     // journal frame makes initialization slower with every small script write.
     chat = applyJsonChanges(chat, changes)
     chat[STORAGE_REVISION] = revision
-    return { chat, revision, snapshot: selected, open, openFrameCount, openValidBytes, openInvalidLine }
+    return { chat, revision, snapshot: selected, open, openFrameCount, openValidBytes, openInvalidLine, legacy: selected === null }
   }
 
   async function materialize(chatId, targetRevision = Number.POSITIVE_INFINITY) {
@@ -199,10 +216,47 @@ export function createChatJournalStore(options = {}) {
     return { chat: jsonClone(chat), revision, snapshot: null, open: null, openFrameCount: 0, legacy: true }
   }
 
+  async function readSnapshot(paths, row) {
+    try {
+      const chat = await readJson(row.path)
+      if (chat && typeof chat === 'object' && !Array.isArray(chat) && chat.id === paths.id &&
+        Number.isSafeInteger(chat[STORAGE_REVISION]) && chat[STORAGE_REVISION] === row.revision) return chat
+    } catch (error) {
+      if (!(error instanceof SyntaxError)) throw error
+    }
+    logger?.warn?.('dsh-tavern: Chat snapshot 损坏，尝试历史快照与 journal:', row.path)
+    return undefined
+  }
+
   async function writeSnapshot(paths, chat, revision) {
     await mkdir(paths.snapshots, { recursive: true })
     const target = path.join(paths.snapshots, revisionName(revision) + '.json')
-    try { await writeFile(target, encodeSnapshot(chat), { encoding: 'utf8', flag: 'wx' }) } catch (error) { if (error?.code !== 'EEXIST') throw error }
+    if (await exists(target)) {
+      const previous = await readSnapshot(paths, { path: target, revision })
+      if (previous !== undefined) {
+        if (!isDeepStrictEqual(previous, chat)) throw new Error('Chat snapshot revision 冲突: ' + target)
+        return target
+      }
+      // Preserve the failed old writer's bytes for diagnosis before replacement.
+      await rename(target, target + '.corrupt-' + randomUUID())
+    }
+    const staging = target + '.staging-' + randomUUID()
+    let handle
+    try {
+      handle = await open(staging, 'wx')
+      await handle.writeFile(encodeSnapshot(chat), 'utf8')
+      await handle.sync()
+      await handle.close(); handle = null
+      await rename(staging, target)
+      // Flush the published directory entry before migration removes its source.
+      if (process.platform !== 'win32') {
+        handle = await open(paths.snapshots, 'r')
+        try { await handle.sync() } catch (error) { if (!['EINVAL', 'ENOTSUP', 'EISDIR'].includes(error?.code)) throw error }
+      }
+    } finally {
+      if (handle) await handle.close()
+      await rm(staging, { force: true })
+    }
     return target
   }
 
@@ -378,14 +432,22 @@ export function createChatJournalStore(options = {}) {
     const snapshots = await snapshotRows(paths)
     const journals = await journalRows(paths)
     const latestSnapshot = snapshots[snapshots.length - 1]
-    const latestJournal = journals[journals.length - 1]
-    if (latestSnapshot === undefined && latestJournal === undefined) return ''
-    const relevant = journals.filter(row => row.end > (latestSnapshot?.revision || 0))
-    const stamps = await Promise.all([...(latestSnapshot ? [latestSnapshot] : []), ...relevant].map(async row => {
+    // Recovery may use any earlier snapshot/journal, or the legacy source during
+    // migration. All of those files must participate in cache invalidation.
+    const stamps = await Promise.all([...snapshots, ...journals].map(async row => {
       const info = await stat(row.path, { bigint: true })
       return [row.name,info.ino,info.size,info.mtimeNs,info.ctimeNs].join(':')
     }))
-    return ['journal', latestSnapshot?.name || '', ...stamps].join(':')
+    let legacyStamp = ''
+    if (legacyData && typeof legacyData.version === 'function') legacyStamp = await legacyData.version(paths.legacyRelative)
+    else {
+      try {
+        const info = await stat(paths.legacy, { bigint: true })
+        legacyStamp = [info.ino, info.size, info.mtimeNs, info.ctimeNs].join(':')
+      } catch (error) { if (error?.code !== 'ENOENT') throw error }
+    }
+    if (!stamps.length && !legacyStamp) return ''
+    return ['journal', latestSnapshot?.name || '', ...stamps, legacyStamp].join(':')
   }
 
   async function remove(chatId) {

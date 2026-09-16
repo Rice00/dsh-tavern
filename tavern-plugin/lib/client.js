@@ -6109,6 +6109,16 @@ window.__ModuleLoader__.load({
 			return function (line, sessionId, options) {
                 if (/^\/ejs(?:-refresh)?(?:\s|$)/.test(String(line))) return rpc("executeFullTemplateCommand", {text:line}, sessionId).then(function(result){return result.pipe;});
 				const draftMatch = /^\/setinput(?: ([\s\S]*))?$/.exec(String(line || ""));
+                // Preflight before touching the composer: otherwise the greedy
+                // send match silently includes unsupported commands in the draft.
+                const pipes = draftMatch ? [] : Array.from(String(line || "").matchAll(/\|\s*(\/[\w-]+)/g));
+                const unsupported = pipes.find((part, index) => part[1] !== "/trigger" || index !== pipes.length - 1);
+                if (!draftMatch && (/^\/cut(?:\s|$)/.test(String(line)) || unsupported || (pipes.length && !/^\/send\s/.test(String(line))))) {
+                    const command = unsupported ? unsupported[1] : /^\/cut(?:\s|$)/.test(String(line)) ? "/cut" : pipes[0][1];
+                    const error = new Error("暂不支持人物卡命令管道中的 " + command + "，未发送消息。当前支持 /send … | /trigger；/cut 删除楼层尚未实现。");
+                    error.code = "UNSUPPORTED_SLASH_PIPELINE";
+                    return Promise.reject(error);
+                }
 				const match = /^\/send\s+([\s\S]+)\|\s*\/trigger\s*$/.exec(String(line || ""));
 				const triggerOnly = /^\/trigger\s*$/.test(String(line || ""));
 				if (!draftMatch && !triggerOnly && (!match || !match[1].trim())) {

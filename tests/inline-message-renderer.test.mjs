@@ -2235,3 +2235,15 @@ test('模板内生成命令在提交后返回，不占住模板队列等待下�
   assert.deepEqual(calls,['下一步','queue'])
   assert.equal((await execute('/trigger','game',{waitForCompletion:false})).submitted,true)
 })
+
+
+test('unsupported card pipelines fail before draft mutation or generation', async () => {
+  const calls = []
+  const ctx = { sessions: { scope: () => ({}) }, get: () => ({ input: { for: () => ({ setDraft: x => calls.push(x), submit: () => calls.push('submit') }) } }), remote: { commands: { execute: async () => { calls.push('remote'); return {} } } } }
+  const execute = client.createTavernFrameSlashExecutor(ctx, { setTimeout, clearTimeout })
+  for (const command of ['/cut', '/unknown']) {
+    await assert.rejects(execute(`/send 创建结果 | ${command} 0 | /trigger`, 'game', { waitForCompletion: false }), error => error.code === 'UNSUPPORTED_SLASH_PIPELINE' && error.message.includes(command))
+  }
+  await assert.rejects(execute('/cut 0', 'game'), /未发送消息/ )
+  assert.deepEqual(calls, [])
+})

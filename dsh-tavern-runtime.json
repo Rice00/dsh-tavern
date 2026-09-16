@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "b8e2965e3fbe44f42d178c44122d871f804b981a",
-  "releaseSequence": 233,
+  "revision": "284cd0aa0e6eedf660d1e4996f8d0e08b551df00",
+  "releaseSequence": 234,
   "version": "1.8.0",
   "files": [
     {
@@ -256,8 +256,8 @@
     },
     {
       "path": "tavern-plugin/lib/client.js",
-      "sha256": "358684be896a58ca1a697e45e33573f5465d631f25d77b10745924a8b86615ed",
-      "size": 937389
+      "sha256": "2e3205d0f8053aa72875184db5c43104465012f01a949082533b640167fbbde8",
+      "size": 937695
     },
     {
       "path": "tavern-plugin/lib/cordis-inspect.js",
@@ -731,13 +731,13 @@
     },
     {
       "path": "tavern-plugin/lib/domain/rollback-surface.js",
-      "sha256": "327b665135aa8d2e182eb02c9a325f24c84554c5cb37be1b639848965dd199e9",
-      "size": 16668
+      "sha256": "2b384a137640764b2193bd103ca112364c6f6c6da430b7334d786248cf66c835",
+      "size": 20332
     },
     {
       "path": "tavern-plugin/lib/domain/round-history.js",
-      "sha256": "1fd774eba904a40cd867d3a882ca73fa5ed0b7794d5adb5aa4a667416a135568",
-      "size": 34329
+      "sha256": "b309984980df777982b8f0a31b9d6c68db2fc340000e64fb3a7cf26cf8a5f5d0",
+      "size": 34359
     },
     {
       "path": "tavern-plugin/lib/domain/runtime-content-projection.js",
@@ -1191,8 +1191,8 @@
     },
     {
       "path": "tavern-plugin/lib/index.js",
-      "sha256": "a4d4c5b1e9fd6ab75a0d84200d9878ad126a5b97f735b53e35526a89c6a849bb",
-      "size": 280123
+      "sha256": "05160adbb92c090f67c54194725c9f861367b3fb1eb15003be0a75d867ccd7ca",
+      "size": 280278
     },
     {
       "path": "tavern-plugin/lib/profile-data-store.js",
@@ -3606,8 +3606,8 @@
     },
     {
       "path": "tavern-plugin/src/client/main.js",
-      "sha256": "0a1b393b2730840b93e2c913a7ed1139b7f0f94256fe28eaeea081d07ea0fb90",
-      "size": 710604
+      "sha256": "692761f469267821a03ebd32d0fda380e4e58bf7ac36a49f77798c4775532cb5",
+      "size": 710910
     },
     {
       "path": "tavern-plugin/src/client/modules/frame-activation.js",

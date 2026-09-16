@@ -283,3 +283,35 @@ test('回退可用性要求聊天与原生轮次配对，允许重生成映射�
   chat.regeneratedDshTurns = { 2: 3 }
   assert.equal(rollbackAvailability(chat, { events, nodes: [0, 1] }).canRollback, true)
 })
+
+test('压缩摘要不能冒充已经压缩掉的玩家输入', () => {
+  const events = [
+    { seq: 0, type: 'user/message', data: { role: 'user', source: { kind: 'plugin', plugin: 'compact', compactionId: 'c' }, content: [{ type: 'text', text: '旧剧情摘要' }] } },
+    { seq: 1, type: 'assistant/message', data: { turn: 2, message: { source: modelSource() } } }
+  ]
+  assert.equal(locateRollbackSurface({ events, nodes: [0, 1] }), null)
+})
+
+test('失败清理不消费已提交正文或仍在运行的输入', () => {
+  const chat = { messages: [{ role: 'user' }, { role: 'assistant', turn: 2 }] }
+  const events = [
+    { seq: 0, type: 'turn/start', data: { turn: 2 } },
+    { seq: 1, type: 'user/message', data: { role: 'user' } },
+    { seq: 2, type: 'assistant/message', data: { turn: 2, message: { source: modelSource() } } },
+    { seq: 3, type: 'turn/end', data: { turn: 2, reason: { kind: 'error' } } }
+  ]
+  assert.equal(rollbackAvailability(chat, { events, nodes: [1, 2] }).canClearIncompleteReply, false)
+  events.push({ seq: 4, type: 'turn/start', data: { turn: 3 } }, { seq: 5, type: 'user/message', data: { role: 'user' } })
+  assert.equal(rollbackAvailability(chat, { events, nodes: [1, 2, 5] }).canClearIncompleteReply, false)
+})
+
+test('摘要之前的输入不能跨越压缩点配对，摘要之后完整的新轮仍可回退', () => {
+  const events = [
+    { seq: 0, type: 'user/message', data: { role: 'user' } },
+    { seq: 1, type: 'user/message', data: { role: 'user', source: { kind: 'plugin', plugin: 'compact' } } },
+    { seq: 2, type: 'assistant/message', data: { turn: 2, message: { source: modelSource() } } }
+  ]
+  assert.equal(locateRollbackSurface({ events, nodes: [0, 1, 2] }), null)
+  events.push({ seq: 3, type: 'user/message', data: { role: 'user' } }, { seq: 4, type: 'assistant/message', data: { turn: 3, message: { source: modelSource() } } })
+  assert.deepEqual(locateRollbackSurface({ events, nodes: [1, 2, 3, 4] }).shadowedSeqs, [3, 4])
+})

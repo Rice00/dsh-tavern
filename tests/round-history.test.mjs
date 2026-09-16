@@ -738,3 +738,37 @@ test('压缩移除原生配对后，回退返回可理解提示且不修改存�
   await assert.rejects(h.create().rollback('session', 'chat'), /当前轮次已不在可回退的消息流中/)
   assert.deepEqual(h.chat, before)
 })
+
+test('缺失失败清理标记时仍可清理尾部中断，保留上一轮剧情', async () => {
+  const h = harness({ checkpoint: true })
+  const before = structuredClone(h.chat)
+  h.session.append('turn/start', { turn: 3 })
+  h.session.append('user/message', { role: 'user', content: [{ type: 'text', text: '未完成输入' }] }, { surfaceOp: 'append' })
+  h.session.append('turn/end', { turn: 3, reason: { kind: 'aborted' } })
+  const result = await h.create().rollback('session', 'chat')
+  assert.deepEqual(result.clearedIncompleteTurns, [3])
+  assert.deepEqual(h.chat.messages, before.messages)
+  assert.deepEqual(h.chat.timeline, before.timeline)
+})
+
+for (const reason of ['error', 'aborted']) test(`连续未清理的${reason}尾部仅清理失败轮，存储失败后可以重试`, async () => {
+  const h = harness({ checkpoint: true })
+  for (const turn of [3, 4]) {
+    h.session.append('turn/start', { turn })
+    h.session.append('user/message', { role: 'user', content: [{ type: 'text', text: '失败输入' }] }, { surfaceOp: 'append' })
+    h.session.append('assistant/message', { turn, step: 1, message: { role: 'assistant', source: { kind: 'model', provider: 'test', model: 'test' }, content: [{ type: 'text', text: '半截正文' }] } }, { surfaceOp: 'append' })
+    h.session.append('turn/end', { turn, reason: { kind: reason } })
+  }
+  const before = structuredClone(h.chat)
+  const update = h.options.chats.update
+  h.options.chats.update = async () => { throw new Error('保存失败') }
+  await assert.rejects(h.create().rollback('session', 'chat'), /保存失败/)
+  assert.deepEqual(h.chat, before)
+  h.options.chats.update = update
+  const result = await h.create().rollback('session', 'chat')
+  assert.deepEqual(result.clearedIncompleteTurns, [3, 4])
+  assert.deepEqual(h.chat.messages, before.messages)
+  assert.deepEqual(h.chat.timeline, before.timeline)
+  await h.create().rollback('session', 'chat')
+  assert.equal(h.chat.messages.length, 1)
+})

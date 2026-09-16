@@ -3,7 +3,7 @@ import { rewindBackgroundSurface } from './background-surface.js'
 import { sessionEvents, appendSessionEvent } from './session-events.js'
 import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
-import { rollbackAvailability, clearRegenerationAttemptSurface, locateRegenerationSurface, planRegenerationSurface, regenerationAttemptTurns } from './rollback-surface.js'
+import { rollbackAvailability, clearFailedTurnSurface, clearRegenerationAttemptSurface, locateRegenerationSurface, planRegenerationSurface, regenerationAttemptTurns } from './rollback-surface.js'
 import { assertRegenerationSourceCurrent, replaceLastRound } from './last-round-replacement.js'
 import { diagnosticIdentity, regenerationTargetDiagnostic } from './regeneration-diagnostics.js'
 
@@ -293,6 +293,7 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
     const availability = rollbackAvailability(chat, { events, nodes })
     const failedTurns = availability.failedTurns
     if (failedTurns.length) {
+      for (const turn of availability.unclearedTurns) clearFailedTurnSurface({ session, turn })
       chat = await updateChat(chat.id, current => {
         assertRollbackSnapshot(rollbackBodyMessages(current), rollbackBodyMessages(originalChat))
         assertRollbackSnapshot(current.timeline, originalChat.timeline)

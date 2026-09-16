@@ -197,6 +197,7 @@ export function locateRollbackSurface(input) {
   let userIndex = -1
   for (let index = nodes.length - 1; index >= 0; index -= 1) {
     const event = eventAt(events, nodes[index])
+    if (event?.type === 'user/message' && event.data?.source?.kind === 'plugin' && ['compact', 'dsh-compaction-basic'].includes(event.data.source.plugin)) return null
     if (event && event.type === 'user/message' && !isForegroundContext(event) && !isRollbackUserTombstone(event)) {
       userIndex = index
       break
@@ -358,10 +359,49 @@ export function hasRollbackMessages(messages) {
   return false
 }
 
+// Recover only ended, uncommitted failures still present at the surface tail.
+// A missing cleanup hook must not turn an interrupted input into a dead end.
+function unclearedFailedTail(chat, events, nodes) {
+  const tail = nodes.findLast(seq => {
+    const event = eventAt(events, seq)
+    return !isRollbackAssistantTombstone(event, events) && !isRollbackUserTombstone(event) && !isForegroundContext(event)
+  })
+  if (tail === undefined) return []
+  const latest = (chat.messages || []).findLast(message => message?.role === 'assistant')
+  const lastEvent = eventAt(events, tail)
+  if (lastEvent?.type === 'assistant/message' && (Number(lastEvent.data?.turn) === Number(latest?.turn) || Number(lastEvent.data?.turn) === Number(chat.regeneratedDshTurns?.[String(latest?.turn)]))) return []
+  const committed = new Set((chat.messages || []).filter(message => message?.role === 'assistant').map(message => Number(message.turn)))
+  for (const turn of Object.values(chat.regeneratedDshTurns || {})) committed.add(Number(turn))
+  const starts = new Map(), intervals = []
+  for (const event of events) {
+    const turn = Number(event.data?.turn)
+    if (event.type === 'turn/start') starts.set(turn, event.seq)
+    if (event.type === 'turn/end' && starts.has(turn)) {
+      intervals.push({ turn, start: starts.get(turn), end: event.seq, failed: ['error', 'aborted'].includes(event.data?.reason?.kind) })
+      starts.delete(turn)
+    }
+  }
+  let remaining = [...nodes]
+  const result = []
+  while (remaining.length) {
+    const event = eventAt(events, remaining.at(-1))
+    if (isRollbackAssistantTombstone(event, events) || isRollbackUserTombstone(event) || isForegroundContext(event)) { remaining.pop(); continue }
+    const interval = intervals.findLast(item => event && event.seq > item.start && event.seq < item.end)
+    if (!interval?.failed || committed.has(interval.turn)) break
+    const plan = planFailedTurnSurface({ events, nodes: remaining, turn: interval.turn })
+    if (!plan) break
+    result.push(interval.turn)
+    const removed = new Set(plan.shadowedSeqs)
+    remaining = remaining.filter(seq => !removed.has(seq))
+  }
+  return result
+}
+
 // UI and mutation share the same native target and failed-tail precedence.
 export function rollbackAvailability(chat, { events = [], nodes = [] } = {}) {
-  const failedTurns = pendingFailedSurfaceTurns({ events, nodes, suppressed: chat.suppressedDshTurns || [] })
-  if (failedTurns.length) return { canRollback: true, canClearIncompleteReply: true, failedTurns, target: null, reason: '' }
+  const unclearedTurns = unclearedFailedTail(chat, events, nodes)
+  const failedTurns = [...new Set([...pendingFailedSurfaceTurns({ events, nodes, suppressed: chat.suppressedDshTurns || [] }), ...unclearedTurns])].sort((a, b) => a - b)
+  if (failedTurns.length) return { canRollback: true, canClearIncompleteReply: true, failedTurns, unclearedTurns, target: null, reason: '' }
   const target = locateRollbackSurface({ events, nodes })
   const messages = Array.isArray(chat.messages) ? chat.messages : []
   const latest = messages.findLast(message => message?.role === 'assistant' && message.greeting !== true)

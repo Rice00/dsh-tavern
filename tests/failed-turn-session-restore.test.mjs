@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { Session, adoptSessionEvent } from './fixtures/dsh-session-host.mjs'
 import { sessionEvents, appendSessionEvent } from '../tavern-plugin/lib/domain/session-events.js'
-import { clearFailedTurnSurface, locateRegenerationSurface, locateRollbackSurface } from '../tavern-plugin/lib/domain/rollback-surface.js'
+import { rollbackAvailability, clearFailedTurnSurface, locateRegenerationSurface, locateRollbackSurface } from '../tavern-plugin/lib/domain/rollback-surface.js'
 
 function fixture() {
   const session = Session.create('failed-turn-restore')
@@ -68,4 +68,20 @@ test('连续回退经过真实 DSH 消息面替换与恢复，直到只剩开场
   assert.equal(session.surface.nodes.length, 2)
   assert.equal(session.surface.nodes[0], 0)
   assert.equal(locateRollbackSurface({ events: sessionEvents(session), nodes: session.surface.nodes }), null)
+})
+
+
+test('真实宿主重载后可发现遗漏清理的失败输入，清理后模型不再读取它', () => {
+  const original = fixture()
+  const session = Session.create(original.id, JSON.parse(JSON.stringify(sessionEvents(original))), original.header)
+  const chat = { messages: [{ role: 'user' }, { role: 'assistant', turn: 1 }] }
+  const status = rollbackAvailability(chat, { events: sessionEvents(session), nodes: session.surface.nodes })
+  assert.equal(status.canClearIncompleteReply, true)
+  assert.deepEqual(status.unclearedTurns, [2])
+  for (const turn of status.unclearedTurns) clearFailedTurnSurface({ session, turn })
+  const restored = Session.create(session.id, JSON.parse(JSON.stringify(sessionEvents(session))), session.header)
+  const visible = JSON.stringify(restored.deriveMessages())
+  assert.doesNotMatch(visible, /重新生成/)
+  assert.match(visible, /原正文/)
+  assert.ok(sessionEvents(restored).some(event => event.data?.id === 'retry'))
 })

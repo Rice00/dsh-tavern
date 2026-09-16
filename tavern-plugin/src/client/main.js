@@ -7152,7 +7152,7 @@ window.__ModuleLoader__.load({
 						h("div", { className: "dsh-tavern-preset-summary dsh-tavern-external-preset-notice" },
 						h("strong", null, catalog.activePresetPath ? "当前预设：" + catalog.activePresetTitle : "当前使用内置设置"),
 						h("p", { className: "dsh-tavern-preset-warning" }, h("strong", null, "使用建议："), "一般用内置设置就够了。想改文风或写法，可以在卡片模式里让 Agent 修改人物卡，也可以在游玩时用 Guide 告诉它你的要求。外部预设也会影响模型怎么写，使用前先看看里面写了什么。"),
-						h("p", null, "酒馆的预设可以导入使用，但 DSH 和酒馆的工作方式不同，用起来不一定是原来的效果。"), h("p", null, "每局游戏默认保留开局时的预设。可在这里临时切换当前游戏的预设，或在编辑后应用最新配置；会提示缓存失效，并保留对话和变量。"),
+						h("p", null, "酒馆的预设可以导入使用，但 DSH 和酒馆的工作方式不同，用起来不一定是原来的效果。使用外部预设可能大幅增加思考时间和游玩延迟，请留意。"), h("p", null, "每局游戏默认保留开局时的预设。可在这里临时切换当前游戏的预设，或在编辑后应用最新配置；会提示缓存失效，并保留对话和变量。"),
 						h("p", null, "预设分成前、中、后三段，区别是放进提示词的位置："),
 						h("p", null, h("strong", null, "前段："), "放在系统提示词开头，先告诉模型它是谁、故事背景是什么、要遵守哪些通用规则。"),
 						h("p", null, h("strong", null, "中段："), "放进每轮的任务说明，提醒模型这一轮该怎么写，比如叙事方式和文风。"),

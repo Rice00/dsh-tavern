@@ -147,10 +147,11 @@ export function createHistoryRecall() {
     const currentTurn = rounds.reduce((maximum, round) => Math.max(maximum, round.turn), 0)
     const branch = str(chat.timeline?.branchId)
     const signature = round => createHash('sha256').update(JSON.stringify(round.messages)).digest('hex')
+    const audience = input.audience === 'background' ? 'background' : 'foreground'
     const cooldowns = input.trackCooldown && Array.isArray(chat.historyRecallCooldowns)
-      ? chat.historyRecallCooldowns.filter(item => item && item.branch === branch && currentTurn >= item.at && currentTurn - item.at <= 10)
+      ? chat.historyRecallCooldowns.filter(item => item && (item.audience === 'foreground' || item.audience === 'background') && item.branch === branch && currentTurn >= item.at && currentTurn - item.at <= 10)
       : []
-    const cooling = round => cooldowns.some(item => item.turn === round.turn && item.hash === signature(round))
+    const cooling = round => cooldowns.some(item => item.audience === audience && item.turn === round.turn && item.hash === signature(round))
     const base = {
       notice: '',
       found: false,
@@ -182,7 +183,7 @@ export function createHistoryRecall() {
       }).slice(0, limit).map(function (match) {
         return { turn: match.turn, excerpt: match.excerpt }
       })
-      return Object.assign(base, { found: matches.length > 0, matches, notice: cooldowns.length ? '已召回的完整正文处于 10 轮冷却期，检索已跳过这些轮次。' : '' })
+      return Object.assign(base, { found: matches.length > 0, matches, notice: cooldowns.some(item => item.audience === audience) ? '已召回的完整正文处于 10 轮冷却期，检索已跳过这些轮次。' : '' })
     }
     const requested = Number(input.turn)
     if (!Number.isInteger(requested) || requested < 1) throw new Error('历史正文轮次必须是大于 0 的整数')
@@ -197,8 +198,8 @@ export function createHistoryRecall() {
       return true
     })
     if (input.trackCooldown && fresh.length) {
-      chat.historyRecallCooldowns = cooldowns.filter(item => !fresh.some(round => round.turn === item.turn))
-        .concat(fresh.map(round => ({ turn: round.turn, hash: signature(round), at: currentTurn, branch })))
+      chat.historyRecallCooldowns = cooldowns.filter(item => item.audience !== audience || !fresh.some(round => round.turn === item.turn))
+        .concat(fresh.map(round => ({ turn: round.turn, hash: signature(round), at: currentTurn, branch, audience })))
     }
     return Object.assign(base, {
       found: selected.some(round => round.turn === requested), rounds: fresh,

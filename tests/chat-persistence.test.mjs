@@ -325,18 +325,18 @@ test('批量隐藏与单条恢复并发时按顺序保留最新选择及剧情',
 })
 
 
-test('并发历史召回在存档事务内共享冷却且不覆盖剧情', async () => {
+test('前后台并发召回分别冷却且不覆盖彼此记录或剧情', async () => {
   const app = harness({ id: 'chat-1', messages: [message()], _storageRevision: 1 })
-  const results = await Promise.all(Array.from({ length: 10 }, async () => {
+  const results = await Promise.all(Array.from({ length: 20 }, async (_, index) => {
     let result
     await app.persistence.update('chat-1', current => {
-      result = createHistoryRecall().recall({ chat: current, turn: 1, radius: 0, trackCooldown: true })
+      result = createHistoryRecall().recall({ chat: current, turn: 1, radius: 0, trackCooldown: true, audience: index % 2 ? 'background' : 'foreground' })
       return current
     }, { source: 'history-recall', touchUpdatedAt: false })
     return result
   }))
-  assert.equal(results.filter(result => result.rounds.length === 1).length, 1)
+  assert.equal(results.filter(result => result.rounds.length === 1).length, 2)
   const restored = await app.persistence.read('chat-1')
   assert.deepEqual(restored.messages, [message()])
-  assert.equal(restored.historyRecallCooldowns.length, 1)
+  assert.equal(restored.historyRecallCooldowns.length, 2)
 })

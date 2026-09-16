@@ -702,7 +702,7 @@ export async function apply(ctx) {
   }
   const historyRecall = createHistoryRecall()
   const foregroundRecallScopes = new WeakMap()
-  async function recallHistoryForSession(sessionId, args, scope) {
+  async function recallHistoryForSession(sessionId, args, scope, audience) {
     const chat = await chatForSession(sessionId)
     if (chat === undefined) throw new Error('当前 Session 没有对应的 Tavern Chat')
     const mode = chat.mode || 'story'
@@ -710,7 +710,7 @@ export async function apply(ctx) {
     let result
     await updateChat(chat.id, current => {
       const previousCooldowns = current.historyRecallCooldowns
-      result = historyRecall.recall(Object.assign({}, args || {}, { chat: current, scope, trackCooldown: true }))
+      result = historyRecall.recall(Object.assign({}, args || {}, { chat: current, scope, audience, trackCooldown: true }))
       return current.historyRecallCooldowns === previousCooldowns ? undefined : current
     }, { source: 'history-recall', touchUpdatedAt: false })
     return result
@@ -1637,7 +1637,7 @@ export async function apply(ctx) {
     sharedTools: [{
       tool: HISTORY_RECALL_TOOL,
       async execute({ input, args }) {
-        return renderHistoryRecall(await recallHistoryForSession(input.sessionId, args, input))
+        return renderHistoryRecall(await recallHistoryForSession(input.sessionId, args, input, 'background'))
       }
     }],
     stablePrefixStorage,
@@ -3968,7 +3968,7 @@ export async function apply(ctx) {
             foregroundRecallScopes.set(session, scope)
           }
         }
-        return await recallHistoryForSession(sessionId, args, scope)
+        return await recallHistoryForSession(sessionId, args, scope, 'foreground')
       }
     }))
     tools.register(defineTool({

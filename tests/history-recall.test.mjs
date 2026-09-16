@@ -130,3 +130,29 @@ test('历史正文修改或剧情分支回退后允许重新召回', () => {
   source.timeline = {branchId: 'rollback-branch'}
   assert.equal(read().rounds.length, 1)
 })
+
+test('前后台独立冷却，后台不同任务共享冷却，存档恢复保留双方记录', () => {
+  let source = chat()
+  const read = (audience, args = {}) => createHistoryRecall().recall({
+    chat: source, trackCooldown: true, audience, turn: 2, radius: 0, ...args
+  })
+  assert.equal(read('foreground').rounds.length, 1)
+  assert.equal(read('background', {turn: undefined, query: '北门'}).matches.length, 1)
+  assert.equal(read('background').rounds.length, 1)
+  source = JSON.parse(JSON.stringify(source))
+  assert.equal(read('foreground').rounds.length, 0)
+  assert.equal(read('background').rounds.length, 0)
+  assert.equal(source.historyRecallCooldowns.length, 2)
+  assert.equal(read('background', {turn: 3}).rounds.length, 1)
+  assert.equal(read('foreground', {turn: 3}).rounds.length, 1)
+})
+
+test('旧共享冷却不推断归属，不阻止任一上下文首次读取', () => {
+  const source = chat()
+  const recall = createHistoryRecall()
+  recall.recall({chat: source, turn: 2, radius: 0, trackCooldown: true})
+  for (const entry of source.historyRecallCooldowns) delete entry.audience
+  for (const audience of ['background', 'foreground']) {
+    assert.equal(recall.recall({chat: source, turn: 2, radius: 0, trackCooldown: true, audience}).rounds.length, 1)
+  }
+})

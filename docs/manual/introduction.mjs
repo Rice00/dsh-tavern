@@ -78,6 +78,7 @@ export const installation = `
 
 | 方式 | 适合谁 | 支持平台 |
 | --- | --- | --- |
+| Windows 一键在线安装 | 不想手动安装 Node.js 或 Desktop 的新用户 | Windows x64 |
 | DSH Desktop 桌面版 | 希望由桌面程序管理运行环境、启停和端口 | Windows x64、macOS |
 | 命令行版 | 希望通过浏览器访问、自己管理服务 | Windows、macOS、Linux / WSL2 |
 | Android 实验版 | 愿意自行排错的手机用户 | 通过 DSHA 尝试安装，不保证一定可用 |
@@ -86,21 +87,31 @@ export const installation = `
 
 命令行版独立安装固定的 DSH {{dshVersion}}。Desktop / DSHA 复用宿主，要求内置 DSH 版本完全匹配，不匹配时停止安装；请自行下载安装适配版本。
 
-## 方式一：桌面版
+## Windows 新用户：一键在线安装
+
+[下载 Windows 一键在线安装 EXE](https://github.com/flizzywine/dsh-tavern/releases/download/v1.9/DSH-Tavern-Desktop-2.0.5-x64-Portable.exe)
+
+1. 下载后双击运行，首次启动保持联网。
+2. 安装器自动准备 Desktop 2.0.5 和当前兼容的最新版酒馆，无需另装 Node.js 或 DSH Desktop。
+3. 打开酒馆后，在“设置 → 模型”配置模型，再导入人物卡。
+
+已有安装和数据会保留，之后可在酒馆界面检查更新。这是在线安装程序，不是无需网络的离线整包。
+
+## 已有 Desktop 或 macOS：安装酒馆
 
 1. 安装适配版本 **DSH Desktop 2.0.5**（内置 DSH {{dshVersion}}）。打开 [历史版本下载页面](https://github.com/anywhere-labs/dsh-desktop/releases)，找到 **v2.0.5**，展开 **Assets**，下载适合自己系统的安装包；不要下载 Source code。内置 DSH 版本不匹配时会停止安装，请使用适配版本。
-2. 启动后，从系统托盘或 macOS 菜单栏打开 **Open DSH Terminal**。
+2. 启动后，打开 **设置 → 通用设置**，点击窗口顶部的 **打开 DSH 终端**。
 3. 在这个终端里，运行你所用平台的命令。
 
 ### Windows
 ` + code('powershell', installCommands.desktopWindows) + `
 ### macOS
 ` + code('bash', installCommands.desktopMac) + `
-安装完成后，重启 DSH Desktop，从托盘的 **Profile** 菜单选择 **tavern**。看到酒馆界面后，继续下方的“配置模型并开始第一局”。桌面版由 DSH Desktop 管理启停，不需要另外启动命令行服务。
+安装完成后，重启 DSH Desktop，进入 **设置 → 桌面设置**，在右侧 **Profile** 列表点击 **tavern**；旁边显示 **当前** 即为选中。看到酒馆界面后，继续下方的“配置模型并开始第一局”。桌面版由 DSH Desktop 管理启停，不需要另外启动命令行服务。
 
 ## 方式二：命令行版
 
-先准备 Node.js 22.19 或更高版本。建议安装 Git，便于增量更新；没有 Git 时安装器会回退到 ZIP 下载。不论电脑是否已有 DSH，每次安装都会下载独立的固定版本，不复用或修改全局 DSH。运行时、Profile 和数据默认在 ~/.dsh-tavern/；首次升级复制旧 CLI 数据并保留原件。Node.js 仍使用系统版本。
+先准备 Node.js 22.19 或更高版本。建议安装 Git，便于增量更新；没有 Git 时安装器会回退到 ZIP 下载。不论电脑是否已有 DSH，每次安装都会下载独立的固定版本，不复用或修改全局 DSH。首次安装会询问目录：1 默认目录 ~/.dsh-tavern/；2 当前目录（直接回车选这一项）；3 其他完整路径。程序、独立运行时和游戏数据存入所选目录，命令入口及包管理器缓存可能在目录外。Node.js 使用系统版本。
 
 ### Windows PowerShell
 ` + code('powershell', installCommands.cliWindows) + `
@@ -135,11 +146,11 @@ export const installation = `
 
 首次安装、更新或重新安装，都可以运行上面对应宿主、对应平台的安装命令。一般无需先卸载；安装器更新程序文件，保留人物卡、对话、配置、自定义工具和 Skill。
 
-重新安装前仍建议[备份数据](#n07)。如果使用自定义安装或数据目录，请保持原配置。
+重新安装前仍建议[备份数据](#n07)。更新沿用已安装位置。重新运行 CLI 安装命令时，请在原安装根目录执行，或设置 DSH_TAVERN_CLI_HOME 指向原位置；不要无意中安装到新目录。Desktop、CLI 和 DSHA 数据各自独立，切换安装方式不会自动同步。
 
 命令行版也可使用：
 ` + code('bash', 'dsh-tavern update') + `
-这个命令更新 Tavern，不是升级 DSH 本体。桌面版在 DSH Terminal 中重新运行桌面安装命令，完成后重启 Desktop。若内置更新失败，也可用对应安装命令更新安装器和程序。
+这个命令更新 Tavern，不是升级 DSH 本体。桌面版从设置顶部打开 DSH 终端，重新运行桌面安装命令，完成后重启 Desktop。若内置更新失败，也可用对应安装命令更新安装器和程序。
 
 ## Android：通过 DSHA 安装
 

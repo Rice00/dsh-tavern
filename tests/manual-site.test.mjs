@@ -70,7 +70,7 @@ test('安装页提供与完整安装说明一致的可复制命令、当前适�
     assert.ok(installationGuide.includes(command), 'Installation command must match installation guide')
     assert.ok(install.includes(`<code>${escapeHTML(command)}</code>`), 'Commands must remain literal text')
   }
-  for (const term of ['方式一：桌面版', '方式二：命令行版', 'Open DSH Terminal', '配置模型并开始第一局', '关机后如何重新打开', '更新与重新安装', 'Android：通过 DSHA 安装', '安装失败时', adaptedDshVersion]) assert.ok(install.includes(term), term)
+  for (const term of ['Windows 新用户：一键在线安装', '已有 Desktop 或 macOS：安装酒馆', '方式二：命令行版', '打开 DSH 终端', '当前目录（直接回车选这一项）', 'DSH_TAVERN_CLI_HOME', '配置模型并开始第一局', '关机后如何重新打开', '更新与重新安装', 'Android：通过 DSHA 安装', '安装失败时', adaptedDshVersion]) assert.ok(install.includes(term), term)
   assert.match(install, /class="copy-code"/)
   assert.match(install, /不要分享给别人/)
   assert.doesNotMatch(install, /\{\{dshVersion\}\}|```/)

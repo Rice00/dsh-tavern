@@ -8431,12 +8431,6 @@ window.__ModuleLoader__.load({
 					try { await rpc("selectPreset", { path: path }, props.scope.sessionId); await refresh(); notifyTavernDataChanged(["presets", "sessions"], "presets"); }
 					catch (err) { setError(String(err && err.message || err)); } finally { setBusy(false); }
 				}
-				async function applyConversationPreset(path) {
-					if (!window.confirm("应用预设会使当前游戏的提示词缓存失效，下一轮可能增加耗时和费用。已保存的提示词和正则将应用到当前游戏，保留对话和变量。是否继续？")) return;
-					setBusy(true); setError("");
-					try { await rpc("applyConversationPreset", { sessionId: props.scope.sessionId, path: path }, props.scope.sessionId); await refresh(); notifyTavernDataChanged(["presets", "sessions"], "presets"); }
-					catch (err) { setError(String(err && err.message || err)); } finally { setBusy(false); }
-				}
 				async function loadPreset(path) {
 					setBusy(true); setError("");
 					try { const result = await rpc("getPreset", { path: path }, props.scope.sessionId); setPreset(result.preset || null); setEntryDrafts({}); setRegexDrafts({}); setDetailPath(path); }
@@ -8565,8 +8559,8 @@ window.__ModuleLoader__.load({
 					return h("div", { className: "dsh-tavern-presets" },
 					h("div", { className: "dsh-tavern-status-head" }, h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: function () { setDetailPath(""); setPreset(null); } }, "← 返回预设库"), h("div", { className: "dsh-tavern-status-title" }, preset.title)),
 					h("div", { className: "dsh-tavern-preset-detail" }, error ? h("div", { className: "dsh-tavern-dock-error" }, error) : null,
-						h("div", { className: "dsh-tavern-preset-summary" }, h("b", null, "编辑前／中／后三段预设"), h("p", null, "前、中、后表示这些内容放在提示词的什么位置。点击条目就能修改；拖动左侧手柄可调整顺序或跨段移动，松开后自动保存。"), h("p", null, "保存后可点击“应用到当前游戏”，让已保存的提示词和正则从下一轮生效；这会使提示词缓存失效。"), h("p", null, "预设会影响游玩时的正文生成。DSH 和酒馆的工作方式不同，同一份预设不一定有同样的效果。"), h("p", null, "在卡片模式里引用预设，只是让 Agent 帮你查看或修改它；负责后台工作的 Agent 不使用这些预设。")),
-						h("div", { className: "dsh-tavern-preset-detail-actions" }, isPlayMode(catalog.sessionMode) ? h("button", { className: "dsh-tavern-btn", disabled: busy || Object.keys(entryDrafts).length > 0 || Object.keys(regexDrafts).length > 0, title: "请先保存条目和正则的修改", onClick: function () { applyConversationPreset(preset.path); } }, "应用到当前游戏") : null, h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: function () { exportFile(preset); } }, "导出"), h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: function () { rename(preset); } }, "重命名"), h("button", { className: "dsh-tavern-btn danger", disabled: busy, onClick: function () { remove(preset); } }, "删除")),
+						h("div", { className: "dsh-tavern-preset-summary" }, h("b", null, "编辑前／中／后三段预设"), h("p", null, "前、中、后表示这些内容放在提示词的什么位置。点击条目就能修改；拖动左侧手柄可调整顺序或跨段移动，松开后自动保存。"), h("p", null, "保存后可在“本局设置”中选择预设，让已保存的提示词和正则从下一轮生效；这会使提示词缓存失效。"), h("p", null, "预设会影响游玩时的正文生成。DSH 和酒馆的工作方式不同，同一份预设不一定有同样的效果。"), h("p", null, "在卡片模式里引用预设，只是让 Agent 帮你查看或修改它；负责后台工作的 Agent 不使用这些预设。")),
+						h("div", { className: "dsh-tavern-preset-detail-actions" }, h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: function () { exportFile(preset); } }, "导出"), h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: function () { rename(preset); } }, "重命名"), h("button", { className: "dsh-tavern-btn danger", disabled: busy, onClick: function () { remove(preset); } }, "删除")),
 						h("div", { className: "dsh-tavern-preset-section-title" }, "提示词三段 · " + (preset.entries || []).length + " 个源条目"),
 						phaseSection("front", "前段", "放在系统提示词的开头，在 DSH 自带说明和聊天历史之前。适合写模型身份、世界背景和通用规则。", entryGroups.front),
 						phaseSection("middle", "中段", "放进每轮的任务说明里，和这一轮的写作要求一起发给模型。适合写需要每轮提醒的叙事和文风要求。", entryGroups.middle),
@@ -8578,7 +8572,6 @@ window.__ModuleLoader__.load({
 					h("div", { className: "dsh-tavern-status-head" }, h("div", { className: "dsh-tavern-status-title" }, "预设库"), h("div", { className: "dsh-tavern-question-sub" }, "导入、选择和修改酒馆预设"), h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: function () { importInput.current && importInput.current.click(); } }, "导入外部预设"), h("input", { ref: importInput, type: "file", accept: ".json,application/json", style: { display: "none" }, onChange: function (event) { const file = event.target.files && event.target.files[0]; importFile(file); event.target.value = ""; } })),
 					h("div", { className: "dsh-tavern-preset-list" }, error ? h("div", { className: "dsh-tavern-dock-error" }, error) : null,
 						h("label", { className: "dsh-tavern-preset-selector" }, h("span", null, "新游戏默认预设"), h("select", { value: catalog.activePresetPath, disabled: busy, onChange: function (event) { selectPreset(event.target.value); } }, h("option", { value: "" }, "不使用外部预设（默认）"), catalog.presets.filter(function (item) { return item.valid === true && item.recognized === true; }).map(function (item) { return h("option", { key: item.path, value: item.path }, item.title); }))),
-						isPlayMode(catalog.sessionMode) ? h("label", { className: "dsh-tavern-preset-selector" }, h("span", null, "当前游戏预设（切换会使缓存失效）"), h("select", { value: catalog.runtimePreset && catalog.runtimePreset.id || "", disabled: busy, onChange: function (event) { applyConversationPreset(event.target.value); } }, h("option", { value: "" }, "不使用外部预设"), catalog.runtimePreset && !catalog.presets.some(function (item) { return item.path === catalog.runtimePreset.id; }) ? h("option", { value: catalog.runtimePreset.id }, catalog.runtimePreset.name + "（源文件已移除）") : null, catalog.presets.filter(function (item) { return item.valid === true && item.recognized === true; }).map(function (item) { return h("option", { key: item.path, value: item.path }, item.title); }))) : null,
 						h("div", { className: "dsh-tavern-preset-summary dsh-tavern-external-preset-notice" },
 						h("strong", null, catalog.activePresetPath ? "当前预设：" + catalog.activePresetTitle : "当前使用内置设置"),
 						h("p", { className: "dsh-tavern-preset-warning" }, h("strong", null, "使用建议："), "一般用内置设置就够了。想改文风或写法，可以在卡片模式里让 Agent 修改人物卡，也可以在游玩时用 Guide 告诉它你的要求。外部预设也会影响模型怎么写，使用前先看看里面写了什么。"),

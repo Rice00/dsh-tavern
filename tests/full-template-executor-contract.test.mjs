@@ -15,7 +15,7 @@ test('模板连 project 都缺失时报告初始化失败，不无限假重连',
   let receive
   const browser = vm.createContext({
     YAML: {}, loadTemplateModule: async () => ({ templateHost: {}, createTemplateServices: () => ({}), createTemplatePanel: () => ({}), connectTemplateSession: async () => ({ context: {}, synchronize() {} }) }),
-    console: { log() {}, error() {} }, setTimeout() {},
+    console: { log() {}, error() {} }, setTimeout() {}, clearTimeout() {},
     fetch: async () => ({ text: async () => '' }),
     addEventListener(type, fn) { if (type === 'message') receive = fn },
     parent: { postMessage(message) { requests.push(message); queueMicrotask(() => receive({ source: browser.parent, data: { token: 'runtime', requestId: message.requestId, result: {} } })) } }
@@ -54,4 +54,30 @@ test('回执传输失败不再次提交或重复执行模板', async () => {
   }
   await assert.rejects(scope.createLegacyTemplateWorkProcessor(plugin,rpc,'runtime')(),/network/)
   assert.equal(projects,1);assert.equal(receipts,1)
+})
+
+test('空闲领取逐步退避，任务通知立即唤醒且不会丢失提前到达的通知', async () => {
+  const scope = vm.createContext({})
+  vm.runInContext(source, scope)
+  const timers = new Map()
+  let id = 0
+  const idle = scope.createTemplateIdleWait({
+    schedule(fn, delay) { timers.set(++id, {fn, delay}); return id },
+    cancel(key) { timers.delete(key) }
+  })
+  const delays = []
+  for (let i = 0; i < 8; i++) {
+    const waiting = idle.wait()
+    const [key, timer] = [...timers][0]
+    delays.push(timer.delay); timers.delete(key); timer.fn(); await waiting
+  }
+  assert.deepEqual(delays, [100,200,400,800,1600,2000,2000,2000])
+  const waiting = idle.wait()
+  idle.wake(); await waiting
+  assert.equal(timers.size, 0)
+  idle.wake(); await idle.wait()
+  assert.equal(timers.size, 0)
+  const next = idle.wait()
+  assert.equal([...timers.values()][0].delay, 100)
+  idle.wake(); await next
 })

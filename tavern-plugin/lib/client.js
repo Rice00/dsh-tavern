@@ -5026,6 +5026,27 @@ window.__ModuleLoader__.load({
 
 		// The selected game's executor belongs to the plugin, not its disposable header.
 		// Descendant navigation shares its owner; unrelated games never share a sandbox.
+		// Back off only empty queue checks; notifications wake the executor immediately.
+		function createTemplateIdleWait({ schedule = setTimeout, cancel = clearTimeout } = {}) {
+		  let delay = 100, pending = false, finish = null;
+		  return {
+		    reset() { delay = 100; },
+		    wake() {
+		      delay = 100;
+		      if (finish) finish();
+		      else pending = true;
+		    },
+		    wait() {
+		      if (pending) { pending = false; return Promise.resolve(); }
+		      return new Promise(resolve => {
+		        const timer = schedule(() => { finish = null; resolve(); }, delay);
+		        finish = () => { cancel(timer); finish = null; resolve(); };
+		        delay = Math.min(2000, delay * 2);
+		      });
+		    }
+		  };
+		}
+
 		// Compatibility transport for template builds predating the session task queue.
 		// The official plugin still owns projection and persistence; never retry started work.
 		function createLegacyTemplateWorkProcessor(plugin, rpc, runtimeId) {
@@ -5093,8 +5114,9 @@ window.__ModuleLoader__.load({
 
 		const token=${JSON.stringify(token)},sessionId=${JSON.stringify(sessionId)},runtimeId=token;
 		let sequence=0,context,plugin,panel,templateHost,dirty=true,panelRequested=false,lastSync=0;const pending=new Map();
+		const idleWait=(${createTemplateIdleWait.toString()})();
 		const rpc=(method,args={})=>new Promise((resolve,reject)=>{const requestId=++sequence;pending.set(requestId,{resolve,reject});parent.postMessage({type:'full-template-rpc',token,requestId,method,args},'*')});
-		addEventListener('message',event=>{if(event.source!==parent||event.data?.token!==token)return;const data=event.data;if(data.type==='template-dirty'){dirty=true;return}if(data.type==='template-open'){panelRequested=true;return}const item=pending.get(data.requestId);if(!item)return;pending.delete(data.requestId);data.error?item.reject(new Error(data.error)):item.resolve(data.result)});
+		addEventListener('message',event=>{if(event.source!==parent||event.data?.token!==token)return;const data=event.data;if(data.type==='template-dirty'){dirty=true;idleWait.wake();return}if(data.type==='template-open'){panelRequested=true;idleWait.wake();return}const item=pending.get(data.requestId);if(!item)return;pending.delete(data.requestId);data.error?item.reject(new Error(data.error)):item.resolve(data.result)});
 		window.toastr=Object.fromEntries(['info','success','warning','error'].map(key=>[key,message=>console[key==='error'?'error':'log'](message)]));
 		window.YAML=YAML;
 		window.SillyTavern={getContext:()=>Object.assign({},context,templateHost)};
@@ -5116,8 +5138,8 @@ window.__ModuleLoader__.load({
 		   if(!await processNext()) {
 		    if(panelRequested){panelRequested=false;await panel.open()}
 		    if(!sessionId.startsWith('opening:') && dirty && Date.now()-lastSync>1000){dirty=false;lastSync=Date.now();try{const result=await plugin.synchronize();if(result.deferred)dirty=true;}catch(error){console.error('模板消息同步失败',error);dirty=true;}}
-		    await new Promise(resolve=>setTimeout(resolve,100));
-		   }
+		    await idleWait.wait();
+		   } else idleWait.reset();
 		   }catch(error){console.error('完整模板连接中断，正在重连',error);await new Promise(resolve=>setTimeout(resolve,1000));}
 		  }
 		 }catch(error){console.error('完整模板初始化失败',error);await rpc('claimFullTemplateWork',{runtimeId,ready:false,initializationError:String(error.stack||error)});}

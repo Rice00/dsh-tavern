@@ -75,7 +75,11 @@
 
 适配版本：**[DSH Desktop 2.0.5](https://github.com/anywhere-labs/dsh-desktop/releases/tag/v2.0.5)**（[历史 Release 下载](https://github.com/anywhere-labs/dsh-desktop/releases)）。必须使用适配版本；检测到非适配 DSH 版本时将停止安装。
 
-安装 Desktop 后，从系统托盘（macOS 菜单栏）打开 **Open DSH Terminal**，运行：
+安装并打开 DSH Desktop 后，进入 **设置 → 通用设置**，点击页面顶部的 **打开 DSH 终端**（如下图）。
+
+![DSH Desktop 设置页面：在顶部点击“打开 DSH 终端”](docs/images/readme/open-dsh-terminal.png)
+
+在弹出的终端窗口中，复制下方对应系统的命令，粘贴后按 **回车** 执行：
 
 Windows：
 

@@ -113,7 +113,7 @@ test('rollback refuses a checkpoint whose round has left the native Surface inst
   const h=harness({checkpoint:true})
   h.session.events[1].data.turn=1
   const before=structuredClone(h.chat)
-  await assert.rejects(h.create().rollback('session','chat'),/已不在当前模型上下文/)
+  await assert.rejects(h.create().rollback('session','chat'),/当前轮次已不在可回退的消息流中/)
   assert.deepEqual(h.chat,before)
   assert.equal(h.calls.length,0)
 })
@@ -729,4 +729,12 @@ test('失败后成功再回退：先清理失败残留，下一次才回退保�
   const rolled = await history.rollback('session', 'chat')
   assert.equal(rolled.rolledBack.hiddenTurn, 2)
   assert.equal(h.chat.messages.length, 1)
+})
+
+test('压缩移除原生配对后，回退返回可理解提示且不修改存档', async () => {
+  const h = harness({ checkpoint: true })
+  h.session.surface.nodes = []
+  const before = structuredClone(h.chat)
+  await assert.rejects(h.create().rollback('session', 'chat'), /当前轮次已不在可回退的消息流中/)
+  assert.deepEqual(h.chat, before)
 })

@@ -8,7 +8,7 @@ const component = source.slice(source.indexOf('function CandidateAction('), sour
 
 function harness() {
   let running = true, activity = { phase: 'idle', busy: false, role: '' }, regen = null, fail = false, warning = '', canRollback = true, undoTurn = null
-  const states = [], calls = []
+  const states = [], calls = [], extraView = {}
   let cursor = 0
   const context = {
     React: {
@@ -22,7 +22,7 @@ function harness() {
     },
     useCandidatePanel: () => null, useRegenPanel: () => regen,
     useTavernSessionMode: () => 'story', latestTavernAssistantMessageId: () => 'reply',
-    useLiveTavernView: () => ({ view: { canRollback, undoRollbackTurn: undoTurn } }),
+    useLiveTavernView: () => ({ view: { canRollback, undoRollbackTurn: undoTurn, ...extraView } }),
     useTavernCoordination: () => ({ view: { activity } }),
     describeTavernActivity: value => value, isPlayMode: () => true,
     window: { confirm: () => { calls.push('confirm'); return true } },
@@ -38,6 +38,7 @@ function harness() {
   const actions = vm.runInNewContext(component + '; ({ CandidateAction, TavernRollbackAction, TavernUndoRollbackAction, TavernMoreActions })', context)
   return {
     calls,
+    view(value) { Object.assign(extraView, value) },
     undoTurn(value) { undoTurn = value },
     undo() { cursor = 0; return actions.TavernUndoRollbackAction({ sessionId: 'session', useSession: select => select({ running }) }) },
     playerRound(value) { canRollback = value },
@@ -160,4 +161,16 @@ test('回退到开场白后仍可撤销，运行期间禁用', async () => {
   h.running(false)
   await h.undo().props.onClick()
   assert.ok(h.calls.includes('restore'))
+})
+
+
+test('不可回退时展示原因，仍允许独立的正文重新生成', () => {
+  const h = harness()
+  h.running(false)
+  h.playerRound(false)
+  h.view({ rollbackUnavailableReason: '当前轮次已不在可回退的消息流中', canRegenerate: true })
+  assert.equal(h.button().props.role, 'status')
+  assert.match(h.button().children[0], /不在可回退/)
+  assert.deepEqual(h.buttons().map(button => button.children[0]), ['生成候选项', '重新生成正文'])
+  assert.deepEqual(h.calls, [])
 })

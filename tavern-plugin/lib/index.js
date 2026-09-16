@@ -99,7 +99,7 @@ import { resolveRuntimePresetMacros } from './domain/runtime-presets.js'
 import { compileSillyTavernRequest, createCleanCompatibilityPreset } from './domain/sillytavern-compatibility.js'
 import { applySillyTavernStrictTools } from './domain/sillytavern-strict-tools.js'
 import { createForegroundOrchestrationStrategies } from './domain/foreground-orchestration-strategies.js'
-import { pendingFailedSurfaceTurns, foregroundSuppressedTurns, clearFailedTurnSurface, hasRollbackMessages, supersededRegenerationErrorTurns } from './domain/rollback-surface.js'
+import { rollbackAvailability, foregroundSuppressedTurns, clearFailedTurnSurface, hasRollbackMessages, supersededRegenerationErrorTurns } from './domain/rollback-surface.js'
 import { assistantResultForTurn } from './domain/session-turn-result.js'
 import { createTavernRetryLimiter } from './domain/tavern-retry-limiter.js'
 import { lastTavernHelperVariables, projectTavernHelperContext } from './domain/tavern-helper-context.js'
@@ -1317,7 +1317,7 @@ export async function apply(ctx) {
     }
     const projectionEvents = sessionDebugEvidence(chat.sessionId).events
     const suppressedDshTurns = foregroundSuppressedTurns(chat, projectionEvents)
-    const canClearIncompleteReply = pendingFailedSurfaceTurns({ events: projectionEvents, nodes: agentRegistry.get(chat.sessionId)?.session?.surface?.nodes || [], suppressed: suppressedDshTurns }).length > 0
+    const rollbackState = rollbackAvailability(chat, { events: projectionEvents, nodes: agentRegistry.get(chat.sessionId)?.session?.surface?.nodes || [] })
     return {
       chatId: chat.id,
       contextCompaction: chat.contextCompaction || null,
@@ -1344,8 +1344,11 @@ export async function apply(ctx) {
       latestAssistantTurn: latestStoryTurn,
       inputSources,
       inputTemplateDisplays,
-      canClearIncompleteReply,
-      canRollback: hasRollbackMessages(chat.messages) || canClearIncompleteReply,
+      canClearIncompleteReply: rollbackState.canClearIncompleteReply,
+      canRollback: rollbackState.canRollback,
+      rollbackUnavailableReason: hasRollbackMessages(chat.messages) ? rollbackState.reason : '',
+      canRegenerate: hasRollbackMessages(chat.messages),
+      canEditBody: hasRollbackMessages(chat.messages),
       rollbackTargetTurn: latestStoryTurn,
       undoRollbackTurn: canUndoRollback(chat, liveSession) ? chat.rollbackUndo.turn : null,
       presentation: null,

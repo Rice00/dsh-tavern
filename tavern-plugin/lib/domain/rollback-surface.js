@@ -357,3 +357,18 @@ export function hasRollbackMessages(messages) {
   }
   return false
 }
+
+// UI and mutation share the same native target and failed-tail precedence.
+export function rollbackAvailability(chat, { events = [], nodes = [] } = {}) {
+  const failedTurns = pendingFailedSurfaceTurns({ events, nodes, suppressed: chat.suppressedDshTurns || [] })
+  if (failedTurns.length) return { canRollback: true, canClearIncompleteReply: true, failedTurns, target: null, reason: '' }
+  const target = locateRollbackSurface({ events, nodes })
+  const messages = Array.isArray(chat.messages) ? chat.messages : []
+  const latest = messages.findLast(message => message?.role === 'assistant' && message.greeting !== true)
+  const turn = Number(latest?.turn)
+  const matches = target && (!(turn > 0) || target.turn === turn || target.turn === Number(chat.regeneratedDshTurns?.[String(turn)]))
+  const hasMessages = hasRollbackMessages(messages)
+  const canRollback = hasMessages && Boolean(matches)
+  return { canRollback, canClearIncompleteReply: false, failedTurns, target: canRollback ? target : null,
+    reason: canRollback ? '' : hasMessages ? '当前轮次已不在可回退的消息流中，请继续发送新消息；历史正文仍保留。' : '当前没有可回退的已提交轮次' }
+}

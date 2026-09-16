@@ -8846,7 +8846,7 @@ window.__ModuleLoader__.load({
 			const activityState = useTavernCoordination(props.sessionId, String(frontRunning) + ":" + String(latestMessageId || ""));
 			const activity = describeTavernActivity(activityState.view && activityState.view.activity);
 			const settlementActive = activity.role === "settlement" && (activity.phase === "pending" || activity.phase === "running");
-			const canRollback = rollbackViewState.view && rollbackViewState.view.canRollback === true;
+			const canRollback = rollbackViewState.view && (rollbackViewState.view.canRegenerate ?? rollbackViewState.view.canRollback) === true;
             const clearIncomplete = rollbackViewState.view && rollbackViewState.view.canClearIncompleteReply === true;
 			const candidateTask = activityState.view && activityState.view.task;
 			const taskForMessage = candidateTask && candidateTask.kind === "candidate" && candidateTask.input && String(candidateTask.input.messageId || "") === String(props.messageId || "") ? candidateTask : null;
@@ -8949,7 +8949,10 @@ window.__ModuleLoader__.load({
 					tavernErrorHub.report("回退本轮", err);
 				} finally { setRolling(false); liveTavernView.invalidate(props.sessionId); tavernCoordination.invalidate(props.sessionId); }
 			}
-			if (!canRollback) return null;
+			if (!canRollback) {
+                const reason = rollbackViewState.view && rollbackViewState.view.rollbackUnavailableReason;
+                return reason ? React.createElement("span", { role: "status", className: "dsh-tavern-muted" }, reason) : null;
+            }
 			return React.createElement("button", { className: "danger", role: "menuitem", disabled: blocked, title: blocked ? "请等待当前生成或后台处理完成后再回退" : clearIncomplete ? "清除未完成回复，保留已完成剧情" : "删除最近一次用户输入和这段 LLM 输出", onClick: rollback }, rolling ? "处理中…" : clearIncomplete ? "清除未完成回复" : targetLabel);
 		}
 
@@ -9000,7 +9003,7 @@ window.__ModuleLoader__.load({
 				} catch (error) { tavernErrorHub.report("编辑正文", error); }
 				finally { setBusy(false); }
 			}
-			if (!live.view || !live.view.canRollback) return null;
+			if (!live.view || !(live.view.canEditBody ?? live.view.canRollback)) return null;
 			return React.createElement("button", { role: "menuitem", disabled: busy || running || activity.busy, onClick: openEditor }, busy ? "读取中…" : "编辑正文");
 		}
 		function BodyEditPanel(props) {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { pendingFailedSurfaceTurns, abortedRegenerationTurns, clearFailedTurnSurface, hasRollbackMessages, locateRollbackSurface, planFailedTurnSurface, planRegenerationSurface, regenerationAttemptTurns } from '../tavern-plugin/lib/domain/rollback-surface.js'
+import { rollbackAvailability, pendingFailedSurfaceTurns, abortedRegenerationTurns, clearFailedTurnSurface, hasRollbackMessages, locateRollbackSurface, planFailedTurnSurface, planRegenerationSurface, regenerationAttemptTurns } from '../tavern-plugin/lib/domain/rollback-surface.js'
 
 function modelSource() {
   return { kind: 'model', provider: 'test', model: 'test-model' }
@@ -266,4 +266,20 @@ test('旧 snapshot 不冒充用户输入，清理失败轮次后仍能定位上�
   const result = locateRollbackSurface({ events, nodes: [0, 1, 5, 8, 9] })
   assert.equal(result?.turn, 171)
   assert.equal(result?.userSeq, 0)
+})
+
+
+test('回退可用性要求聊天与原生轮次配对，允许重生成映射，不接受孤立输入', () => {
+  const chat = { messages: [{ role: 'user' }, { role: 'assistant', turn: 2 }] }
+  const events = [
+    { seq: 0, type: 'user/message', data: { role: 'user' } },
+    { seq: 1, type: 'assistant/message', data: { turn: 2, message: { source: modelSource() } } }
+  ]
+  assert.equal(rollbackAvailability(chat, { events, nodes: [0, 1] }).canRollback, true)
+  assert.equal(rollbackAvailability(chat, { events, nodes: [0] }).canRollback, false)
+  assert.equal(rollbackAvailability(chat, { events, nodes: [] }).canRollback, false)
+  events[1].data.turn = 3
+  assert.equal(rollbackAvailability(chat, { events, nodes: [0, 1] }).canRollback, false)
+  chat.regeneratedDshTurns = { 2: 3 }
+  assert.equal(rollbackAvailability(chat, { events, nodes: [0, 1] }).canRollback, true)
 })

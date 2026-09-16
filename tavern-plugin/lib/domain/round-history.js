@@ -3,7 +3,7 @@ import { rewindBackgroundSurface } from './background-surface.js'
 import { sessionEvents, appendSessionEvent } from './session-events.js'
 import { randomUUID } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
-import { pendingFailedSurfaceTurns, clearRegenerationAttemptSurface, locateRegenerationSurface, locateRollbackSurface, planRegenerationSurface, regenerationAttemptTurns } from './rollback-surface.js'
+import { rollbackAvailability, clearRegenerationAttemptSurface, locateRegenerationSurface, planRegenerationSurface, regenerationAttemptTurns } from './rollback-surface.js'
 import { assertRegenerationSourceCurrent, replaceLastRound } from './last-round-replacement.js'
 import { diagnosticIdentity, regenerationTargetDiagnostic } from './regeneration-diagnostics.js'
 
@@ -290,7 +290,8 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
     const session = agent.session
     const events = sessionEvents(session)
     const nodes = session.surface !== undefined && Array.isArray(session.surface.nodes) ? session.surface.nodes : []
-    const failedTurns = pendingFailedSurfaceTurns({ events, nodes, suppressed: chat.suppressedDshTurns || [] })
+    const availability = rollbackAvailability(chat, { events, nodes })
+    const failedTurns = availability.failedTurns
     if (failedTurns.length) {
       chat = await updateChat(chat.id, current => {
         assertRollbackSnapshot(rollbackBodyMessages(current), rollbackBodyMessages(originalChat))
@@ -301,8 +302,8 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
       result.clearedIncompleteTurns = failedTurns
       return result
     }
-    const rollbackSurface = locateRollbackSurface({ events, nodes })
-    if (rollbackSurface === null) throw new Error('原生消息流中找不到可回退的用户输入与正文组合')
+    const rollbackSurface = availability.target
+    if (rollbackSurface === null) throw new Error(availability.reason)
     const hiddenTurn = rollbackSurface.turn
     const shadowedSeqs = rollbackSurface.shadowedSeqs
     const regeneratedDshTurns = originalChat.regeneratedDshTurns && typeof originalChat.regeneratedDshTurns === 'object' && !Array.isArray(originalChat.regeneratedDshTurns)

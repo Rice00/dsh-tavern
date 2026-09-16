@@ -8278,8 +8278,10 @@ window.__ModuleLoader__.load({
 
 		function createPlayControlsFeatureModule() {
 			const historyProjection = createTurnHistoryProjection();
+            // @include session-inventory.js
 			function TavernConversationExportAction(props) {
-				const [available, setAvailable] = React.useState(false);
+				const [inventoryOpen, setInventoryOpen] = React.useState(false);
+                const [available, setAvailable] = React.useState(false);
 				const [busy, setBusy] = React.useState(false);
 				React.useEffect(function () {
 					let stopped = false;
@@ -8344,9 +8346,11 @@ window.__ModuleLoader__.load({
                     finally { setBusy(false); }
                 }
                 return React.createElement("div", { className: "dsh-tavern-more-actions dsh-tavern-export-menu", ref: root },
+                    inventoryOpen ? React.createElement(SessionInventoryDialog, { sessionId: props.sessionId, onClose: () => setInventoryOpen(false) }) : null,
                     React.createElement("style", null, 'button[class*="_sessionLogButton"]{display:none!important}'),
                     React.createElement("button", { type: "button", className: "dsh-tavern-export-action", "aria-haspopup": "menu", "aria-expanded": open, "aria-busy": busy, onClick: function () { setOpen(value => !value); } }, busy ? "导出中…" : "导出 ▾"),
                     React.createElement("div", { className: "dsh-tavern-more-menu", role: "menu", "aria-label": "导出", hidden: !open, onClick: function (event) { if (event.target.closest("button:not(:disabled)")) setOpen(false); } },
+                        React.createElement("button", { type: "button", role: "menuitem", onClick: () => setInventoryOpen(true) }, "会话统计"),
                         React.createElement("button", { type: "button", role: "menuitem", "data-tavern-log-export": "", disabled: busy, "aria-label": "日志", title: "下载 Session、MVU、生图与更新日志；含私人剧情，分享前请检查隐私", onClick: exportLogs }, "日志"),
                         React.createElement("button", { type: "button", role: "menuitem", disabled: busy, title: "最近一轮的命中词、扫描来源、排序、排除原因与最终投影正文", onClick: exportWorldbookRecall }, "世界书召回日志"),
                         React.createElement("button", { type: "button", role: "menuitem", title: "最近 10 分钟，最多 120 条；不含输入或聊天内容。刷新页面后清空", onClick: () => tavernInteractionDiagnostics.download() }, "交互诊断"),

@@ -1,3 +1,4 @@
+import { createSessionInventory } from './domain/session-inventory.js'
 import { canUndoRollback } from './domain/surface-restoration.js'
 import { createSessionViewSync } from './domain/session-view-sync.js'
 import { setFailedErrorVisibility } from './domain/failed-error-visibility.js'
@@ -983,6 +984,10 @@ export async function apply(ctx) {
     if (result.deleted) await cardOrganization.movePath(normalizeResourcePath(cardPath, 'card'), null)
     return result
   }
+  const sessionInventory = createSessionInventory({
+    persistence: ctx.get('sessionPersistence'), sessions: sessionStore, agents: agentRegistry,
+    references: () => conversationRegistry.list(), archived: () => ctx.get('workspaceRegistry')?.archivedSessionIds
+  })
   async function stopChatForDeletion(chatId) {
     const chat = await readChat(str(chatId))
     if (!chat) return
@@ -2984,6 +2989,7 @@ export async function apply(ctx) {
         return { turn: plan.turn, atSeq: plan.atSeq, sourceRevision: plan.source._storageRevision }
       }
       case 'forkChat': return { fork: await forkChat(args?.chatId, args?.sessionId, args?.targetSessionId, args?.turn, args?.sourceRevision, args?.atSeq) }
+      case 'getSessionInventory': return await sessionInventory.read()
       case 'exportConversation': return await exportConversation(args && args.chatId, args && args.sessionId, args && args.title)
       case 'exportTavernLogs': return await exportTavernLogs(args && args.sessionId)
       case 'recordTavernCompatibilityCalls': {

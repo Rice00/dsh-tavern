@@ -9817,6 +9817,7 @@ window.__ModuleLoader__.load({
                 const [error, setError] = React.useState("");
                 const [busy, setBusy] = React.useState(false);
                 const [query, setQuery] = React.useState("");
+                const [showHistory, setShowHistory] = React.useState(false);
                 const [page, setPage] = React.useState(0);
                 const generation = React.useRef(0);
                 const h = React.createElement;
@@ -9832,7 +9833,8 @@ window.__ModuleLoader__.load({
                 React.useEffect(() => { refresh(); return () => { generation.current++; }; }, [props.sessionId]);
                 const bytes = value => value == null ? "未知" : (value / 1024 / 1024).toFixed(2) + " MiB";
                 const date = value => value ? new Date(value).toLocaleString() : "未知";
-                const rows = (result?.rows || []).filter(row => (row.sessionId + " " + row.references.map(ref => ref.title).join(" ")).toLowerCase().includes(query.toLowerCase()));
+                const historyCount = (result?.rows || []).filter(row => row.backgroundState === "historical").length;
+                const rows = (result?.rows || []).filter(row => (showHistory || row.backgroundState !== "historical") && (row.sessionId + " " + row.references.map(ref => ref.title).join(" ")).toLowerCase().includes(query.toLowerCase()));
                 return h("div", { role: "dialog", "aria-modal": true, "aria-label": "会话统计", className: "dsh-tavern-modal-backdrop", onKeyDown: event => {
                     if (event.key === "Escape") { event.stopPropagation(); props.onClose(); }
                     if (event.key === "Tab") {
@@ -9844,17 +9846,18 @@ window.__ModuleLoader__.load({
                 }, style: { position: "fixed", inset: 0, zIndex: 10000, background: "rgba(0,0,0,.45)", display: "grid", placeItems: "center" } },
                     h("section", { className: "dsh-tavern-panel", style: { background: "var(--background, Canvas)", color: "var(--foreground, CanvasText)", padding: 20, width: "min(1100px, 94vw)", maxHeight: "85vh", overflow: "auto" } },
                         h("h2", null, "会话统计"),
-                        h("p", null, "只读统计，不加载历史。事件数仅统计已加载会话；磁盘大小不是内存占用。关联包含 Tavern 直接关联及通过父会话追溯的来源；来源不代表当前仍在使用，未找到关联不代表孤儿会话。"),
+                        h("p", null, "只读统计，不加载历史。事件数仅统计已加载会话；磁盘大小不是内存占用。关联包含 Tavern 直接关联及通过父会话追溯的来源；来源不代表当前仍在使用，未找到关联不代表孤儿会话。后台身份来自剧情绑定索引；旧索引或独立任务信息不足时显示待确认，不能据此删除。"),
                         h("button", { type: "button", disabled: busy, onClick: refresh }, busy ? "读取中…" : "刷新"),
                         h("button", { type: "button", autoFocus: true, onClick: props.onClose }, "关闭"),
                         error ? h("p", { role: "alert" }, error) : null,
                         result ? h("p", null, "会话 " + result.totals.sessions + " · 已加载 " + result.totals.loaded + " · 已知磁盘占用 " + bytes(result.totals.knownDiskBytes) + "（" + result.totals.unknownDiskSize + " 条未知） · 进程 RSS " + bytes(result.memory.rss) + " · JS 堆 " + bytes(result.memory.heapUsed) + " · 采样 " + date(result.capturedAt)) : null,
                         h("input", { "aria-label": "筛选会话", placeholder: "会话 ID 或对话名称", value: query, onChange: event => { setQuery(event.target.value); setPage(0); } }),
+                        h("button", { type: "button", "aria-expanded": showHistory, onClick: () => { setShowHistory(value => !value); setPage(0); } }, (showHistory ? "收起历史后台" : "展开历史后台") + "（" + historyCount + "）"),
                         h("table", { style: { width: "100%", textAlign: "left" } },
                             h("thead", null, h("tr", null, ["会话", "状态", "事件数", "磁盘大小", "文件修改时间", "关联对话 / 最后打开"].map(label => h("th", { key: label }, label)))),
                             h("tbody", null, rows.slice(page * 50, (page + 1) * 50).map(row => h("tr", { key: row.sessionId },
                                 h("td", { style: { overflowWrap: "anywhere" } }, row.sessionId),
-                                h("td", null, (row.running ? "运行中" : row.loaded ? "已加载" : "未加载") + (row.archived === true ? " · 已归档" : row.archived === null ? " · 归档状态未知" : "")),
+                                h("td", null, ({ current: "当前后台 · ", historical: "历史后台（仅存档） · ", unknown: "后台归属状态待确认 · ", transitioning: "非当前后台，任务仍在运行 · " }[row.backgroundState] || "") + (row.running ? "运行中" : row.loaded ? "已加载" : "未加载") + (row.archived === true ? " · 已归档" : row.archived === null ? " · 归档状态未知" : "")),
                                 h("td", null, row.eventCount == null ? "未知" : row.eventCount),
                                 h("td", null, row.storageError || bytes(row.diskBytes)),
                                 h("td", null, date(row.fileModifiedAt)),
@@ -9864,6 +9867,32 @@ window.__ModuleLoader__.load({
                         h("button", { type: "button", disabled: page === 0, onClick: () => setPage(page - 1) }, "上一页"),
                         h("button", { type: "button", disabled: (page + 1) * 50 >= rows.length, onClick: () => setPage(page + 1) }, "下一页")
                     ));
+            }
+
+            function BackgroundIdentity(props) {
+                const live = useLiveTavernView(props.sessionId, "background-identity");
+                const id = live.view?.currentBackgroundSessionId;
+                const previous = React.useRef(null);
+                const [notice, setNotice] = React.useState("");
+                const [open, setOpen] = React.useState(false);
+                React.useEffect(() => {
+                    if (previous.current?.sessionId !== props.sessionId) {
+                        previous.current = { sessionId: props.sessionId, id: id || "" };
+                        setNotice(""); setOpen(false); return;
+                    }
+                    if (!id) return;
+                    const old = previous.current.id;
+                    if (old && old !== id) setNotice("后台会话已轮换：" + old + " → " + id + "。历史日志仍保留。");
+                    previous.current.id = id;
+                }, [props.sessionId, id]);
+                if (!live.view || !["story", "script"].includes(live.view.mode) || id === undefined || id === null) return null;
+                const h = React.createElement;
+                return h("div", { className: "dsh-tavern-background-identity", style: { fontSize: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" } },
+                    h("span", { title: id || "后台会在需要时创建" }, id ? "当前后台 · " + id.slice(-8) : "后台待创建"),
+                    h("button", { type: "button", onClick: () => setOpen(true) }, "后台详情"),
+                    notice ? h("span", { role: "status", style: { overflowWrap: "anywhere" } }, notice,
+                        h("button", { type: "button", "aria-label": "关闭轮换提示", onClick: () => setNotice("") }, "×")) : null,
+                    open ? h(SessionInventoryDialog, { sessionId: props.sessionId, onClose: () => setOpen(false) }) : null);
             }
 			function TavernConversationExportAction(props) {
 				const [inventoryOpen, setInventoryOpen] = React.useState(false);
@@ -11299,6 +11328,10 @@ window.__ModuleLoader__.load({
                 createTab: () => ({ tab: { id: "dsh-tavern:conversation-settings", type: "dsh-tavern:conversation-settings", title: "本局设置" }, patch: { panelOpen: true } }),
                 component: props => React.createElement(TavernConversationSettingsTab, { sessionId: props.scope.sessionId, sessions: ctx.sessions })
             }), "dsh-tavern: conversation settings tab");
+            ctx.effect(() => slots.inject("conversation.session.header.lineage", () => slots.register(
+                { name: "conversation.session.header.lineage", id: "dsh-tavern-background-identity", order: 90 },
+                props => React.createElement(BackgroundIdentity, props)
+            )), "dsh-tavern: background identity");
             ctx.effect(() => slots.inject("conversation.session.header.utilities", () => slots.register(
                 { name: "conversation.session.header.utilities", id: "dsh-tavern-conversation-settings", order: 80 },
                 props => React.createElement(TavernConversationSettingsAction, { ...props, sessions: ctx.sessions, open: sessionId => ctx.betterSidebar.openTab({ type: "dsh-tavern:conversation-settings" }, { sessionId }) })

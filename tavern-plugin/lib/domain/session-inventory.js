@@ -5,6 +5,8 @@ export function createSessionInventory({ persistence, sessions, agents, referenc
   let inFlight
   async function collect() {
     const [headers, links] = await Promise.all([persistence.list(), references()])
+    const currentBindings = new Map(links.map(link => [link.chatId, link.backgroundSessionId]))
+    const historyBindings = new Map(links.map(link => [link.chatId, new Set(link.backgroundHistoryIds || [])]))
     const storedIds = new Set(headers.map(header => header.id))
     const bySession = new Map()
     for (const link of links) {
@@ -55,7 +57,10 @@ export function createSessionInventory({ persistence, sessions, agents, referenc
           }
         } catch (error) { storageError = error.code === 'ENOENT' ? '文件已不存在' : '文件属性读取失败' }
       }
-      rows.push({ sessionId: id, parentSessionId: typeof meta.parentSession === 'string' ? meta.parentSession : null, loaded: Boolean(session), running: agent?.phase?.kind === 'running',
+      const isBackground = meta.agentPreset === 'tavern-background' || refs.some(ref => currentBindings.get(ref.chatId) === id || historyBindings.get(ref.chatId)?.has(id))
+      const backgroundState = !isBackground ? null : refs.some(ref => currentBindings.get(ref.chatId) === id) ? 'current'
+        : refs.length && refs.every(ref => typeof currentBindings.get(ref.chatId) === 'string') && refs.some(ref => historyBindings.get(ref.chatId)?.has(id)) ? (agent?.phase?.kind === 'running' ? 'transitioning' : 'historical') : 'unknown'
+      rows.push({ backgroundState, sessionId: id, parentSessionId: typeof meta.parentSession === 'string' ? meta.parentSession : null, loaded: Boolean(session), running: agent?.phase?.kind === 'running',
         archived: archivedIds ? archivedIds.has(id) : null, eventCount: Number.isSafeInteger(session?.seq) ? session.seq : null,
         diskBytes, fileModifiedAt, references: refs, storageError })
     }

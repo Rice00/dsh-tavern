@@ -106,7 +106,7 @@ test('聊天更新后同步索引摘要，不把消息正文写入索引', async
 
   await registry.sync({ id: 'chat-6', cardPath: 'cards/new.json', cardName: '新名', title: '新标题', mode: 'script', requestMode: 'dsh', updatedAt: 20, messages: [{ text: '不应进入索引' }] })
 
-  assert.deepEqual(store.snapshot().index.chats, [{ id: 'chat-6', cardPath: 'cards/new.json', cardName: '新名', title: '新标题', mode: 'script', requestMode: 'dsh', updatedAt: 20, lastOpenedAt: 20 }])
+  assert.deepEqual(store.snapshot().index.chats, [{ id: 'chat-6', cardPath: 'cards/new.json', cardName: '新名', title: '新标题', mode: 'script', requestMode: 'dsh', backgroundSessionId: '', updatedAt: 20, lastOpenedAt: 20 }])
 })
 
 test('索引发布失败时回滚 Chat 和 Session 关联', async function () {
@@ -144,4 +144,20 @@ test('删除 Chat 同时移除所有 Session 关联和索引记录', async funct
   assert.deepEqual(store.snapshot().links, { keep: 'chat-5' })
   assert.deepEqual(store.snapshot().index.chats, [{ id: 'chat-5' }])
   assert.equal(store.snapshot().chats['chat-4'], undefined)
+})
+
+test('后台轮换写入轻量索引，恢复旧后台后重新成为当前，列表不加载历史', async () => {
+  const store = memoryStore({ links: { front: 'game' } })
+  const registry = createTavernConversationRegistry({ store: store.adapter })
+  const chat = { id: 'game', messages: [], timeline: { participants: { background: { sessionId: 'old' } } } }
+  await registry.sync(chat)
+  chat.timeline.participants.background.sessionId = 'new'
+  await registry.sync(chat)
+  assert.deepEqual((await registry.list())[0].backgroundHistoryIds, ['old'])
+  chat.timeline.participants.background.sessionId = 'old'
+  await registry.sync(chat)
+  const row = (await registry.list())[0]
+  assert.equal(row.backgroundSessionId, 'old')
+  assert.deepEqual(row.backgroundHistoryIds, ['new'])
+  assert.equal(store.snapshot().chatReads, 0)
 })

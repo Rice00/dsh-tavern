@@ -182,3 +182,17 @@ test('claim 尚未同步失败时，事件回执也识别初始化失败并脱�
   assert.equal(result.initializationFailed, true)
   assert.doesNotMatch(result.error, /secret-value/)
 })
+
+test('取消任务立即释放队列并拒绝旧回执，执行器仍可处理下一任务', async () => {
+  const gate = createTavernScriptDispatch()
+  const controller = new AbortController()
+  gate.claim('s', 'browser', true)
+  const pending = gate.dispatch('s', 'MESSAGE_RECEIVED', [], null, { signal: controller.signal })
+  const offer = gate.claim('s', 'browser', true)
+  gate.start('s', offer.event.id, offer.leaseToken, 'browser')
+  controller.abort()
+  assert.equal((await pending).disposed, true)
+  assert.equal(gate.status('s').busy, false)
+  assert.equal(gate.status('s').ready, true)
+  assert.equal(gate.complete('s', offer.event.id, [], 'browser', offer.leaseToken), false)
+})

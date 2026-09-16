@@ -400,7 +400,9 @@ export function createMvuSettlementModule(options = {}) {
   }
 
   async function applySubmission(input, frame, submission, diagnosticId) {
+    if (input.onSubmission) await input.onSubmission(clone(submission))
     const applied = await options.runtime.settleMvuUpdate({
+      durable: Boolean(input.onSubmission), signal: input.signal,
       operationId: input.operationId,
       chatId: input.chatId, branchId: input.branchId, basedOnRevision: input.basedOnRevision,
       sessionId: input.sessionId, messageId: input.messageId, swipeId: input.swipeId,
@@ -436,12 +438,14 @@ export function createMvuSettlementModule(options = {}) {
     if (outcome.applied.stale === true) {
       return { frame, submission, receipt: { version: 1, status: 'stale', summary: '变量结算目标已经变化，迟到结果未写入。', diagnosticId, changes: [], sideEffects: [], failures: [] } }
     }
-    return {
+    const result = {
       frame, submission, variables: outcome.after, effect: outcome.effect,
       receipt: { version: 1, status: outcome.status, summary: '', diagnosticId,
         runtimeDiagnostics: outcome.applied.diagnostics || [], changes: outcome.changes,
         sideEffects: outcome.sideEffects, failures: outcome.audit.failures }
     }
+    if (input.onPrepared && outcome.audit.failures.length === 0) await input.onPrepared(clone(result))
+    return result
   }
 
   async function settleVariables(input = {}) {
@@ -476,6 +480,9 @@ export function createMvuSettlementModule(options = {}) {
             charName: input.charName,
             macroState: input.macroState
           })
+          if (input.onPrepared && result && ['updated', 'unchanged'].includes(result.receipt?.status)) {
+            await input.onPrepared(clone({ ...result, posture: posture.posture }))
+          }
           return JSON.stringify({ ok: true })
         } catch (error) {
           return JSON.stringify({ ok: false, retryable: true, error: str(error && error.message || error) })
@@ -514,7 +521,7 @@ export function createMvuSettlementModule(options = {}) {
       }
       if (applied.applied.deferred === true) {
         await record('deferred')
-        feedback = { ok: false, retryable: false, deferred: true, error: '本地 MVU 执行器暂时不可用，本轮变量未更新，请恢复页面连接后手动重试变量结算。' }
+        feedback = { ok: false, retryable: false, deferred: true, error: '本地 MVU 执行器暂时不可用，已保存任务，连接恢复后自动继续。' }
         result = { variables: clone(input.currentVariables), submission,
           receipt: { version: 1, status: 'pending', summary: '等待本地 MVU 执行器恢复', diagnosticId, changes: [], sideEffects: [], failures: [] } }
         return JSON.stringify(feedback)
@@ -537,6 +544,7 @@ export function createMvuSettlementModule(options = {}) {
         receipt: { version: 1, status, summary: '', diagnosticId,
           runtimeDiagnostics: applied.applied.diagnostics || [], changes, sideEffects, failures: audit.failures }
       }
+      if (input.onPrepared && audit.failures.length === 0) await input.onPrepared(clone({ ...result, posture: posture?.posture }))
       feedback = {
         ok: audit.failures.length === 0,
         retryable: rolledBack && applied.applied.retryable === true && attempt < maxAttempts,

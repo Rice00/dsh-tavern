@@ -2138,7 +2138,26 @@ export async function apply(ctx) {
             mvuTarget.message.mvuBaseline = { swipeId: mvuTarget.swipeId, variables: structuredClone(mvuTarget.variables) }
             await writeChat(snapshot, { source: 'settlement.baseline' })
           }
+          const saveDelivery = async function (submission, prepared) {
+            signal?.throwIfAborted()
+            await taskRun.checkpoint(function (draft) {
+              const target = draft.messages[mvuTarget.messageId]
+              if (!target || Number(target.swipeId || 0) !== mvuTarget.swipeId
+                || Number(draft.tavernHelperLifecycleRevision || 0) !== Number(snapshot.tavernHelperLifecycleRevision || 0)) throw new Error('MVU 任务目标已过期')
+              target.mvu.pendingSubmission = structuredClone(submission)
+              target.mvu.delivery = {
+                version: 1, taskId: target.mvu.delivery?.taskId || taskRun.operationId, operationId: taskRun.operationId,
+                branchId: taskRun.basedOn.branchId, revision: taskRun.basedOn.revision,
+                lifecycleRevision: Number(snapshot.tavernHelperLifecycleRevision || 0),
+                swipeId: mvuTarget.swipeId,
+                posture: prepared?.posture ?? target.mvu.delivery?.posture,
+                ...(prepared ? { prepared: structuredClone({ submission: prepared.submission, receipt: prepared.receipt, effect: prepared.effect, posture: prepared.posture }) } : {})
+              }
+            })
+          }
           const settlementInput = {
+            onSubmission: submission => saveDelivery(submission),
+            onPrepared: prepared => saveDelivery(prepared.submission, prepared),
             guidance: mvuTarget.message.mvu.guidance || '',
             preserveForeground: variableRetry,
             onPersistentSessionReady: id => taskRun.bindSession(id),
@@ -2161,7 +2180,12 @@ export async function apply(ctx) {
             webSearchEnabled: snapshot.webSearchEnabled === true
           }
           const pendingSubmission = mvuTarget.message.mvu && mvuTarget.message.mvu.pendingSubmission
-          if (pendingSubmission && typeof pendingSubmission === 'object') {
+          const delivery = mvuTarget.message.mvu?.delivery
+          if (delivery && (delivery.branchId !== taskRun.basedOn.branchId || delivery.revision !== taskRun.basedOn.revision
+            || delivery.lifecycleRevision !== Number(snapshot.tavernHelperLifecycleRevision || 0) || delivery.swipeId !== mvuTarget.swipeId)) throw new Error('MVU 任务目标已过期，旧任务未执行')
+          if (delivery?.prepared) {
+            mvuResult = structuredClone(delivery.prepared)
+          } else if (pendingSubmission && typeof pendingSubmission === 'object') {
             mvuResult = await mvuSettlement.resumeVariables({ ...settlementInput, submission: pendingSubmission })
           } else {
             const selection = backgroundModelSelection(snapshot)
@@ -2174,12 +2198,25 @@ export async function apply(ctx) {
               signal
             })
           }
+          if (mvuResult.posture === undefined && delivery?.posture !== undefined) mvuResult.posture = delivery.posture
           text = str(mvuResult.text) || JSON.stringify({ posture: mvuResult.posture })
           backgroundSessionId = str(mvuResult.traceSessionId) || backgroundSessionId
           backgroundBoundary = Number.isSafeInteger(mvuResult.traceBoundary) ? mvuResult.traceBoundary : null
           if (mvuResult.receipt?.status === 'pending') {
             const runtimeState = tavernScriptDispatch.status(snapshot.sessionId)
-            throw new Error(runtimeState.initializationError || 'MVU 变量执行器连接中断，本轮变量未更新。请刷新酒馆页面，待加载完成后点击“重试变量结算”。')
+            if (runtimeState.initializationError) throw new Error(runtimeState.initializationError)
+            await taskRun.defer({
+              participant: taskRun.participant({ sessionId: backgroundSessionId, boundary: backgroundBoundary }),
+              apply(draft) {
+                const target = draft.messages[mvuTarget.messageId]
+                target.mvu.pendingSubmission = structuredClone(mvuResult.submission || pendingSubmission)
+                target.mvu.receipt = structuredClone(mvuResult.receipt)
+                if (target.mvu.delivery && mvuResult.posture !== undefined) target.mvu.delivery.posture = mvuResult.posture
+                draft.settleStatus = 'pending'
+                draft.settleError = null
+              }
+            })
+            return
           }
           if (['error', 'partial'].includes(mvuResult.receipt?.status)) {
             const error = new Error(mvuResult.receipt.summary || mvuResult.receipt.failures?.[0]?.message || '变量结算失败，请重试结算')
@@ -2337,8 +2374,13 @@ export async function apply(ctx) {
     const existing = settlementJobs.get(chatId)
     if (existing !== undefined) return existing.promise
     const job = { controller: new AbortController(), promise: null }
-    job.promise = runSettlement(chatId, job.controller.signal).finally(function () {
+    job.promise = runSettlement(chatId, job.controller.signal).finally(async function () {
       if (settlementJobs.get(chatId) === job) settlementJobs.delete(chatId)
+      // Reconcile the durable queue even if the ready notification raced with defer.
+      try {
+        const latest = await readChat(chatId)
+        if (latest) void mvuSettlementReconciler.wake(latest.sessionId)
+      } catch { void mvuSettlementReconciler.scan() }
     })
     settlementJobs.set(chatId, job)
     return job.promise
@@ -2360,11 +2402,13 @@ export async function apply(ctx) {
       return Boolean(target && target.message.mvu && target.message.mvu.pendingSubmission
         && backgroundTasks.activity(chat).phase === 'pending')
     },
-    isReady: function (sessionId) {
-      // Legacy deferred submissions must also leave pending when the executor is offline.
-      return true
+    isReady: function (sessionId, chat) {
+      if (pendingMvuTarget(chat)?.message.mvu?.delivery?.prepared) return true
+      const state = tavernScriptDispatch.status(sessionId)
+      return state.ready === true || Boolean(state.initializationError)
     },
     resume: chatId => queueSettlement(chatId),
+    retryDelayMs: 10000,
     onError: function (error) {
       console.error('dsh-tavern: 接续等待中的 MVU 变量结算失败，将自动重试', str(error && error.message || error))
     }
@@ -2372,7 +2416,6 @@ export async function apply(ctx) {
   const unsubscribeMvuRuntimeReady = tavernScriptDispatch.subscribeSettled(function (sessionId) {
     void mvuSettlementReconciler.wake(sessionId)
   })
-  void mvuSettlementReconciler.scan()
   ctx.effect(() => function () {
     unsubscribeMvuRuntimeReady()
     mvuSettlementReconciler.dispose()
@@ -2381,7 +2424,7 @@ export async function apply(ctx) {
     const chat = await chatForSession(sessionId)
     if (!chat) throw new Error('对话不存在')
     const activity = backgroundTasks.activity(chat)
-    if (!operationId || activity.operationId !== operationId || !activity.busy) return view(chat, await readChatCard(chat))
+    if (!operationId || activity.operationId !== operationId || (!activity.busy && activity.phase !== 'pending')) return view(chat, await readChatCard(chat))
     // Abort the provider request first; interrupted operations reject late commits.
     backgroundAgentRunner.cancel(chat.sessionId)
     await cancelSettlement(chat.id, { wait: false })
@@ -2585,6 +2628,8 @@ export async function apply(ctx) {
     }
     await foregroundHandoff.recover(activeChatIds)
     await candidateTasks.recover(activeChatIds)
+    // Recovery must first convert durable running operations back to pending.
+    void mvuSettlementReconciler.scan()
   }
   // ---------- 重新生成正文（生成即替换，无确认） ----------
   const { regenerate: regenBody, rollback: rollbackTurn } = createRoundHistory({

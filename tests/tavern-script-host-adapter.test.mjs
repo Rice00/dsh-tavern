@@ -526,3 +526,9 @@ test('变量重算在隔离副本恢复基线，替换已结算结果而不重�
   assert.equal(value.messages[targetId].text, '旧正文')
   assert.equal(value.messages[targetId].displayText, '<div>已渲染正文</div>')
 })
+
+test('服务重启后迟到的 MVU 事件不能越过已消失的草稿直接写入聊天', async () => {
+  const h = harness()
+  await assert.rejects(h.adapter.updateMessages('session-1', [{ message_id: 0, data: { hp: 0 } }], 2, 'mvu-work:old-attempt'), /结算事件/)
+  assert.equal(h.writes.length, 0)
+})

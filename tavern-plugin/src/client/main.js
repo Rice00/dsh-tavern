@@ -3872,14 +3872,14 @@ window.__ModuleLoader__.load({
 							if (!started || started.started !== true) throw new Error("Tavern Script 工作租约已失效");
 							const args = await currentRuntime.emit(currentEvent.name, currentEvent.args, currentEvent.context, diagnostics, currentEvent.id);
 							if (lease !== currentLease) return;
-							await invoke("completeTavernHelperEvent", { eventId: currentEvent.id, leaseToken: leaseToken, args: args, runtimeId: currentLease.id, diagnostics: diagnostics }, currentLease.sessionId);
+							await invokeWithDeadline("completeTavernHelperEvent", currentLease, currentRuntime.inspect(), { eventId: currentEvent.id, leaseToken: leaseToken, args: args, diagnostics: diagnostics });
 						}
 				} catch (error) {
 					if (lease !== currentLease) return;
 					console.warn("Tavern Helper 生命周期同步失败", error);
 					if (currentEvent) {
 						try {
-								await invoke("completeTavernHelperEvent", { eventId: currentEvent.id, leaseToken: leaseToken, args: currentEvent.args, error: String(error && error.message || error), runtimeId: currentLease.id, diagnostics: diagnostics }, currentLease.sessionId);
+								await invokeWithDeadline("completeTavernHelperEvent", currentLease, currentRuntime.inspect(), { eventId: currentEvent.id, leaseToken: leaseToken, args: currentEvent.args, error: String(error && error.message || error), diagnostics: diagnostics });
 							} catch (completeError) { console.warn("Tavern Helper 失败回执同步失败", completeError); }
 						}
 						scheduleClaimRetry(currentLease);
@@ -8972,7 +8972,7 @@ window.__ModuleLoader__.load({
 			const [busy, setBusy] = React.useState(false);
 			const state = useTavernCoordination(props.sessionId);
 			const activity = state.view && state.view.activity;
-			if (!activity || !activity.busy) return null;
+			if (!activity || (!activity.busy && activity.phase !== "pending")) return null;
 			async function stop() {
 				if (busy) return;
 				setBusy(true);

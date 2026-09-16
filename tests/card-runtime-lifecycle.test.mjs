@@ -932,3 +932,21 @@ test('收尾等待仍受事件超时约束，超时后排队写入不能落地',
   assert.match(frame.contentWindow.messages.find(x => x.requestId === 'write').error, /迟到写入/)
   h.runtime.dispose()
 })
+
+test('完成回执永久无响应也会释放领取通道，后续通知能继续领取', async t => {
+  const h = execution()
+  t.after(() => h.module.dispose())
+  let claims = 0
+  h.respond(method => {
+    if (method === 'claimTavernScriptWork') return { active: true, ...(claims++ === 0 ? { event: { id: 'work', name: 'MESSAGE_RECEIVED', args: [1] }, leaseToken: 'lease' } : {}) }
+    if (method === 'completeTavernHelperEvent') return new Promise(() => {})
+    return { started: true }
+  })
+  h.module.sync('A', view()); await h.settle()
+  assert.equal(h.runtimes[0].emissions.length, 1)
+  h.runTimer(); await h.settle() // Success receipt timeout.
+  h.runTimer(); await h.settle() // Failure receipt also lost.
+  h.wake(); await h.settle()
+  assert.equal(claims, 2)
+  assert.equal(h.runtimes[0].emissions.length, 1)
+})

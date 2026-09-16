@@ -38,6 +38,7 @@ export function createTavernScriptDispatch(options = {}) {
   function resolveRecord(id, record, result) {
     if (records.get(id) !== record) return false
     records.delete(id)
+    record.stopAbort?.()
     if (record.claimTimer !== null) clearTimeout(record.claimTimer)
     if (record.offerTimer !== null) clearTimeout(record.offerTimer)
     if (record.executionTimer !== null) clearTimeout(record.executionTimer)
@@ -136,6 +137,7 @@ export function createTavernScriptDispatch(options = {}) {
 
   async function dispatch(sessionId, name, args = [], context = null, work = {}) {
     const id = str(sessionId)
+    if (work.signal?.aborted) return { handled: false, disposed: true, args: clone(args) }
     const state = status(id)
     if (state.initializationError) return { handled: false, initializationFailed: true, error: state.initializationError, args: clone(args) }
     if (id === '' || !available(id, '', true)) return { handled: false, unavailable: true, args: clone(args) }
@@ -157,6 +159,12 @@ export function createTavernScriptDispatch(options = {}) {
         resolveRecord(id, record, { handled: false, unavailable: true, claimTimedOut: true, phase: 'queued', args: clone(event.args) })
       }, claimTimeoutMs)
       records.set(id, record)
+      if (work.signal) {
+        const abort = () => resolveRecord(id, record, { handled: false, disposed: true, phase: record.phase, args: clone(event.args) })
+        work.signal.addEventListener('abort', abort, { once: true })
+        record.stopAbort = () => work.signal.removeEventListener('abort', abort)
+        if (work.signal.aborted) { abort(); return }
+      }
       publishSignal(id, { kind: 'runtime-work', version: event.id })
     })
   }

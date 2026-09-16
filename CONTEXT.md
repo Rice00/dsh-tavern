@@ -28,6 +28,12 @@ Background Agent 基于特定 Story Timeline branch/revision 执行的一项工�
 
 Foreground Turn 提交后产生、并绑定该正文 branch/revision 的状态结算 Background Operation。世界书关键词匹配在本地完成；需要模型筛选时，在正文准备阶段执行独立 operation，复用同一个后台 Agent，不属于正文提交后的结算周期。结算失败会暴露重试入口但不阻塞下一次 Foreground Turn；旧 operation 的迟到结果不能覆盖更新 revision 的状态。
 
+## MVU Delivery
+
+MVU 模型提交先保存到 Chat 消息的 `mvu.pendingSubmission` 与 `mvu.delivery`，再交给浏览器执行。通知与领取租约只负责唤醒和调度，领取失败、页面断线不会删除持久任务。仅对待办会话自动复查，连接恢复后使用已保存提交接续，不重新调用模型。
+
+每次执行使用独立事件标识，并在隔离草稿里修改变量；失效事件不能写入权威 Chat。校验成功的 effect 先作为 delivery 保存点落盘，再通过 Story Timeline 原子提交变量和完成回执。重启丢失草稿可重建，已保存 effect 可直接提交；branch、revision、生命周期和 Swipe 必须仍匹配。主动停止、目标过期、初始化或校验失败不自动接续。此契约覆盖宿主管理的变量提交，不把人物卡脚本任意外部网络副作用变成事务。
+
 ## Background Activity
 
 Story Timeline 中 Background Operation 生命周期的只读投影，用于回答 Background Agent 是否空闲以及交互是否可用。它不是独立保存的第二份权威状态。

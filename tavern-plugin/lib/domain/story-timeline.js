@@ -347,15 +347,24 @@ export function createStoryTimeline(options = {}) {
     return Object.assign(operationValue(operation, participantRequest(chat, role)), { created: true })
   }
 
-  function recoverBackground(chat) {
+  function recoverBackground(chat, intent = {}) {
     let interruptedRole = ''
     let changed = false
     for (const operation of Object.values(chat.timeline.operations)) {
-      if (operation.kind !== 'agent' || operation.status !== 'running') continue
-      operation.status = 'interrupted'
+      if (operation.kind !== 'agent' || (operation.status !== 'running'
+        && !(intent.cancelDelivery === true && operation.role === 'settlement' && operation.status === 'deferred'))) continue
+      const target = (chat.messages || []).findLast(message => message.role === 'assistant')
+      const delivery = target?.mvu?.pending ? target.mvu.delivery : null
+      const recoverable = intent.cancelDelivery !== true && operation.role === 'settlement' && delivery?.version === 1
+        && delivery.branchId === operation.basedOn?.branchId && delivery.revision === operation.basedOn?.revision
+        && delivery.swipeId === Number(target.swipeId || 0) && delivery.branchId === chat.timeline.branchId
+        && delivery.revision === chat.timeline.revision
+        && delivery.lifecycleRevision === Number(chat.tavernHelperLifecycleRevision || 0)
+      operation.status = recoverable ? 'deferred' : 'interrupted'
+      if (recoverable) updateSettlementBackground(chat, operation, 'pending')
       operation.completedAt = now()
       changed = true
-      if (operation.role === 'settlement') interruptedRole = operation.role
+      if (operation.role === 'settlement' && !recoverable) interruptedRole = operation.role
     }
     const background = backgroundBody(chat)
     if (background !== undefined) {
@@ -363,8 +372,8 @@ export function createStoryTimeline(options = {}) {
         return operation.kind === 'agent' && operation.role === 'settlement' &&
           operation.roundOperationId === background.id
       }).sort(function (left, right) { return Number(right.createdAt) - Number(left.createdAt) })[0]
-      // A deferred operation has not executed its saved submission and can resume
-      // when the browser returns. An interrupted/unqueued round cannot claim that.
+      // Deferred work has either an uncommitted isolated draft or a persisted
+      // effect. Both can resume without applying the same variable change twice.
       // Also repair chats already converted to pending by older recovery code.
       const orphaned = background.status === 'completed' &&
         ['pending', 'running'].includes(background.background.phase) && latest?.status !== 'deferred'
@@ -488,7 +497,7 @@ export function createStoryTimeline(options = {}) {
       operation.startedSessionId = str(intent.sessionId)
       value = { status: 'bound' }
     }
-    else if (intent.kind === 'background.recover') value = recoverBackground(chat)
+    else if (intent.kind === 'background.recover') value = recoverBackground(chat, intent)
     else if (intent.kind === 'turn.rollback') value = rollback(chat, intent)
     else if (intent.kind === 'replacement.abort') {
       const currentRevision = chat.timeline.revision

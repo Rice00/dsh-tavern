@@ -10215,7 +10215,7 @@ window.__ModuleLoader__.load({
 			        page ? h("div", null,
 			            h("p", { className: "dsh-script-nav-range" }, page.from + "–" + page.to + " / " + page.totalChunks + " 块" + (page.cursor >= page.totalChunks && page.totalChunks ? " · 剧本已结束" : "")),
 			            page.chunks.map(chunk => h("div", { key: chunk.number, className: "dsh-tavern-script-chunk dsh-script-nav-item", "aria-current": chunk.number === page.cursor + 1 ? "step" : undefined },
-			                h("details", null, h("summary", null, (chunk.number === page.cursor + 1 ? "当前 · " : "") + "第 " + String(chunk.number).padStart(2, "0") + " 块 · " + chunk.text.slice(0, 60)),
+			                h("details", null, h("summary", null, (chunk.number === page.cursor + 1 ? "当前 · " : "") + "第 " + String(chunk.number).padStart(2, "0") + " 块"),
 			                    h("div", { className: "dsh-tavern-script-chunk-text", style: { whiteSpace: "pre-wrap" } }, chunk.text)),
 			                h("button", { type: "button", className: "dsh-script-nav-choose", disabled: props.busy || loading || saving || chunk.number === page.cursor + 1, onClick: () => point(chunk.number), "aria-label": "从第 " + chunk.number + " 块继续" }, "从这里继续"))),
 			            h("div", { className: "dsh-script-nav-pages" }, h("button", { type: "button", disabled: loading || saving || page.from <= 1, onClick: () => load(Math.max(1, page.from - 6)) }, "前 10 块"),

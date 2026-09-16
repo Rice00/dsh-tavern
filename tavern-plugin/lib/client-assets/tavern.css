@@ -957,3 +957,5 @@ body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
 
 .dsh-script-nav .dsh-script-nav-notice { padding: 10px 12px; border: 1px solid rgba(183,135,81,.6); border-radius: 8px; background: rgba(183,135,81,.12); color: inherit; font-weight: 600; }
 .dsh-script-nav .dsh-script-nav-item[aria-current="step"] .dsh-script-nav-choose { opacity: 1; font-weight: 600; border-color: rgba(183,135,81,.5); background: rgba(183,135,81,.12); }
+
+.dsh-script-nav-position { display: flex; align-items: center; gap: 8px; font-size: 12px; white-space: nowrap; }

@@ -313,7 +313,7 @@ function isNativeMarkdownProjection(parts, sessionText) {
 /** Bound retained projection data as well as entry count; oversized replies bypass caching. */
 export function createReplyHistoryProjector({ maxCacheBytes = 16 * 1024 * 1024, maxCacheEntries = 2048 } = {}) {
   const cache = new Map()
-  let bytes = 0, hits = 0, misses = 0
+  let bytes = 0, hits = 0, misses = 0, copies = 0
   function digest(value) { return createHash('sha256').update(value).digest('hex') }
   function projectCached(sourceText, projectionText, options, signature) {
     const key = createHash('sha256').update(signature).update(String(sourceText.length) + ':')
@@ -340,8 +340,7 @@ export function createReplyHistoryProjector({ maxCacheBytes = 16 * 1024 * 1024, 
       cache.set(key, item)
       bytes += size
     }
-    // Callers may annotate returned parts; never expose mutable cached objects.
-    return structuredClone(item.value)
+    return item.value
   }
   function projectHistory(messages, options = {}) {
     const signature = digest(JSON.stringify({ regexScripts: options.regexScripts || [],
@@ -376,13 +375,15 @@ export function createReplyHistoryProjector({ maxCacheBytes = 16 * 1024 * 1024, 
       const projected = projectCached(sourceText, projectionText, options, signature)
       const sessionText = str(message.text)
       if (message.bodyEdit || !isNativeMarkdownProjection(projected.displayParts, sessionText) || (Array.isArray(message.swipes) && message.swipes.length > 1)) {
+        // Copy only emitted projections; callers must never mutate cached parts.
+        copies++
         projections.push({
           version: 2,
           turn,
           text: projected.displayText,
           mode: projected.displayMode,
-          parts: projected.displayParts,
-          warnings: projected.warnings
+          parts: structuredClone(projected.displayParts),
+          warnings: [...projected.warnings]
         })
       }
       latestSourceBacked = hasSource
@@ -390,7 +391,7 @@ export function createReplyHistoryProjector({ maxCacheBytes = 16 * 1024 * 1024, 
 
     return { projections, presentation: null, latestSourceBacked }
   }
-  projectHistory.cacheStats = () => ({ entries: cache.size, estimatedBytes: bytes, hits, misses })
+  projectHistory.cacheStats = () => ({ entries: cache.size, estimatedBytes: bytes, hits, misses, copies })
   return projectHistory
 }
 

@@ -459,3 +459,14 @@ test('变量标签的代码示例与作者 HTML 脚本保持原样', () => {
     assert.match(result.parts.map(part => part.text || part.content).join(''), /<initvar>example<\/initvar>/)
   }
 })
+
+test('普通正文无额外展示投影时不复制缓存，编辑后仍正确投影', () => {
+  const project = createReplyHistoryProjector()
+  const messages=Array.from({length:700},(_,i)=>({role:'assistant',turn:i+1,text:'普通正文'+i}))
+  assert.equal(project(messages).projections.length,0)
+  project(messages)
+  assert.equal(project.cacheStats().copies,0)
+  messages[350].bodyEdit=true
+  assert.equal(project(messages).projections[0].turn,351)
+  assert.equal(project.cacheStats().copies,1)
+})

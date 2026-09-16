@@ -85,3 +85,32 @@ test('开场状态入口被模板同步移除后，已显示过的同一声明�
   assert.equal(projectPersistentStatusView(messages, [], { regexScripts: [{ ...rule, enabled: false }] }).statusView, null)
   assert.equal(projectPersistentStatusView(messages, [], { regexScripts: [{ ...rule, replaceString: '<script>other()</script>' }] }).statusView, null)
 })
+
+test('状态模板复用编译，但旧消息来源、最新轮次、规则和身份变化仍生效', async () => {
+  const {createPersistentStatusProjector} = await import('../tavern-plugin/lib/domain/persistent-status-view.js')
+  const project = createPersistentStatusProjector()
+  const rule = { findRegex: '<StatusPlaceHolderImpl/>', replaceString: '<html><script>show("{{user}}")</script></html>', placement: [2], markdownOnly: true }
+  const options = {regexScripts:[rule], macroState:{userName:'甲'}}
+  const messages = [{role:'assistant',turn:3}]
+  const first = project(messages, [], options)
+  assert.match(first.statusView.content, /甲/)
+  first.statusView.content='污染'
+  const second = project([{role:'assistant',turn:4}], [], options)
+  assert.equal(project.cacheStats().misses, 1)
+  assert.equal(project.cacheStats().hits, 1)
+  assert.equal(second.statusView.targetTurn, 4)
+  assert.doesNotMatch(second.statusView.content, /污染/)
+  const origin = project(messages, [projection(2,[{kind:'html',content:second.statusView.content}])], options)
+  assert.equal(origin.statusView.sourceTurn, 2)
+  options.macroState.userName='乙'
+  assert.match(project(messages, [], options).statusView.content, /乙/)
+  rule.replaceString='<html><script>changed()</script></html>'
+  assert.match(project(messages, [], options).statusView.content, /changed/)
+  assert.equal(project.cacheStats().misses, 3)
+  rule.disabled=true
+  assert.equal(project(messages, [], options).statusView,null)
+  const uncached=createPersistentStatusProjector({maxCacheBytes:1})
+  rule.disabled=false
+  assert.deepEqual(uncached(messages, [], options), project(messages, [], options))
+  assert.equal(uncached.cacheStats().entries,0)
+})

@@ -8,7 +8,7 @@ function contentOf(part) {
 
 /** Only an explicit display declaration creates a persistent panel. MVU reads
  * are diagnostic evidence, never authority to move an interactive document. */
-export function projectPersistentStatusView(messages, projections, options = {}) {
+function projectStatusView(messages, projections, options, compile) {
   const sourceMessages = Array.isArray(messages) ? messages : []
   const sourceProjections = Array.isArray(projections) ? projections : []
   let inferredTurn = 1
@@ -25,13 +25,7 @@ export function projectPersistentStatusView(messages, projections, options = {})
     const namedStatus = pattern.match(/<([a-z][a-z0-9-]*-status)\b/i)
     const marker = pattern.includes('StatusPlaceHolderImpl') ? '<StatusPlaceHolderImpl/>' : namedStatus ? '<' + namedStatus[1] + '/>' : ''
     if (!marker) continue
-    const rendered = applyTavernRegexText(marker, [rule],
-      { placement: 2, isMarkdown: true, isEdit: false, depth: 0 })
-    if (!rendered.changed) continue
-    for (const part of projectDisplayParts(rendered.text).parts) {
-      const content = resolveDisplayIdentityMacros(contentOf(part), options)
-      if (part.kind !== 'html' || !/<(?:script|iframe|object|embed)\b/i.test(content)) continue
-      const revision = createHash('sha256').update(content).digest('hex').slice(0, 16)
+    for (const { content, revision } of compile(marker, rule, options)) {
       if (templates.has(revision)) continue
       let origin = null
       let templateContent = content
@@ -71,3 +65,40 @@ export function projectPersistentStatusView(messages, projections, options = {})
     statusViews
   }
 }
+
+
+/** Cache only rule compilation; message origins and target turns remain live. */
+export function createPersistentStatusProjector({ maxCacheBytes = 4 * 1024 * 1024, maxCacheEntries = 128 } = {}) {
+  const cache = new Map()
+  let bytes = 0, hits = 0, misses = 0
+  function compile(marker, rule, options) {
+    const key = createHash('sha256').update(JSON.stringify([marker, rule, options.charName, options.macroState?.userName])).digest('hex')
+    const previous = cache.get(key)
+    if (previous) {
+      hits++; cache.delete(key); cache.set(key, previous)
+      return previous.value
+    }
+    misses++
+    const rendered = applyTavernRegexText(marker, [rule], { placement: 2, isMarkdown: true, isEdit: false, depth: 0 })
+    const value = []
+    if (rendered.changed) for (const part of projectDisplayParts(rendered.text).parts) {
+      const content = resolveDisplayIdentityMacros(contentOf(part), options)
+      if (part.kind !== 'html' || !/<(?:script|iframe|object|embed)\b/i.test(content)) continue
+      value.push({ content, revision: createHash('sha256').update(content).digest('hex').slice(0, 16) })
+    }
+    const size = JSON.stringify(value).length * 2 + 256
+    if (size <= maxCacheBytes && maxCacheEntries > 0) {
+      while (cache.size && (bytes + size > maxCacheBytes || cache.size >= maxCacheEntries)) {
+        const oldest = cache.keys().next().value
+        bytes -= cache.get(oldest).size; cache.delete(oldest)
+      }
+      cache.set(key, { value, size }); bytes += size
+    }
+    return value
+  }
+  const project = (messages, projections, options = {}) => projectStatusView(messages, projections, options, compile)
+  project.cacheStats = () => ({ entries: cache.size, estimatedBytes: bytes, hits, misses })
+  return project
+}
+
+export const projectPersistentStatusView = createPersistentStatusProjector()

@@ -50,11 +50,18 @@ export function preflightSurfaceRestore(session, nodes) {
   restoreSurface(preview, nodes)
 }
 
+/** Resuming a persisted session appends a seed marker, not a context edit. */
+export function unchangedSinceRollback(session, afterCount) {
+  const events = sessionEvents(session)
+  return Number.isSafeInteger(afterCount) && afterCount >= 0 && afterCount <= events.length
+    && events.slice(afterCount).every(event => event.type === 'session/end-seed' && event.surfaceOp === undefined)
+}
+
 export function canUndoRollback(chat, session) {
   const saved = chat?.rollbackUndo
   return Boolean(saved?.version === 1 && saved.ready === true && session
     && saved.branchId === chat.timeline?.branchId && saved.revision === chat.timeline?.revision
     && saved.lifecycleRevision === Number(chat.tavernHelperLifecycleRevision || 0)
     && saved.storageRevision === Number(chat._storageRevision || 0)
-    && saved.foreground.afterCount === sessionEvents(session).length)
+    && unchangedSinceRollback(session, saved.foreground.afterCount))
 }

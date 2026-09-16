@@ -772,3 +772,34 @@ for (const reason of ['error', 'aborted']) test(`连续未清理的${reason}尾�
   await h.create().rollback('session', 'chat')
   assert.equal(h.chat.messages.length, 1)
 })
+
+for (const mutation of ['resume', 'turn/start', 'surface']) test(`撤销回退校验后台恢复后的真实变化：${mutation}`, async () => {
+  const h = harness({ checkpoint: true, journal: true })
+  const bg = harness().session
+  const participant = { role: 'background', lifetime: 'chat', sessionId: 'bg', boundary: 0, status: 'current', branchId: h.chat.timeline.branchId }
+  h.chat.timeline.checkpoints[0].participants = { background: participant }
+  h.chat.timeline.participants.background = participant
+  const worker = { session: bg, phase: { kind: 'idle' }, async whenIdle() {} }
+  h.options.sessions = {
+    get: id => id === 'bg' ? undefined : h.agent,
+    resume: async () => {
+      bg.append('session/end-seed', {})
+      return { agent: worker, dispose: async () => {} }
+    },
+    flush: async () => {}
+  }
+  const before = structuredClone(h.chat.messages)
+  const history = h.create()
+  await history.rollback('session', 'chat')
+  if (mutation === 'turn/start') bg.append('turn/start', { turn: 3 })
+  if (mutation === 'surface') bg.append('session/end-seed', {}, { surfaceOp: 'append' })
+  if (mutation === 'resume') {
+    await history.undoRollback('session', 'chat')
+    assert.deepEqual(h.chat.messages, before)
+    assert.ok(bg.surface.nodes.some(seq => bg.events[seq].data.message?.content?.[0]?.text === '旧正文'))
+  } else {
+    const rolledBack = structuredClone(h.chat.messages)
+    await assert.rejects(history.undoRollback('session', 'chat'), /后台上下文已有变化/)
+    assert.deepEqual(h.chat.messages, rolledBack)
+  }
+})

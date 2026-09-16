@@ -1,5 +1,5 @@
 import { replaceSessionSurface } from './session-surface-mutations.js'
-import { canUndoRollback, restoreSurface, preflightSurfaceRestore } from './surface-restoration.js'
+import { canUndoRollback, restoreSurface, preflightSurfaceRestore, unchangedSinceRollback } from './surface-restoration.js'
 import { rewindBackgroundSurface } from './background-surface.js'
 import { sessionEvents, appendSessionEvent } from './session-events.js'
 import { randomUUID } from 'node:crypto'
@@ -512,7 +512,7 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
           const handle = await sessions.resume(checkpoint.sessionId)
           handles.push(handle); worker = handle.agent; background = worker?.session
         }
-        if (!background || worker?.phase?.kind === 'running' || sessionEvents(background).length !== checkpoint.afterCount) throw new Error('后台上下文已有变化，不能撤销回退')
+        if (!background || worker?.phase?.kind === 'running' || !unchangedSinceRollback(background, checkpoint.afterCount)) throw new Error('后台上下文已有变化，不能撤销回退')
         targets.push({ session: background, saved: checkpoint })
       }
       for (const target of targets) preflightSurfaceRestore(target.session, target.saved.nodes)

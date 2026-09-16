@@ -7059,7 +7059,12 @@ window.__ModuleLoader__.load({
 				publishSessionMode(pending.sessionId, pending.targetMode);
 				window.dispatchEvent(new CustomEvent("dsh-tavern-session-changed", { detail: { sessionId: pending.sessionId } }));
 				if (pending.targetMode === "card") {
-					if (pending.debugSource) await call("attachPlayChatDebug", { targetSessionId: pending.sessionId, sourceSessionId: pending.debugSource.sourceSessionId, turn: pending.debugSource.turn });
+					if (pending.debugSource) {
+						const attached = await call("attachPlayChatDebug", { targetSessionId: pending.sessionId, sourceSessionId: pending.debugSource.sourceSessionId, turn: pending.debugSource.turn });
+						const reference = attached && attached.reference;
+						if (!reference || !reference.path) throw new Error("游玩记录关联失败，请重试");
+						pending.taskSupplement = "【已关联游玩记录】\n" + String(reference.label || "游玩记录") + "\nref: " + String(reference.path) + "\n使用 tavern_read_play_chat 读取，先查看 overview。";
+					}
 					if (typeof props.openCardLibraryTab === "function") props.openCardLibraryTab(pending.sessionId);
 					if (typeof props.openPresetLibraryTab === "function") props.openPresetLibraryTab(pending.sessionId);
 					if (typeof props.openWorldBookLibraryTab === "function") props.openWorldBookLibraryTab(pending.sessionId);
@@ -11457,7 +11462,11 @@ window.__ModuleLoader__.load({
 				const supplement = draft + (taskSupplement ? "\n\n" + taskSupplement : "");
 				const targetSection = targetPath ? "\n\n【目标人物卡】\n@\"" + targetPath + "\"" : "";
 				const resourceSection = hasInitialResources ? (task === "worldbook" || task === "preset" || task === "script" ? "\n\n【编辑目标】\n" : "\n\n【初始剧本】\n") : "";
-				const taskText = task === "debug-play" ? "/debug-card" + targetSection + "\n\n请结合已引用的游玩记录，检查这张人物卡的异常表现，按需读取相关日志和状态，说明原因并给出修改建议。\n\n" : "【卡片任务：" + label + "】" + targetSection + "\n\n" + String(result && result.text || "").trim() + resourceSection;
+				if (task === "debug-play") {
+					input.setDraft("/debug-card" + targetSection + "\n\n" + supplement.trim() + "\n\n请结合已引用的游玩记录，检查这张人物卡的异常表现，按需读取相关日志和状态，说明原因并给出修改建议。");
+					return;
+				}
+				const taskText = "【卡片任务：" + label + "】" + targetSection + "\n\n" + String(result && result.text || "").trim() + resourceSection;
 				input.setDraft(taskText + supplement);
 			}
 			playControlsFeature.register({ ctx: ctx, slots: slots });

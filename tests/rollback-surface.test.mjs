@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { abortedRegenerationTurns, clearFailedTurnSurface, hasRollbackMessages, locateRollbackSurface, planFailedTurnSurface, planRegenerationSurface, regenerationAttemptTurns } from '../tavern-plugin/lib/domain/rollback-surface.js'
+import { pendingFailedSurfaceTurns, abortedRegenerationTurns, clearFailedTurnSurface, hasRollbackMessages, locateRollbackSurface, planFailedTurnSurface, planRegenerationSurface, regenerationAttemptTurns } from '../tavern-plugin/lib/domain/rollback-surface.js'
 
 function modelSource() {
   return { kind: 'model', provider: 'test', model: 'test-model' }
@@ -237,4 +237,33 @@ test('失败的正文回合从模型消息面移除本轮全部残留节点', ()
       sourceEventSeqs: [55, 56]
     }
   }])
+})
+
+function failedThenRolledBack() {
+  return [
+    { seq: 0, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: '保留输入' }] } },
+    { seq: 1, type: 'assistant/message', data: { turn: 171, message: { source: modelSource(), content: [{ type: 'text', text: '保留正文' }] } } },
+    { seq: 2, type: 'turn/start', data: { turn: 207 } },
+    { seq: 3, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: '失败输入' }] } },
+    { seq: 4, type: 'turn/end', data: { turn: 207, reason: { kind: 'error' } } },
+    { seq: 5, type: 'user/message', data: { source: { kind: 'plugin', plugin: 'dsh-tavern-failed-turn-cleanup' }, content: [] }, surfaceOp: { op: 'replace', start: 3, end: 3 }, sourceEventSeqs: [3] },
+    { seq: 6, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: '新输入' }] } },
+    { seq: 7, type: 'assistant/message', data: { turn: 208, message: { source: modelSource(), content: [{ type: 'text', text: '新正文' }] } } },
+    { seq: 8, type: 'assistant/message', data: { turn: 208, message: { source: modelSource(), content: [] } }, surfaceOp: { op: 'replace', start: 6, end: 7 }, sourceEventSeqs: [6, 7] },
+    { seq: 9, type: 'user/message', data: { source: { kind: 'plugin', plugin: 'dsh-tavern', form: 'snapshot' }, content: [] } }
+  ]
+}
+
+test('失败轮次之后的新正文被回退，仍能发现并清理被空标记挡住的失败轮次', () => {
+  const events = failedThenRolledBack()
+  assert.deepEqual(pendingFailedSurfaceTurns({ events, nodes: [0, 1, 5, 8, 9] }), [207])
+  assert.deepEqual(pendingFailedSurfaceTurns({ events, nodes: [0, 1, 5, 8, 9], suppressed: [207] }), [])
+  assert.deepEqual(pendingFailedSurfaceTurns({ events, nodes: [0, 1, 5, 6, 7] }), [], '有未回退的新正文时不清理更早失败轮次')
+})
+
+test('旧 snapshot 不冒充用户输入，清理失败轮次后仍能定位上一完整正文', () => {
+  const events = failedThenRolledBack()
+  const result = locateRollbackSurface({ events, nodes: [0, 1, 5, 8, 9] })
+  assert.equal(result?.turn, 171)
+  assert.equal(result?.userSeq, 0)
 })

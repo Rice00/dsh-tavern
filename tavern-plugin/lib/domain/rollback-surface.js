@@ -19,6 +19,12 @@ function modelSourceOf(event) {
   return source && source.kind === 'model' ? source : null
 }
 
+function isForegroundContext(event) {
+  const source = event?.type === 'user/message' && event.data?.source
+  return source?.kind === 'plugin' && source.plugin === 'dsh-tavern' &&
+    ['foreground-frame', 'snapshot'].includes(source.form)
+}
+
 function isRollbackUserTombstone(event) {
   const source = event && event.type === 'user/message' && event.data && event.data.source
   return source && source.kind === 'plugin' && (
@@ -158,6 +164,9 @@ export function pendingFailedSurfaceTurns({ events = [], nodes = [], suppressed 
   const turns = new Set()
   for (let index = nodes.length - 1; index >= 0; index--) {
     const event = eventAt(events, nodes[index])
+    // A later successful turn may already have been rolled back. Its empty
+    // marker and legacy context snapshots do not end the pending failure tail.
+    if (isRollbackAssistantTombstone(event, events) || isForegroundContext(event)) continue
     if (!isRollbackUserTombstone(event)) break
     if (event.data.source.plugin !== 'dsh-tavern-failed-turn-cleanup') continue
     const sources = event.sourceEventSeqs || []
@@ -188,9 +197,7 @@ export function locateRollbackSurface(input) {
   let userIndex = -1
   for (let index = nodes.length - 1; index >= 0; index -= 1) {
     const event = eventAt(events, nodes[index])
-    const source = event?.data?.source
-    const isFrame = source?.kind === 'plugin' && source.plugin === 'dsh-tavern' && source.form === 'foreground-frame'
-    if (event && event.type === 'user/message' && !isFrame && !isRollbackUserTombstone(event)) {
+    if (event && event.type === 'user/message' && !isForegroundContext(event) && !isRollbackUserTombstone(event)) {
       userIndex = index
       break
     }

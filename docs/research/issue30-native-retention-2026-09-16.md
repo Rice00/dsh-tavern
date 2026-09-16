@@ -1,6 +1,6 @@
 # #30 本地真实宿主后台实例回收实测
 
-2026-09-16，本地验证 `c27e8d0`。旧版基线取自 `a4b7a66`。
+2026-09-16，本地验证 `526fc13`。旧版基线取自 `6fe9243`。
 
 ## 方法与边界
 
@@ -35,7 +35,7 @@
 在仓库根目录运行；可通过 `DSH_BOOT_MODULE` 指向其他已安装的 DSH 宿主。
 
 ```sh
-git show a4b7a66:tavern-plugin/lib/background-agent-sessions.js > tavern-plugin/lib/background-agent-sessions-probe-old.js
+git show 6fe9243:tavern-plugin/lib/background-agent-sessions.js > tavern-plugin/lib/background-agent-sessions-probe-old.js
 node --expose-gc tests/fixtures/background-retention-native-probe.mjs old
 node --expose-gc tests/fixtures/background-retention-native-probe.mjs fixed
 node tests/fixtures/background-retention-native-probe.mjs old

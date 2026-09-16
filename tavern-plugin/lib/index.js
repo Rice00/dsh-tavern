@@ -1,3 +1,4 @@
+import { createRequestPerformance } from './domain/request-performance.js'
 import { scriptChunkLayout } from './domain/script-chunks.js'
 import { createScriptNavigation } from './domain/script-navigation.js'
 import { createSessionInventory } from './domain/session-inventory.js'
@@ -1010,7 +1011,7 @@ export async function apply(ctx) {
       const worldbook = cardDiagnostics.card ? await worldBooks.bound(chat.cardPath, cardDiagnostics.card, chat) : null
       cardDiagnostics.worldbook = worldbook ? { source: worldbook.source, document: worldbook.view.raw } : null
     } catch { cardDiagnostics.errors.push('绑定世界书读取失败') }
-    const exported = await createMvuDiagnosticExport({ cardDiagnostics, performanceDiagnostics: performanceDiagnostics.read(), updateDiagnostics: applicationUpdater.diagnostics(), sessionId, backgroundSessionIds, displayDiagnostics: { version: 1, frames: (chat.messages || []).filter(message => message.displayRuntime).slice(-20).flatMap(message => (message.displayRuntime.frames || []).map(frame => ({ turn: message.turn, partIndex: frame.partIndex, panelId: frame.panelId, placement: frame.placement, capturedAt: frame.capturedAt, console: frame.console, errors: frame.errors, network: frame.network }))) }, apiDiagnostics: await apiDiagnostics.read(sessionId).catch(() => null), compatibilityDiagnostics: compatibilityDiagnostic, store: mvuDiagnostics, sceneDiagnostics: imageDiagnostic, sessions: sessionStore, persistence: ctx.get('sessionPersistence'), query: ctx.get('sessionQuery'), attachments: ctx.get('attachments'), environment: { mvu: OFFICIAL_MVU_VERSION, mvuAsset: inspectOfficialMvuAsset(), runtime: { generation: runtimeGeneration, platform: process.platform, arch: process.arch, nodeVersion: process.version } } })
+    const exported = await createMvuDiagnosticExport({ cardDiagnostics, performanceDiagnostics: { ...performanceDiagnostics.read(), requests: requestPerformance.read() }, updateDiagnostics: applicationUpdater.diagnostics(), sessionId, backgroundSessionIds, displayDiagnostics: { version: 1, frames: (chat.messages || []).filter(message => message.displayRuntime).slice(-20).flatMap(message => (message.displayRuntime.frames || []).map(frame => ({ turn: message.turn, partIndex: frame.partIndex, panelId: frame.panelId, placement: frame.placement, capturedAt: frame.capturedAt, console: frame.console, errors: frame.errors, network: frame.network }))) }, apiDiagnostics: await apiDiagnostics.read(sessionId).catch(() => null), compatibilityDiagnostics: compatibilityDiagnostic, store: mvuDiagnostics, sceneDiagnostics: imageDiagnostic, sessions: sessionStore, persistence: ctx.get('sessionPersistence'), query: ctx.get('sessionQuery'), attachments: ctx.get('attachments'), environment: { mvu: OFFICIAL_MVU_VERSION, mvuAsset: inspectOfficialMvuAsset(), runtime: { generation: runtimeGeneration, platform: process.platform, arch: process.arch, nodeVersion: process.version } } })
     return { filename: exported.filename, base64: exported.buffer.toString('base64') }
   }
   async function attachPlayChatDebug(targetSessionId, sourceSessionId, turn) {
@@ -1226,7 +1227,7 @@ export async function apply(ctx) {
     return Object.assign(cardPreparation.present({ card: card, as: 'view' }), { path: str(card.path || chat.cardPath) })
   }
   async function view(chat, card) {
-    const runtimeSettings = await readTavernSettings()
+    const runtimeSettings = await requestPerformance.stage('settings', () => readTavernSettings())
     let scriptProgress = null
     if ((chat.mode || 'story') === 'script') {
       const script = await readScript(chat.cardPath)
@@ -1240,8 +1241,8 @@ export async function apply(ctx) {
     let replyDisplay = { projections: replyProjectionsOf(chat), presentation: null, latestSourceBacked: false }
     let cardExtensions = { regexScripts: [], helperScripts: [] }
     if ((chat.mode || 'story') === 'story' || (chat.mode || 'story') === 'script') {
-      cardExtensions = await readCardExtensions(chat.cardPath) || cardExtensions
-      const pinnedExtensions = await tavernRemoteAssets.pinExtensions(cardExtensions)
+      cardExtensions = await requestPerformance.stage('cardExtensions', () => readCardExtensions(chat.cardPath)) || cardExtensions
+      const pinnedExtensions = await requestPerformance.stage('remoteAssets', () => tavernRemoteAssets.pinExtensions(cardExtensions))
       cardExtensions = Object.assign({}, cardExtensions, {
         helperScripts: pinnedExtensions.helperScripts,
         regexScripts: pinnedExtensions.regexScripts,
@@ -1249,7 +1250,7 @@ export async function apply(ctx) {
         remoteAssetPins: pinnedExtensions.pins
       })
       const presetRegexScripts = Array.isArray(activePresetSnapshot && activePresetSnapshot.regexScripts) ? activePresetSnapshot.regexScripts : []
-      replyDisplay = projectRuntimeReplyHistory(chat.messages, {
+      replyDisplay = await requestPerformance.stage('historyProjection', () => projectRuntimeReplyHistory(chat.messages, {
         charName: chat.cardName,
         macroState: chat.macroState,
         regexScripts: (Array.isArray(cardExtensions.regexScripts) ? cardExtensions.regexScripts : []).concat(presetRegexScripts),
@@ -1257,7 +1258,7 @@ export async function apply(ctx) {
         isMarkdown: true,
         isEdit: false,
         depth: 0
-      })
+      }))
       const persistentStatus = projectPersistentStatusView(chat.messages, replyDisplay.projections, {
         charName: chat.cardName,
         macroState: chat.macroState,
@@ -1519,20 +1520,22 @@ export async function apply(ctx) {
   const synchronizeSessionView = createSessionViewSync()
 
   async function sessionView(sessionId) {
-    const chat = await chatForSession(sessionId)
+    const chat = await requestPerformance.stage('readChat', () => chatForSession(sessionId))
     if (chat === undefined) return null
+    const activity = backgroundTasks.activity(chat)
+    requestPerformance.state({ foregroundRunning: agentRegistry.get(str(sessionId))?.phase?.kind === 'running', backgroundBusy: activity.busy, backgroundRole: activity.role })
     const isCard = (chat.mode || 'story') === 'card'
     let card = null, cardReadError = null
-    try { card = isCard && str(chat.cardPath) === '' ? null : await readChatCard(chat) }
+    try { card = isCard && str(chat.cardPath) === '' ? null : await requestPerformance.stage('readCard', () => readChatCard(chat)) }
     catch (error) {
       if (!isCard) throw error
       cardReadError = '人物卡暂时无法读取，请在工作台校验并修复：' + chat.cardPath
       card = { name: chat.cardName || chat.cardPath }
     }
-    const result = await view(chat, card)
+    const result = await requestPerformance.stage('projectView', () => view(chat, card))
     if (cardReadError) result.cardReadError = cardReadError
     if (isCard) result.workspace = workspaceViewOf(chat)
-    if ((chat.mode || 'story') === 'script') result.scriptPreview = await scriptPreviewOf(chat)
+    if ((chat.mode || 'story') === 'script') result.scriptPreview = await requestPerformance.stage('scriptPreview', () => scriptPreviewOf(chat))
     return result
   }
   async function ensureNativeOpening(sessionId) {
@@ -2647,11 +2650,12 @@ export async function apply(ctx) {
   })
 
   // ---------- HTTP RPC（客户端同源 fetch） ----------
+  const requestPerformance = createRequestPerformance()
   const performanceDiagnostics = createPerformanceDiagnostics()
   async function dispatch(method, args) {
     performanceDiagnostics.browser(args?._performance)
     const started = performance.now()
-    try { return await apiDiagnostics.observe(method, args, () => dispatchMethod(method, args)) }
+    try { return await requestPerformance.run(method, args?._traceId, () => apiDiagnostics.observe(method, args, () => dispatchMethod(method, args))) }
     finally { performanceDiagnostics.record(method, performance.now() - started) }
   }
 
@@ -3082,7 +3086,11 @@ export async function apply(ctx) {
       case 'prepareCompaction': return { plan: await tavernCompaction.prepare(args && args.sessionId) }
       case 'compactBackground': return { result: await compactBackground(args && args.sessionId, args && args.operationId) }
       case 'completeCompaction': return { result: await tavernCompaction.complete(args && args.sessionId, args) }
-      case 'syncSession': return { sync: await candidateTasks.sync(args && args.sessionId, { requestId: args && args.requestId, kind: args && args.kind }) }
+      case 'syncSession': {
+        const sync = await requestPerformance.stage('candidateSync', () => candidateTasks.sync(args && args.sessionId, { requestId: args && args.requestId, kind: args && args.kind }))
+        requestPerformance.state({ foregroundRunning: agentRegistry.get(str(args?.sessionId))?.phase?.kind === 'running', backgroundBusy: sync.activity?.busy, backgroundRole: sync.activity?.role })
+        return { sync }
+      }
       case 'submitTask': {
         if (str(args && args.kind) !== 'candidate') throw new Error('暂不支持的持久任务类型: ' + str(args && args.kind))
         return { sync: await candidateTasks.submit(args) }

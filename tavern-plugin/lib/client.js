@@ -305,6 +305,8 @@ window.__ModuleLoader__.load({
 		const pagePerformance = { observedMs: 0, longTaskCount: 0, longTaskTotalMs: 0, longTaskMaxMs: 0, slowRpcCount: 0, slowRpcMaxMs: 0, longTaskSupported: false };
 		const pagePerformanceStarted = Date.now();
 		let performanceReportAt = 0;
+		let performanceActiveRequests = 0;
+		const performanceRequests = [];
 		if (typeof window !== "undefined" && typeof PerformanceObserver !== "undefined") {
 			try {
 				if (window.__dshTavernPerformanceObserver) window.__dshTavernPerformanceObserver.disconnect();
@@ -375,12 +377,16 @@ window.__ModuleLoader__.load({
 
 		function rpc(method, args, sessionId, requestOptions) {
 			const started = Date.now();
-			const payload = Object.assign({}, args || {});
+            const clockStart = performance.now();
+            const traced = method === "getSession" || method === "syncSession";
+            const trace = traced ? { id: window.crypto?.randomUUID?.() || "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, c => { const n = Math.floor(Math.random() * 16); return (c === "x" ? n : (n & 3) | 8).toString(16); }), method, sentAt: started, active: ++performanceActiveRequests } : null;
+            const payload = Object.assign({}, args || {});
 			if (started - performanceReportAt >= 60000 || /diagnostic|export/i.test(method)) {
 				pagePerformance.observedMs = started - pagePerformanceStarted;
-				payload._performance = Object.assign({}, pagePerformance);
+				payload._performance = Object.assign({}, pagePerformance, { requests: performanceRequests.slice() });
 				performanceReportAt = started;
 			}
+			if (trace) payload._traceId = trace.id;
 			if (sessionId) payload.sessionId = sessionId;
 			const viewRead = method === "getSession" ? beginSessionViewRead(payload.sessionId) : null;
 			if (viewRead) { payload.viewSync = 1; payload.viewCursor = viewRead.cursor; }
@@ -392,16 +398,28 @@ window.__ModuleLoader__.load({
 			if (requestOptions && requestOptions.signal) request.signal = requestOptions.signal;
 			if (requestOptions && requestOptions.keepalive === true) request.keepalive = true;
 			if (method === "generateSceneImage") recordImageInteraction(payload.sessionId, payload.turn, payload.requestId, "sent");
-			return fetch("/api/dsh-tavern/" + method, request).then(readTavernJsonResponse).then(function (result) {
+			return fetch("/api/dsh-tavern/" + method, request).then(async function (response) {
+                if (trace) trace.headersMs = Math.round(performance.now() - clockStart);
+                const result = await readTavernJsonResponse(response);
+                if (trace) trace.parsedMs = Math.round(performance.now() - clockStart);
+                return result;
+            }).then(function (result) {
 				tavernRuntimeGenerationMonitor.observe(result && result.runtimeGeneration);
 				if (!result || !result.ok) throw new Error(result && result.error ? result.error : "操作失败");
 				return viewRead ? viewRead.accept(result) : result;
 			}).catch(function (error) {
+                if (trace) trace.failed = true;
 				if (method === "generateSceneImage") recordImageInteraction(payload.sessionId, payload.turn, payload.requestId, "failed", "rpc-error");
 				throw error;
 			}).finally(function () {
 				const elapsed = Date.now() - started;
-				if (elapsed >= 1000) { pagePerformance.slowRpcCount++; pagePerformance.slowRpcMaxMs = Math.max(pagePerformance.slowRpcMaxMs, elapsed); }
+                if (trace) {
+                    performanceActiveRequests--;
+                    trace.durationMs = Math.round(performance.now() - clockStart);
+                    performanceRequests.push(trace);
+                    if (performanceRequests.length > 60) performanceRequests.shift();
+                }
+                if (elapsed >= 1000) { pagePerformance.slowRpcCount++; pagePerformance.slowRpcMaxMs = Math.max(pagePerformance.slowRpcMaxMs, elapsed); }
 			});
 		}
 

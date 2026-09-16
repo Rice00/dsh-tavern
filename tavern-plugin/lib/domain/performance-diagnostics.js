@@ -35,13 +35,20 @@ export function createPerformanceDiagnostics() {
       for (const key of ['observedMs', 'longTaskCount', 'longTaskTotalMs', 'longTaskMaxMs', 'slowRpcCount', 'slowRpcMaxMs']) {
         if (Number.isFinite(value[key]) && value[key] >= 0) clean[key] = Math.min(1e12, Math.round(value[key]))
       }
+      if (Array.isArray(value.requests)) clean.requests = value.requests.slice(-60).filter(row => row && /^[a-f0-9-]{36}$/.test(row.id || '') && ['getSession', 'syncSession'].includes(row.method)).map(row => {
+        const result = { id: row.id, method: row.method, failed: row.failed === true }
+        for (const key of ['sentAt', 'active', 'headersMs', 'parsedMs', 'durationMs']) {
+          if (Number.isFinite(row[key]) && row[key] >= 0) result[key] = Math.min(1e12, Math.round(row[key]))
+        }
+        return result
+      })
       if (Object.keys(clean).length) browser = { ...clean, receivedAt: Date.now(), longTaskSupported: value.longTaskSupported === true }
     },
     read() {
       return { version: 1, scope: 'server-process-and-last-reporting-browser', resetsOnRestart: true,
         ...(http ? { http: structuredClone(http) } : {}),
         ...(openings.length ? { openings: openings.map(row => ({ ...row })) } : {}),
-        slowThresholdMs: 1000, browserLongTaskThresholdMs: 100, browser: browser && { ...browser },
+        slowThresholdMs: 1000, browserLongTaskThresholdMs: 100, browser: browser && structuredClone(browser),
         methods: [...methods].map(([method, row]) => ({ method, count: row.count, averageMs: Math.round(row.totalMs / row.count), maxMs: row.maxMs, slowCount: row.slowCount })),
         slow: slow.map(row => ({ ...row })) }
     }

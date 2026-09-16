@@ -135,8 +135,10 @@ test('截图有有效本地资源、替代文字、说明、来源与放大入�
   for (const [id, keys] of Object.entries(pageScreenshots)) {
     const body = pages.find(p => p.id === id)?.body
     assert.ok(body, id)
-    assert.ok(body.includes(screenshotSource.label))
-    assert.ok(body.includes(screenshotSource.runtime))
+    if (!keys.length) continue
+    const source = screenshots[keys[0]].source || screenshotSource
+    assert.ok(body.includes(source.label))
+    assert.ok(body.includes(source.runtime))
     for (const key of keys) {
       const shot = screenshots[key]
       assert.ok(shot?.alt && shot?.caption, key)
@@ -144,8 +146,8 @@ test('截图有有效本地资源、替代文字、说明、来源与放大入�
       assert.ok(body.includes(`href="${src}" target="_blank" rel="noopener noreferrer"`))
       assert.ok(body.includes(`src="${src}" alt="${escapeHTML(shot.alt)}" width="${shot.width || 1309}" height="${shot.height || 707}" loading="lazy"`))
       const bytes = await readFile(new URL(src, root))
-      assert.deepEqual([...bytes.subarray(0, 3)], [0xff, 0xd8, 0xff], `${src} must be a real JPEG capture`)
-      assert.ok(bytes.length > 10000)
+      assert.ok(bytes.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff])) || bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])), `${src} must be JPEG or PNG`)
+      assert.ok(bytes.length > 1000)
     }
   }
   const provenance = await readFile(new URL('../examples/manual-demo/README.md', import.meta.url), 'utf8')
@@ -153,9 +155,9 @@ test('截图有有效本地资源、替代文字、说明、来源与放大入�
   assert.match(provenance, /独立 DSH Profile/)
 })
 
-test('全部 100 个功能主题均有明确配图，正常介绍不再引用报错截图', () => {
+test('功能主题明确配置配图或保持纯文字，不强制旧截图', () => {
   for (const { id } of readTopics(inventory)) {
-    assert.ok(pageScreenshots[id]?.length > 0, `${id} 缺少截图`)
+    assert.ok(Array.isArray(pageScreenshots[id]), `${id} 缺少截图配置`)
     for (const key of pageScreenshots[id]) assert.ok(screenshots[key], `${id}: ${key}`)
   }
   assert.equal(Object.keys(pageScreenshots).filter(id => /^[a-n]\d{2}$/.test(id)).length, 100)

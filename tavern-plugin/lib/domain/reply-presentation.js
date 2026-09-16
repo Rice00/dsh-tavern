@@ -114,6 +114,25 @@ function splitHtmlBoundaries(source, editing = false) {
     if (token[2]) continue // Inline code is prose, never executable HTML.
     const tag = (token[1] || '').toLowerCase()
     const closing = /^<\//.test(token[0])
+    // Variable protocols contain runtime data, not narrative prose. Keep the
+    // complete block in editable/source history, but omit it from display.
+    // Author HTML/script interiors and Markdown code examples stay opaque.
+    if (!editing && start < 0 && ['updatevariable', 'initvar'].includes(tag)) {
+      append('text', source.slice(cursor, token.index))
+      if (!closing && !/\/\s*>$/.test(token[0])) {
+        const boundary = new RegExp('<\\/?' + tag + '\\b[^>]*>', 'gi')
+        boundary.lastIndex = tokens.lastIndex
+        let depth = 1, next
+        while (depth && (next = boundary.exec(source))) {
+          if (/^<\//.test(next[0])) depth--
+          else if (!/\/\s*>$/.test(next[0])) depth++
+        }
+        tokens.lastIndex = depth ? source.length : boundary.lastIndex
+      }
+      append('marker', source.slice(token.index, tokens.lastIndex))
+      cursor = tokens.lastIndex
+      continue
+    }
     if (!editing && start < 0 && /^<!--/.test(token[0])) {
       append('text', source.slice(cursor, token.index))
       append('marker', token[0])

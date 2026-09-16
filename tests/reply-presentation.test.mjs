@@ -433,3 +433,29 @@ test('已有模板展示时跳过不会使用的普通投影',()=>{
   assert.equal(project([message]).projections[0].text,'已渲染')
   assert.equal(project.cacheStats().misses,0)
 })
+
+for (const block of [
+  '<UpdateVariable>secret</UpdateVariable>',
+  '<INITVAR>secret\r\nsecond</INITVAR>',
+  '<initvar format="yaml">secret</initvar>',
+  '<UpdateVariable><initvar>secret</initvar></UpdateVariable>',
+  '<initvar><initvar>secret</initvar>secret</initvar>'
+]) test('变量控制块不作为正文展示：' + block.split('>')[0], () => {
+  const source = '之前\r\n' + block + '\r\n之后'
+  const result = projectReplyLayers(source)
+  assert.equal(result.sourceText, source)
+  assert.equal(result.sessionText, source)
+  assert.deepEqual(result.displayParts, [{ kind: 'markdown', text: '之前\r\n' }, { kind: 'markdown', text: '\r\n之后' }])
+})
+
+test('未闭合变量块隐藏至结尾，自闭合标签不吞掉后文', () => {
+  assert.doesNotMatch(JSON.stringify(projectDisplayParts('正文\n<initvar>secret').parts), /secret/)
+  assert.match(JSON.stringify(projectDisplayParts('正文<initvar/>后文').parts), /后文/)
+})
+
+test('变量标签的代码示例与作者 HTML 脚本保持原样', () => {
+  for (const source of ['`<initvar>example</initvar>`', '```text\n<initvar>example</initvar>\n```', '<div><script>const example = "<initvar>example</initvar>";</script></div>']) {
+    const result = projectDisplayParts(source)
+    assert.match(result.parts.map(part => part.text || part.content).join(''), /<initvar>example<\/initvar>/)
+  }
+})

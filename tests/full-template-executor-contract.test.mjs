@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import vm from 'node:vm'
+import { createFullTemplateRuntime } from '../tavern-plugin/lib/domain/full-template-runtime.js'
 
 const source = await readFile(new URL('../tavern-plugin/src/client/full-template-executor.js', import.meta.url), 'utf8')
 test('模板连 project 都缺失时报告初始化失败，不无限假重连', async () => {
@@ -125,4 +126,30 @@ test('iframe RPC 回包丢失时按期限失败并清除待办，不永久挂起
   timers[0].fn()
   await rejected
   assert.equal(pending.size, 0)
+})
+
+
+test('idle template heartbeat stays present for ten minutes and recovers after a suspended page', async t => {
+  let now = 100000, nextTick, renewals = 0
+  t.mock.method(Date, 'now', () => now)
+  const runtime = createFullTemplateRuntime({})
+  const scope = vm.createContext({})
+  vm.runInContext(source, scope)
+  const heartbeat = scope.createTemplateHeartbeat({ runtimeId: 'page',
+    rpc: async (_method, args) => { renewals++; return runtime.heartbeat('session', args.runtimeId, args.phase) },
+    schedule: fn => { nextTick = fn; return fn }, cancel: () => { nextTick = null } })
+  t.after(() => { heartbeat.dispose(); runtime.dispose() })
+  heartbeat.phase('ready')
+  await new Promise(resolve => setImmediate(resolve))
+  for (let index = 0; index < 60; index++) {
+    now += 10000
+    await nextTick()
+    assert.equal(runtime.dispatch.status('session').ready, true)
+  }
+  assert.equal(renewals, 61)
+  now += 97000
+  assert.equal(runtime.dispatch.status('session').present, false)
+  await nextTick()
+  assert.equal(runtime.dispatch.status('session').ready, true)
+  assert.equal((await runtime.inspect('session')).task, null, 'heartbeat recovery must not run or replay a template')
 })

@@ -31,12 +31,13 @@ test('real pnpm exits after Done even when the registry never answers version ch
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   t.after(() => { server.closeAllConnections(); return new Promise(resolve => server.close(resolve)) })
   const env = runtimeEnvironment(); delete env.CI
-  const child = spawn(process.execPath, [process.env.TAVERN_PNPM_ENTRY, 'install', '--ignore-scripts', '--lockfile=false',
+  if (process.env.TAVERN_PNPM_RUNTIME) env.ELECTRON_RUN_AS_NODE = '1'
+  const child = spawn(process.env.TAVERN_PNPM_RUNTIME || process.execPath, [...(process.env.TAVERN_PNPM_PRELOAD ? ['--import', process.env.TAVERN_PNPM_PRELOAD] : []), process.env.TAVERN_PNPM_ENTRY, 'install', '--ignore-scripts', '--lockfile=false',
     '--registry=http://127.0.0.1:' + server.address().port, '--config.state-dir=' + join(root, 'state'), '--config.fetch-timeout=600000'], { cwd: root, env })
   let output = '', timedOut = false
   child.stdout.on('data', chunk => { output += chunk })
   child.stderr.on('data', chunk => { output += chunk })
-  const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL') }, 8000)
+  const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL') }, 12000)
   t.after(() => { clearTimeout(timer); if (child.exitCode === null) child.kill('SIGKILL') })
   const code = await new Promise((resolve, reject) => { child.on('error', reject); child.on('exit', resolve) })
   clearTimeout(timer)

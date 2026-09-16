@@ -2,13 +2,19 @@ import { createHash } from 'node:crypto'
 import { projectReplyHistory } from './reply-presentation.js'
 import { projectPersistentStatusView } from './persistent-status-view.js'
 
+// Display projection resolves identity macros only. Gameplay variables must not
+// invalidate every historical row on each settlement.
+function displayDependencies(options) {
+  return {...options, macroState: {userName: options.macroState?.userName}}
+}
+
 // Derived, disposable state only. The journal remains the authority for changed indices.
 export function createIncrementalReplyView({ readChanges, maxBytes = 8 * 1024 * 1024, maxEntries = 4 } = {}) {
   const cache = new Map()
   let bytes = 0
   const stats = { rebuilt: 0, incremental: 0, reused: 0, projectedMessages: 0 }
   async function project(chat, options = {}, statusOptions = options) {
-    const signature = createHash('sha256').update(JSON.stringify([options, statusOptions, chat.timeline?.branchId])).digest('hex')
+    const signature = createHash('sha256').update(JSON.stringify([displayDependencies(options), displayDependencies(statusOptions), chat.timeline?.branchId])).digest('hex')
     const previous = cache.get(chat.id)
     const revision = chat._storageRevision
     const messages = Array.isArray(chat.messages) ? chat.messages : []

@@ -73,3 +73,21 @@ test('新版变更证据不能应用到旧快照，正则改变和回退仍与�
  chat.messages=[];chat._storageRevision=3
  assert.deepEqual(await cache.project(chat,changed,changed),reference(chat,changed))
 })
+
+
+test('游戏变量每轮变化仍只投影新增正文，空闲状态更新不重算历史', async () => {
+ let chat = { id: 'variable-updates', _storageRevision: 1, messages: Array.from({length: 40}, (_, i) => ({role: 'assistant', turn: i + 1, text: '<p>{{user}} 正文' + i + '</p>', bodyEdit: true})) }
+ let indices = []
+ const cache = createIncrementalReplyView({readChanges: async (_, revision) => ({baseRevision: revision, chat, messageCount: chat.messages.length, denseMessages: true, indices})})
+ const opts = revision => ({...options, macroState: {...options.macroState, variables: {hp: revision}, turn: revision}})
+ const first = await cache.project(chat, opts(1), opts(1))
+ chat = {...chat, _storageRevision: 2, messages: [...chat.messages, {role: 'assistant', turn: 41, text: '<p>新增</p>', bodyEdit: true}]}
+ indices = [40]
+ const next = await cache.project(chat, opts(2), opts(2))
+ assert.equal(cache.stats().projectedMessages, 41)
+ assert.deepEqual(next.projections.slice(0, 40), first.projections)
+ indices = []; chat._storageRevision++
+ await cache.project(chat, opts(3), opts(3))
+ assert.equal(cache.stats().projectedMessages, 41)
+ assert.equal(cache.stats().rebuilt, 1)
+})

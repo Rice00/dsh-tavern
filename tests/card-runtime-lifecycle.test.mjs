@@ -950,3 +950,19 @@ test('完成回执永久无响应也会释放领取通道，后续通知能继�
   assert.equal(claims, 2)
   assert.equal(h.runtimes[0].emissions.length, 1)
 })
+
+
+test('最新楼层转为历史后，多轮状态广播不重建其 iframe 或更新上下文', () => {
+  const h = frames({persistent: false}), frame = h.attach()
+  frame.message('dsh-tavern-frame-ready')
+  h.update({helperContext: context(2)})
+  h.update({eager: false, helperContext: context(3)})
+  const sent = h.posts.length
+  for (let revision = 4; revision < 44; revision++) {
+    h.update({helperContext: context(revision)})
+    assert.equal(h.lifecycle.snapshot().visibleDocument, frame.document)
+    assert.equal(h.lifecycle.snapshot().pendingDocument, null)
+  }
+  assert.equal(h.posts.length, sent)
+  h.stop()
+})

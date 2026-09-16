@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "b2d346adfd9949b0ef81ff5c1dd61073a5ba12b6",
-  "releaseSequence": 239,
+  "revision": "c61117456b91e7302dd70624c027c90f4a7a94b3",
+  "releaseSequence": 240,
   "version": "1.9.0",
   "files": [
     {
@@ -256,8 +256,8 @@
     },
     {
       "path": "tavern-plugin/lib/client.js",
-      "sha256": "1c15b88383eb7c8a019178b7c313313224eceb88550b42bfea5612b5661cd415",
-      "size": 938521
+      "sha256": "d4b77b3e376ac580aa58e2916fcce31519f6b39ef8a12d8954e0612121b8e932",
+      "size": 936763
     },
     {
       "path": "tavern-plugin/lib/cordis-inspect.js",
@@ -3621,8 +3621,8 @@
     },
     {
       "path": "tavern-plugin/src/client/main.js",
-      "sha256": "692761f469267821a03ebd32d0fda380e4e58bf7ac36a49f77798c4775532cb5",
-      "size": 710910
+      "sha256": "1e0cc706031de1898cbbf891b673cc5dda43ad9bd2da22ff6b520dd5ba8f59a1",
+      "size": 709152
     },
     {
       "path": "tavern-plugin/src/client/modules/frame-activation.js",

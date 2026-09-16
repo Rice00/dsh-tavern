@@ -4586,7 +4586,7 @@ export async function apply(ctx) {
 
     tools.register(defineTool({
       name: 'tavern_update_card',
-      description: '仅当用户明确要求或确认修改时，立即保存最小的人物卡变更；保存后调用 tavern_validate_card 检查实际文件。空白工作台会直接创建并绑定正式人物卡文件，必须同时具备角色名和玩家身份。只讨论时不要调用。',
+      description: '仅当用户明确要求或确认修改时，立即保存最小的人物卡变更；保存后调用 tavern_validate_card 检查实际文件。空白工作台会直接创建并绑定正式人物卡文件，必须同时具备角色名和玩家身份。本工具保存人物卡数据，不会为新副本复制源卡封面；普通卡转 MVU 等另存操作还须用文件工具保留已确认数据根下 originals/cards 中的源 PNG，按副本 JSON 的文件名保存且不覆盖已有文件，不能只交付 JSON 就宣称保留图片。只讨论时不要调用。',
       parameters: {
         fields: {
           type: 'object', additionalProperties: false,

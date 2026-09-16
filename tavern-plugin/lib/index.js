@@ -1,3 +1,4 @@
+import { createScriptNavigation } from './domain/script-navigation.js'
 import { createSessionInventory } from './domain/session-inventory.js'
 import { canUndoRollback } from './domain/surface-restoration.js'
 import { createSessionViewSync } from './domain/session-view-sync.js'
@@ -1980,6 +1981,13 @@ export async function apply(ctx) {
     chats: { forSession: chatForSession, update: updateChat }, timeline: storyTimeline,
     isBusy: chat => backgroundTasks.activity(chat).busy || Boolean(chat.regenInProgress) || agentRegistry.get(chat.sessionId)?.phase?.kind === 'running'
   })
+  const scriptNavigation = createScriptNavigation({
+    chats: { forSession: chatForSession, update: updateChat }, readScript, scripts: scriptContinuity,
+    exclusive: backgroundTasks.exclusive,
+    isBusy: chat => backgroundTasks.activity(chat).busy || Boolean(chat.regenInProgress)
+      || agentRegistry.get(chat.sessionId)?.phase?.kind === 'running'
+      || autoCompaction?.blocked(chat)
+  })
   async function listTavernSessions() {
     return await conversationRegistry.list()
   }
@@ -2995,6 +3003,8 @@ export async function apply(ctx) {
         return { turn: plan.turn, atSeq: plan.atSeq, sourceRevision: plan.source._storageRevision }
       }
       case 'forkChat': return { fork: await forkChat(args?.chatId, args?.sessionId, args?.targetSessionId, args?.turn, args?.sourceRevision, args?.atSeq) }
+      case 'browseScript': return await scriptNavigation.browse(args?.sessionId, args?.position)
+      case 'pointScript': return await scriptNavigation.point(args?.sessionId, args || {})
       case 'getSessionInventory': return await sessionInventory.read()
       case 'exportConversation': return await exportConversation(args && args.chatId, args && args.sessionId, args && args.title)
       case 'exportTavernLogs': return await exportTavernLogs(args && args.sessionId)

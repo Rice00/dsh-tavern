@@ -25,7 +25,7 @@ function script() {
   }
 }
 
-function harness({ mode = 'story', outputs, initialCandidates, initialCandidateAgent, initialSettleStatus, messages, initialScriptCursor = 0, initialScriptEnded = false, scriptData, cardData, macroState, waitUntilSettled, writeChatHook, modelSelection }) {
+function harness({ mode = 'story', outputs, initialCandidates, initialCandidateAgent, initialSettleStatus, messages, initialScriptCursor = 0, initialScriptEnded = false, scriptData, cardData, macroState, waitUntilSettled, writeChatHook, modelSelection, planHook }) {
   const continuity = createScriptContinuity()
   const activeScript = scriptData || script()
   let scriptState = mode === 'script' ? continuity.start(activeScript, initialScriptCursor) : null
@@ -103,6 +103,7 @@ function harness({ mode = 'story', outputs, initialCandidates, initialCandidateA
   const planner = {
     async plan(input) {
       plannerCalls.push(input)
+      await planHook?.()
       return { text: '候选项上下文', stableText: '稳定候选上下文', taskText: '候选格式规则', systemPromptText: '本轮系统提示', postHistoryText: '本轮历史后指令', dynamicText: '本轮游标、Guide 与姿势', audit: { included: [], omitted: [], warnings: [], totalChars: 7 } }
     }
   }
@@ -686,3 +687,15 @@ test('first candidate interrupted before a result keeps its bound session for re
   await run.candidates.generate({ sessionId: 'session-1', messageId: 'first' });
   assert.equal(run.modelRequests[1].persistentSessionId, 'background-bound-before-result');
 });
+
+
+test('候选准备期间人工移动游标，旧上下文不得开始模型任务或覆盖游标', async () => {
+  let run
+  run = harness({ mode: 'script', outputs: [], planHook: () => {
+    run.mutateChat(chat => { chat.scriptState.cursor = 2 })
+  } })
+  await assert.rejects(run.candidates.generate({ sessionId: 'session-1', messageId: 'manual-cursor' }), /剧本游标已变化/)
+  assert.equal(run.modelRequests.length, 0)
+  assert.equal(run.chat().scriptState.cursor, 2)
+  assert.equal(run.chat().candidates, undefined)
+})

@@ -207,6 +207,15 @@ export function createScriptContinuity() {
       return { state, reference: clone(reference), changed: true }
     }
 
+    if (event.kind === 'manual-focus') {
+      if (state.prepared !== null) throw new Error('当前剧本回合尚未提交，不能调整下一轮游标')
+      if (!Number.isSafeInteger(event.cursor) || event.cursor < 1 || event.cursor > chunks.length) throw new Error('请选择有效的剧本块号')
+      const next = event.cursor - 1
+      const changed = next !== state.cursor
+      state.cursor = next
+      return { state, changed }
+    }
+
     if (event.kind === 'focus') {
       if (state.prepared !== null) throw new Error('当前剧本回合尚未提交，不能调整下一轮游标')
       if (chunks.length === 0) return { state, changed: false }
@@ -274,6 +283,15 @@ export function createScriptContinuity() {
     const state = normalizedState(script, input && input.state)
     const chunks = chunksOf(script)
 
+    if (request.kind === 'browse') {
+      const total = chunks.length
+      const position = request.position === undefined ? Math.min(total, state.cursor + 1) : request.position
+      if (total && (!Number.isSafeInteger(position) || position < 1 || position > total)) throw new Error('请输入有效的剧本块号')
+      const start = Math.max(0, Math.min(position - 5, total - 10))
+      return { cursor: state.cursor, totalChunks: total, scriptVersion: state.scriptVersion,
+        from: total ? start + 1 : 0, to: Math.min(total, start + 10),
+        chunks: chunks.slice(start, start + 10).map((chunk, i) => ({ number: start + i + 1, text: str(chunk.text) })) }
+    }
     if (request.kind === 'info') return infoOf(script)
     if (request.kind === 'read') return readWindow(script, request.query, request.offset, request.limit)
     if (request.kind === 'play') return playWindow(script, state, request.query, request.offset, request.limit)

@@ -345,6 +345,11 @@ export function createCandidateGenerator(options) {
     chat = taskRun.chat
     const duplicate = preparedValue()
     if (duplicate !== null) return duplicate
+    if (scriptMode && scripts.inspect({ script, state: chat.scriptState, request: { kind: 'choice' } }).cursor !== scriptWindow.cursor) {
+      const error = new Error('剧本游标已变化，请重新生成候选项')
+      await taskRun.fail(error)
+      throw error
+    }
     const participantRequest = taskRun.participantRequest
     const persistentSessionId = str(participantRequest.sessionId)
     const guidance = str(input.guidance).trim().slice(0, 600)

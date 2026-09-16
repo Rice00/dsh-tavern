@@ -1210,9 +1210,11 @@ test('人物卡 iframe 不因等价上下文或切换会话而重复启动', () 
 	assert.match(capture, /touchUpdatedAt: false/)
 })
 
-test('剧本预览只显示当前召回和后续块', () => {
-  assert.match(clientSource, /index === 0 \? "当前召回" : "后续"/)
-  assert.doesNotMatch(clientSource, /上一块（已召回）|当前待召回|scriptPreview\.previous/)
+test('剧本状态栏接入独立的块浏览与手动游标组件', () => {
+  const panel = between(clientSource, 'function TavernStatusPanel', 'function TavernCardAppDock')
+  assert.match(panel, /h\(ScriptNavigation, \{/)
+  assert.match(panel, /cursor: view\.scriptProgress\.cursor/)
+  assert.doesNotMatch(panel, /scriptPreview\.upcoming/)
 })
 
 test('实验分支开放兼容入口并保留普通游玩与资源能力', () => {

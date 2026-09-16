@@ -8502,6 +8502,8 @@ window.__ModuleLoader__.load({
 
 		// @include modules/story-ledger.js
 
+			// @include script-navigation.js
+
 			function TavernStatusPanel(props) {
 			const [error, setError] = usePersistentError("酒馆状态");
 			const [guideDraft, setGuideDraft] = React.useState("");
@@ -8628,17 +8630,10 @@ window.__ModuleLoader__.load({
 						h("div", { className: "dsh-tavern-status-label" }, "剧本进度"),
 						h("div", { className: "dsh-tavern-status-now" }, (view.scriptProgress.title || "剧本") + " · 游标 " + Math.min(view.scriptProgress.cursor + 1, view.scriptProgress.totalChunks) + "/" + view.scriptProgress.totalChunks + " · 已召回 " + view.scriptProgress.recalledCount + " 块")
 					) : null,
-					view.mode === "script" && view.scriptPreview ? h("section", { className: "dsh-tavern-status-section" },
-						h("div", { className: "dsh-tavern-status-label" }, "剧本预览"),
-						h("div", { className: "dsh-tavern-script-preview" },
-							(view.scriptPreview.upcoming || []).map(function (chunk, index) {
-								return h("div", { key: chunk.id || index, className: "dsh-tavern-script-chunk" },
-									h("span", { className: "dsh-tavern-script-chunk-label" }, (index === 0 ? "当前召回" : "后续") + " · 第 " + (chunk.order + 1) + " 块"),
-									h("div", { className: "dsh-tavern-script-chunk-text" }, chunk.text)
-								);
-							})
-						)
-					) : null,
+                    view.mode === "script" && view.scriptProgress ? h(ScriptNavigation, {
+                        sessionId: props.sessionId, cursor: view.scriptProgress.cursor, total: view.scriptProgress.totalChunks,
+                        busy: running || view.activity?.busy || view.regenInProgress
+                    }) : null,
 					h("section", { className: "dsh-tavern-status-section" },
 						h("div", { className: "dsh-tavern-status-label" }, "Guide（注入上下文）"),
 						h("div", { className: "dsh-tavern-guide-list" },

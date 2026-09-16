@@ -247,3 +247,31 @@ test('全局设置不再显示后台模型和结算开关', () => {
   const section = clientSource.slice(start, clientSource.indexOf('function SystemPromptSidebarTab()', start))
   assert.doesNotMatch(section, /setBackgroundModel|setBackgroundTask|后台推理强度|变量结算/)
 })
+
+test('已保存的全部系统提示词在重启和内置默认更新后保留，仅显式恢复默认清除', async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'tavern-prompts-upgrade-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const file = 'tavern-settings.json'
+  const oldStore = createProfileDataStore({ dataRoot: root })
+  for (const name of SYSTEM_PROMPT_NAMES) {
+    await oldStore.updateJson(file, current => applyTavernSettingsPatch(current, {
+      systemPrompt: { name, text: '用户内容：' + name }
+    }))
+  }
+  const upgradedStore = createProfileDataStore({ dataRoot: root })
+  const defaults = Object.fromEntries(SYSTEM_PROMPT_NAMES.map(name => [name, '新版默认：' + name]))
+  const saved = await upgradedStore.readJson(file)
+  for (const item of presentTavernSettings(saved, defaults).systemPrompts) {
+    assert.equal(item.text, '用户内容：' + item.name)
+    assert.equal(item.customized, true)
+    assert.equal(resolveSystemPrompt(saved, item.name, name => defaults[name]), item.text)
+  }
+  await upgradedStore.updateJson(file, current => applyTavernSettingsPatch(current, {
+    systemPrompt: { name: 'story', text: null }
+  }))
+  const restored = await upgradedStore.readJson(file)
+  assert.equal(resolveSystemPrompt(restored, 'story', name => defaults[name]), defaults.story)
+  for (const name of SYSTEM_PROMPT_NAMES.filter(name => name !== 'story')) {
+    assert.equal(resolveSystemPrompt(restored, name, key => defaults[key]), '用户内容：' + name)
+  }
+})

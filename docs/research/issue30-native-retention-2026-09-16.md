@@ -54,3 +54,11 @@ rm tavern-plugin/lib/background-agent-sessions-probe-old.js
 `tests/background-agent-idle.test.mjs` 覆盖空闲期限、LRU、任务与释放交错、运行/压缩保护、保存失败退避及自动定时释放。`tests/background-agent-idle-native.test.mjs` 使用本机 DSH 和真实 JSONL 持久化，验证释放后宿主 Agent/Session 注册表均不再持有该后台；下一任务恢复相同 ID，且模型请求保留释放前的历史。该验证使用临时数据和本地模型。
 
 这些限制仅覆盖 Tavern 持有的后台实例，不是宿主全局会话缓存策略，也不保证整个 Desktop 的 RSS 低于某个数值。
+
+## 压缩策略卸载回调的残留引用
+
+进一步检查发现，插件级 `compactionDisposers` 长期保存的卸载闭包直接引用压缩引擎。即便 Agent 已退出宿主注册表，这条引用仍可阻止引擎及其关联对象回收。独立 Node GC 回归保留与生产相同的卸载回调，移除引擎的其他强引用；修复前引擎仍存活，修复后可回收。
+
+策略记录现放在以引擎为弱键的 WeakMap 中，卸载回调仅保留 WeakRef 和标识。存活引擎仍支持恢复原方法；被其他所有者替换的方法不会被卸载覆盖。插件以 FinalizationRegistry 移除已回收引擎对应的回调，卸载时注销并清空剩余记录。最终化只负责清理小型记录，不负责保存数据或控制任务执行。
+
+复现命令：`node --expose-gc tests/fixtures/compaction-policy-retention.mjs`。真实 DSH 自动压缩测试也通过，但这项测试仍不是完整 Desktop 的 RSS 测量。

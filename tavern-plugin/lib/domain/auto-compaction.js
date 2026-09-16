@@ -139,6 +139,21 @@ export function createAutoCompaction(deps) {
   return { run, blocked }
 }
 
+// Ephemeron storage lets a policy and its closures die with their engine even
+// while plugin teardown still retains the returned disposer.
+const installedPolicies = new WeakMap()
+function policyDisposer(reference, token) {
+  return () => {
+    const engine = reference.deref()
+    const policies = engine && installedPolicies.get(engine)
+    const policy = policies?.get(token)
+    if (!policy) return
+    if (engine.compactIfNeeded === policy.routed) engine.compactIfNeeded = policy.original
+    policies.delete(token)
+    if (!policies.size) installedPolicies.delete(engine)
+  }
+}
+
 /** Scope native automatic policy to bound Tavern sessions; other agents keep their host policy. */
 export function installCompactionPolicy(engine, handler) {
   if (!engine || typeof engine.compactIfNeeded !== 'function') throw new Error('当前 DSH 缺少自动压缩策略接口，请检查宿主版本')
@@ -147,5 +162,9 @@ export function installCompactionPolicy(engine, handler) {
     return handler(agent, trigger, signal, () => original.call(this, agent, trigger, signal), () => original.call(this, agent, 'context-overflow', signal))
   }
   engine.compactIfNeeded = routed
-  return () => { if (engine.compactIfNeeded === routed) engine.compactIfNeeded = original }
+  let policies = installedPolicies.get(engine)
+  if (!policies) installedPolicies.set(engine, policies = new Map())
+  const token = Symbol('compaction-policy')
+  policies.set(token, { original, routed })
+  return policyDisposer(new WeakRef(engine), token)
 }

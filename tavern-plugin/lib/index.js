@@ -1813,8 +1813,12 @@ export async function apply(ctx) {
   }
   const configuredCompactionEngines = new WeakSet()
   const pendingCompactionMessages = new WeakMap()
-  const compactionDisposers = []
-  ctx.effect(() => () => { for (const dispose of compactionDisposers) dispose() })
+  const compactionDisposers = new Set()
+  const collectedCompactionEngines = new FinalizationRegistry(dispose => compactionDisposers.delete(dispose))
+  ctx.effect(() => () => {
+    for (const dispose of compactionDisposers) { collectedCompactionEngines.unregister(dispose); dispose() }
+    compactionDisposers.clear()
+  })
   const agentCompaction = agent => resolveAgentCompaction(ctx, agent)
   async function withCompactionSession(id, work) {
     const live = agentRegistry.get(id)
@@ -1865,14 +1869,16 @@ export async function apply(ctx) {
     const engine = await agentCompaction(agent)
     if (configuredCompactionEngines.has(engine)) return engine
     configuredCompactionEngines.add(engine)
-    compactionDisposers.push(installCompactionPolicy(engine, async (target, trigger, signal, fallback, forced) => {
+    const dispose = installCompactionPolicy(engine, async (target, trigger, signal, fallback, forced) => {
       const background = backgroundAgentRunner.requestContext(target.session.id)
       if (background && !['image', 'phone'].includes(background.task)) return null
       const chat = await chatForSession(target.session.id)
       if (!chat || !['story', 'script'].includes(chat.mode)) return fallback()
       await autoCompaction.run(target.session.id, { agent: target, signal, openTurnCompact: forced, pendingMessages: pendingCompactionMessages.get(target) || [] })
       return null
-    }))
+    })
+    compactionDisposers.add(dispose)
+    collectedCompactionEngines.register(engine, dispose, dispose)
     return engine
   }
   ctx.on('agent/pre-step', async (payload, next) => {

@@ -93,7 +93,9 @@ macOS：
 curl -fsSL https://cdn.jsdelivr.net/gh/flizzywine/dsh-tavern@main/install.sh | DSH_TAVERN_HOST=desktop sh
 ```
 
-完成后重启 Desktop，从托盘的 **Profile** 菜单选择 **tavern**。
+安装完成后重启 DSH Desktop，进入 **设置 → 桌面设置**，在右侧 **Profile** 列表中点击 **tavern**。当 tavern 旁显示 **当前** 时，就表示已选中酒馆配置（如下图）。
+
+![在设置的“桌面设置”中选择 tavern，红圈标出了入口和目标配置](docs/images/readme/select-tavern-profile.png)
 
 ### 命令行（Windows / macOS / Linux）
 

@@ -58,7 +58,7 @@ export function renderSite(inventory) {
   const owner = new Map()
   for (const group of groups) for (const [, keys] of group.chapters) for (const key of keys.split(' ')) if (!owner.has(key)) owner.set(key, group)
   // Shared links point to one article; its main home follows the user's task.
-  for (const [key, id] of Object.entries({ I01: 'play', J01: 'cards', L02: 'cards', D02: 'play' })) owner.set(key, groups.find(g => g.id === id))
+  for (const [key, id] of Object.entries({ I01: 'play', J01: 'cards', L02: 'cards', D02: 'play', E01: 'advanced', E02: 'advanced', E03: 'advanced', E04: 'advanced', M04: 'advanced', M05: 'advanced', L05: 'advanced', L06: 'advanced' })) owner.set(key, groups.find(g => g.id === id))
   if (topics.length !== 100 || owner.size !== 100 || topics.some(t => !owner.has(t.key))) throw new Error('The manual must cover every inventory topic exactly once or via shared links.')
   const allPages = groups.filter(g => g !== gettingStarted).map(g => ({ ...g, group: g.id, content: overview[g.id] }))
   const orderedTopics = groups.flatMap(g => [...new Set(g.chapters.flatMap(([, keys]) => keys.split(' ')))].filter(key => owner.get(key) === g).map(key => byId.get(key)))

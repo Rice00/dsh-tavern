@@ -61,6 +61,19 @@ export function createBackgroundAgentSessions(options, task) {
     return JSON.stringify([str(input.sessionId), input.task === 'image' ? 'image' : 'background'])
   }
 
+  async function releaseSuperseded(key) {
+    for (const [id, resident] of residentHandles) {
+      if (resident.key !== key || residentSessionByParent.get(key) === id || activeSessions.has(id)) continue
+      // Drop every plugin-owned reference, but retain the durable Session log
+      // so an explicit history restore can resume it through the host.
+      residentHandles.delete(id)
+      requestSessions.delete(id)
+      requestContexts.delete(id)
+      try { await resident.handle.dispose() }
+      catch (error) { console.warn('dsh-tavern: 释放已替代后台 Agent 失败', id, error) }
+    }
+  }
+
   function descriptorFor(input, persistent) {
     if (input.task === 'image') return snapshotSubagentDescriptor({
       mode: persistent ? 'continuable' : 'one-shot', provider: 'dsh-tavern-image', label: '场景生图',
@@ -206,7 +219,7 @@ export function createBackgroundAgentSessions(options, task) {
         requestContexts.delete(traceSessionId)
         requestSessions.delete(traceSessionId)
         await handle.dispose()
-      }
+      } else await releaseSuperseded(key)
     }
   }
 
@@ -261,6 +274,7 @@ export function createBackgroundAgentSessions(options, task) {
         if (handle !== null) await handle.dispose()
       } finally {
         activeSessions.delete(sessionId)
+        if (resident) await releaseSuperseded(resident.key)
       }
     }
   }

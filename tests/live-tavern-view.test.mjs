@@ -380,3 +380,42 @@ test('协调快照首次请求永久挂起时会超时并继续下一次权威�
   assert.deepEqual(timers.activeDelays(), [2000])
   stop()
 })
+
+test('逐层挂载历史消息共享已有视图，不为每层重新请求', async () => {
+  const create = await loadFactory()
+  const timers = fakeTimers()
+  let loads = 0
+  const view = create({ load: async () => { loads++; return { view: { settleStatus: 'idle' } } },
+    schedule: timers.schedule, cancel: timers.cancel, startWatchdog: () => null, stopWatchdog() {} })
+  const disposers = [view.subscribe('history', () => {})]
+  await timers.runNext()
+  for (let i = 0; i < 40; i++) {
+    disposers.push(view.subscribe('history', () => {}))
+    if (timers.activeDelays().length) await timers.runNext()
+  }
+  disposers.forEach(dispose => dispose())
+  assert.equal(loads, 1)
+})
+
+test('历史消息 hook 首次挂载不强制刷新，后续修订仍刷新', async () => {
+  const source = await readFile(new URL('../tavern-plugin/src/client/main.js', import.meta.url), 'utf8')
+  const start = source.indexOf('function useLiveTavernView(')
+  const end = source.indexOf('function useTavernCoordination(', start)
+  let previous
+  let effects = []
+  const invalidated = []
+  const context = { React: {
+    useState: init => [init(), () => {}],
+    useRef: initial => (previous ||= { current: initial }),
+    useEffect: effect => effects.push(effect)
+  }, liveTavernView: { getSnapshot: () => ({}), subscribe: () => () => {}, invalidate: id => invalidated.push(id) } }
+  vm.runInNewContext(source.slice(start, end) + ';this.render=useLiveTavernView;', context)
+  function render(id, revision) { effects = []; context.render(id, revision); effects.forEach(effect => effect()) }
+  render('game', 'closed:1')
+  render('game', 'closed:1')
+  assert.deepEqual(invalidated, [])
+  render('game', 'closed:2')
+  assert.deepEqual(invalidated, ['game'])
+  render('other', 'closed:5')
+  assert.deepEqual(invalidated, ['game'])
+})

@@ -694,9 +694,10 @@ window.__ModuleLoader__.load({
 				},
 				subscribe: function (sessionId, listener) {
 					const record = recordFor(sessionId);
+					const firstSubscriber = record.listeners.size === 0;
 					record.listeners.add(listener);
 					listener(record.state);
-					schedule(record, 0);
+					if (firstSubscriber) schedule(record, 0);
 					if (record.watchdog === null) {
 						record.watchdog = startWatchdog(function () {
 							if (record.listeners.size > 0 && ((pollWhileBusy && shouldPoll(record.state.view)) || idlePollIntervalMs > 0)) void refresh(record);
@@ -986,7 +987,12 @@ window.__ModuleLoader__.load({
 		function useLiveTavernView(sessionId, revision) {
 			const [state, setState] = React.useState(function () { return liveTavernView.getSnapshot(sessionId); });
 			React.useEffect(function () { return liveTavernView.subscribe(sessionId, setState); }, [sessionId]);
-			React.useEffect(function () { liveTavernView.invalidate(sessionId); }, [sessionId, revision]);
+			const previous = React.useRef({ sessionId: sessionId, revision: revision });
+			React.useEffect(function () {
+				const last = previous.current;
+				previous.current = { sessionId: sessionId, revision: revision };
+				if (last.sessionId === sessionId && last.revision !== revision) liveTavernView.invalidate(sessionId);
+			}, [sessionId, revision]);
 			return state;
 		}
 

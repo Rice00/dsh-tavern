@@ -433,7 +433,12 @@ window.__ModuleLoader__.load({
 		function useLiveTavernView(sessionId, revision) {
 			const [state, setState] = React.useState(function () { return liveTavernView.getSnapshot(sessionId); });
 			React.useEffect(function () { return liveTavernView.subscribe(sessionId, setState); }, [sessionId]);
-			React.useEffect(function () { liveTavernView.invalidate(sessionId); }, [sessionId, revision]);
+			const previous = React.useRef({ sessionId: sessionId, revision: revision });
+			React.useEffect(function () {
+				const last = previous.current;
+				previous.current = { sessionId: sessionId, revision: revision };
+				if (last.sessionId === sessionId && last.revision !== revision) liveTavernView.invalidate(sessionId);
+			}, [sessionId, revision]);
 			return state;
 		}
 

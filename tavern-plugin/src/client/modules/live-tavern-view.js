@@ -104,9 +104,10 @@ function createLiveTavernViewModule(options) {
 		},
 		subscribe: function (sessionId, listener) {
 			const record = recordFor(sessionId);
+			const firstSubscriber = record.listeners.size === 0;
 			record.listeners.add(listener);
 			listener(record.state);
-			schedule(record, 0);
+			if (firstSubscriber) schedule(record, 0);
 			if (record.watchdog === null) {
 				record.watchdog = startWatchdog(function () {
 					if (record.listeners.size > 0 && ((pollWhileBusy && shouldPoll(record.state.view)) || idlePollIntervalMs > 0)) void refresh(record);

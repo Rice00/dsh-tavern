@@ -2,7 +2,6 @@ import { createIncrementalReplyView } from './domain/incremental-reply-view.js'
 import { createRequestPerformance } from './domain/request-performance.js'
 import { scriptChunkLayout } from './domain/script-chunks.js'
 import { createScriptNavigation } from './domain/script-navigation.js'
-import { currentBackgroundSessionId } from './domain/background-identity.js'
 import { createSessionInventory } from './domain/session-inventory.js'
 import { canUndoRollback } from './domain/surface-restoration.js'
 import { createSessionViewSync } from './domain/session-view-sync.js'
@@ -1323,7 +1322,6 @@ export async function apply(ctx) {
     const rollbackState = rollbackAvailability(chat, { events: projectionEvents, nodes: agentRegistry.get(chat.sessionId)?.session?.surface?.nodes || [] })
     return {
       chatId: chat.id,
-      currentBackgroundSessionId: currentBackgroundSessionId(chat),
       contextCompaction: chat.contextCompaction || null,
       mode: chat.mode || 'story',
       requestMode: chat.requestMode === 'sillytavern' ? 'sillytavern' : 'dsh',

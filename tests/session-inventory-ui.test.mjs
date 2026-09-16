@@ -43,25 +43,3 @@ test('统计页按需查询、分页筛选，并显示未知值与查询失败',
   assert.equal(tree().find(node => node.props?.role === 'alert').children[0], '读取失败')
   dispose()
 })
-
-test('当前后台变化提示一次，首次加载、相同绑定和切换对话不误报', () => {
-  const states = [], refs = [], effects = []
-  let cursor = 0, refCursor = 0, id = 'old', sessionId = 'front'
-  const render = vm.runInNewContext(source + '; BackgroundIdentity', { React: {
-    useState(initial) { const i = cursor++; if (!(i in states)) states[i] = initial; return [states[i], value => { states[i] = typeof value === 'function' ? value(states[i]) : value }] },
-    useRef(initial) { return refs[refCursor++] ||= { current: initial } }, useEffect(fn) { effects.push(fn) },
-    createElement: (type, props, ...children) => ({ type, props, children })
-  }, useLiveTavernView: () => ({ view: { mode: 'story', currentBackgroundSessionId: id } }) })
-  function tree() { cursor = 0; refCursor = 0; effects.length = 0; const value = render({ sessionId }); for (const effect of effects) effect(); return value }
-  tree(); assert.doesNotMatch(JSON.stringify(tree()), /已轮换/)
-  id = 'new'; tree()
-  const changed = tree()
-  assert.match(JSON.stringify(changed), /old → new/)
-  const notice = changed.children.find(node => node?.props?.role === 'status')
-  notice.children.find(node => node?.type === 'button').props.onClick()
-  assert.doesNotMatch(JSON.stringify(tree()), /已轮换/)
-  id = ''; tree(); id = 'third'; tree()
-  assert.match(JSON.stringify(tree()), /new → third/)
-  sessionId = 'another'; id = 'fourth'; tree()
-  assert.doesNotMatch(JSON.stringify(tree()), /已轮换/)
-})

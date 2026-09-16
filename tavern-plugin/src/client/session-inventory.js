@@ -54,29 +54,3 @@ function SessionInventoryDialog(props) {
             h("button", { type: "button", disabled: (page + 1) * 50 >= rows.length, onClick: () => setPage(page + 1) }, "下一页")
         ));
 }
-
-function BackgroundIdentity(props) {
-    const live = useLiveTavernView(props.sessionId, "background-identity");
-    const id = live.view?.currentBackgroundSessionId;
-    const previous = React.useRef(null);
-    const [notice, setNotice] = React.useState("");
-    const [open, setOpen] = React.useState(false);
-    React.useEffect(() => {
-        if (previous.current?.sessionId !== props.sessionId) {
-            previous.current = { sessionId: props.sessionId, id: id || "" };
-            setNotice(""); setOpen(false); return;
-        }
-        if (!id) return;
-        const old = previous.current.id;
-        if (old && old !== id) setNotice("后台会话已轮换：" + old + " → " + id + "。历史日志仍保留。");
-        previous.current.id = id;
-    }, [props.sessionId, id]);
-    if (!live.view || !["story", "script"].includes(live.view.mode) || id === undefined || id === null) return null;
-    const h = React.createElement;
-    return h("div", { className: "dsh-tavern-background-identity", style: { fontSize: 12, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" } },
-        h("span", { title: id || "后台会在需要时创建" }, id ? "当前后台 · " + id.slice(-8) : "后台待创建"),
-        h("button", { type: "button", onClick: () => setOpen(true) }, "后台详情"),
-        notice ? h("span", { role: "status", style: { overflowWrap: "anywhere" } }, notice,
-            h("button", { type: "button", "aria-label": "关闭轮换提示", onClick: () => setNotice("") }, "×")) : null,
-        open ? h(SessionInventoryDialog, { sessionId: props.sessionId, onClose: () => setOpen(false) }) : null);
-}

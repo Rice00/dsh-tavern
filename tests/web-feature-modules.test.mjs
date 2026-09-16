@@ -177,7 +177,6 @@ test('游玩控制 Feature module 统一注册状态栏与对话控制面板', f
   assert.deepEqual(injectedSlots, [
     'conversation.session.header.utilities',
     'conversation.session.header.utilities',
-    'conversation.session.header.utilities',
     'conversation.input.dock',
     'conversation.input.dock',
     'conversation.input.dock',
@@ -262,7 +261,7 @@ test('预设界面按保存的段内顺序展示，并用源位置区分重复�
   assert.deepEqual(Array.from(groups.front, entry => entry.entryKey), ['same#2', 'same#1'])
 })
 
-test('后台身份与宿主子代理目录共存，不注册或覆盖 single lineage 插槽', () => {
+test('游玩控制不注册或覆盖原生子代理目录，也不显示后台身份栏', () => {
   const lineage = 'conversation.session.header.lineage'
   const nativeEntry = { name: lineage, id: 'native-subagent', priority: 0 }
   const entries = [nativeEntry]
@@ -282,5 +281,5 @@ test('后台身份与宿主子代理目录共存，不注册或覆盖 single lin
   } })
   assert.deepEqual(entries.filter(entry => entry.name === lineage), [nativeEntry], '即使换 priority，也不能抢占原生子代理目录')
   const identity = entries.find(entry => entry.id === 'dsh-tavern-background-identity')
-  assert.equal(identity.name, 'conversation.session.header.utilities')
+  assert.equal(identity, undefined)
 })

@@ -67,9 +67,10 @@ test('Git 增量归档在用户开启 CRLF 转换时仍保持运行文件原始�
   git(['-c', 'user.name=Test', '-c', 'user.email=test@example.com', 'commit', '-qm', 'fixture'])
   git(['config', 'core.autocrlf', 'true'])
   for (const installer of [unix, windows]) {
-    const line = installer.split('\n').find(line => line.includes(' archive --format='))
-    const flags = [...line.matchAll(/-c (core\.[a-z]+=[a-z]+)/g)].flatMap(match => ['-c', match[1]])
-    assert.ok(flags.length > 0)
+    const line = installer.split('\n').find(line => line.includes('git.archive') && line.includes('--format='))
+    assert.ok(line, 'Installer must invoke the logged Git archive operation')
+    const flags = [...line.replace(/['",]/g, '').matchAll(/-c\s+(core\.[a-z]+=[a-z]+)/g)].flatMap(match => ['-c', match[1]])
+    assert.deepEqual(flags, ['-c', 'core.autocrlf=false', '-c', 'core.eol=lf'])
     const archive = git([...flags, 'archive', '--format=tar', 'HEAD'])
     assert.deepEqual(execFileSync('tar', ['-xOf', '-', 'install.sh'], { input: archive }), source)
   }

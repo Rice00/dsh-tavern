@@ -2,10 +2,14 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import vm from 'node:vm'
+import { parseExpressionAt } from 'acorn'
 
 const source = await readFile(new URL('../tavern-plugin/lib/client.js', import.meta.url), 'utf8')
-function functionSource(name, next) {
-  return source.slice(source.indexOf('function ' + name + '('), source.indexOf('function ' + next + '('))
+function functionSource(name) {
+  const start = source.indexOf('function ' + name + '(')
+  assert.ok(start >= 0, 'Missing client function: ' + name)
+  const node = parseExpressionAt(source, start, { ecmaVersion: 'latest' })
+  return source.slice(start, node.end)
 }
 function dockWith(nodes, mode = 'story', releaseCapabilities = { sceneImages: true }, canClearIncompleteReply = false) {
   const selections = []
@@ -23,8 +27,8 @@ function dockWith(nodes, mode = 'story', releaseCapabilities = { sceneImages: tr
   }
   // Execute the actual dock component, with alpha.2's split lifecycle/Chat props.
   const helper = source.includes('function latestTavernAssistantMessageId(')
-    ? functionSource('latestTavernAssistantMessageId', 'createPlayControlsFeatureModule') : ''
-  const dock = functionSource('CandidateDockActions', 'CandidateQuestion')
+    ? functionSource('latestTavernAssistantMessageId') : ''
+  const dock = functionSource('CandidateDockActions')
   const rendered = vm.runInNewContext(helper + dock + '\nCandidateDockActions(props)', context)
   return { rendered, selections }
 }

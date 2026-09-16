@@ -18,7 +18,8 @@ test('旧存档一次性保存原生效配置，两个对话修改互不影响',
   assert.equal(b.backgroundTasks.posture, true)
   assert.equal(b.backgroundModelSelection.model, 'global')
   assert.deepEqual(resolveChatBackgroundModel(changed, { provider: 'front', model: 'this-game' }), { provider: 'front', model: 'this-game' })
-  assert.equal(changed.backgroundTasks.characterDesign, true)
+  assert.equal(a.backgroundTasks.characterDesign, false, '旧自动人物设计开关不再启用后台任务')
+  assert.equal(changed.backgroundTasks.characterDesign, false)
 })
 
 test('搜索和生图只保存到本局，旧全局开关只迁移一次', async () => {

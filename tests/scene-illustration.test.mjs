@@ -39,7 +39,7 @@ test('image Agent reads historical character designs and submits text and tags w
     assert.ok(input.tools.some(tool => tool.name === 'character_design_read'))
     assert.ok(!input.tools.some(tool => tool.name === 'character_design_save'))
     const read = JSON.parse(await input.onToolCall({ name: 'character_design_read', arguments: { name: '林岚' } }))
-    assert.equal(read.character.design.appearance, '黑色短发')
+    assert.equal(read.character.design.appearance, '黑色短发\n\n白色外套')
     const field = (text, tags) => ({ text, tags })
     const plan = planFixture()
     plan.subjects = ['lin']
@@ -55,7 +55,7 @@ test('image Agent reads historical character designs and submits text and tags w
   fx.chat().characterDesignDocument.characters[0].design.appearance = '红发'
   const before = structuredClone(fx.chat())
   await fx.service.start('parent', 2, sceneTarget(fx.chat(), 2).key)
-  await until(async () => (await fx.service.status('parent', 2)).status === 'succeeded')
+  await until(async () => { const status = await fx.service.status('parent', 2); assert.notEqual(status.status, 'failed', status.error); return status.status === 'succeeded' })
   assert.deepEqual(fx.chat(), before)
 })
 

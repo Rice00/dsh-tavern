@@ -53,7 +53,7 @@ test('人物设计是现有后台 Agent 按需加载的内置 Skill', async () =
   assert.equal(metadata['user-invocable'], false)
   assert.match(skill.content, /提前储备/)
   assert.match(skill.content, /同一个 Agent 会话/)
-  assert.match(skill.content, /不要创建或请求另一个人物设计 Agent/)
+  assert.match(skill.content, /不创建另一个 Agent/)
   assert.match(skill.content, /普通卡与 MVU 卡/)
   assert.match(skill.content, /不接收变量路径或变量对象/)
   assert.match(skill.content, /character_design_read/)
@@ -63,7 +63,7 @@ test('人物设计是现有后台 Agent 按需加载的内置 Skill', async () =
   assert.match(skill.content, /不使用“未明确”“未知”“待定”/)
   assert.match(skill.content, /不设固定数量上限/)
   assert.doesNotMatch(skill.content, /仅在卡片已有人物库/)
-  assert.match(skill.content, /`posture_submit` 或 `mvu_submit_update`，仍须照常调用/)
+  assert.match(skill.content, /本次任务不提交姿势、变量或候选项/)
   assert.match(skill.content, /不[^\n]*前台正文 Agent/)
 })
 

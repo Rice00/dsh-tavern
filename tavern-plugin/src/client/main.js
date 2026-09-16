@@ -1882,12 +1882,21 @@ window.__ModuleLoader__.load({
 			}
 		}
 
+		// @include local-variables.js
+
 		function installTavernHelperFacade(options) {
 			const nativeWorldInfoSnapshots = new WeakMap();
 			const nativeWorldInfoByName = new Map();
 			const functionTools = new Map();
 			const { window, copy, context, request: call, Popup: HelperPopup } = options;
 			const chatData = options.createChatData({ copy: copy, context: context, request: call });
+            const localVariables = options.createLocalVariables({ context, request: call, copy, currentScript: options.currentScript, reportError: error => console.error(error) });
+            async function saveChatData() {
+                const chatId = context().chatId, revision = context().lifecycleRevision;
+                await localVariables.flush();
+                if (context().chatId !== chatId || context().lifecycleRevision !== revision) throw new Error("聊天已切换或历史版本已变化，插件数据未保存");
+                return chatData.save();
+            }
 			const extensionSettings = Object.assign(Object.create(null), copy(context().extensionSettings || {}));
 			// Tavern applies enabled card regexes without ST's per-avatar opt-in.
 			// Project that host-owned permission without persisting a fabricated setting.
@@ -1950,6 +1959,7 @@ window.__ModuleLoader__.load({
 			const eventSource = { on: window.eventOn, once: window.eventOnce, off: window.eventOff, removeListener: window.eventOff, makeFirst: window.eventMakeFirst, makeLast: window.eventMakeLast, emit: window.eventEmit };
 			const sillyTavern = {
 				TavernHelper: helper,
+                variables: Object.freeze({ local: localVariables.api }),
 				substituteParams: function (value) { return window.substitudeMacros(value); },
 				getContext: function () { return sillyTavern; },
 				eventSource: eventSource,
@@ -2010,9 +2020,9 @@ window.__ModuleLoader__.load({
 					if (type === "confirm" && legacyCleanup) return Promise.resolve(0);
 					return new HelperPopup(content, type, title, options).show();
 				},
-				saveChat: chatData.save,
-				saveMetadata: chatData.save,
-				saveMetadataDebounced: chatData.save,
+				saveChat: saveChatData,
+				saveMetadata: saveChatData,
+				saveMetadataDebounced: saveChatData,
 				updateChatMetadata: chatData.updateMetadata,
 				saveSettingsDebounced: saveExtensionSettings
 			};
@@ -2029,7 +2039,7 @@ window.__ModuleLoader__.load({
 			window.errorCatched = function (factory) { return function () { try { return factory.apply(this, arguments); } catch (error) { console.error(error); return {}; } }; };
 			window.retrieveDisplayedMessage = function () { return window.jQuery ? window.jQuery() : []; };
 			window.toastr = { success: console.info, info: console.info, warning: console.warn, error: console.error };
-			return { sync: chatData.sync };
+			return { sync: function (value) { chatData.sync(value); localVariables.sync(); }, flushVariables: localVariables.flush };
 		}
 
         // Bounded, value-free timings shared by every card's initialization.
@@ -2235,7 +2245,7 @@ window.__ModuleLoader__.load({
                     const previousSync = synchronousScriptId;
                     synchronousScriptId = ownerId;
                     try { pending = factory(); } finally { synchronousScriptId = previousSync; }
-                    const result = await initializationTiming.wait("script-callback", pending, ownerId); await initializationTiming.wait("prompt-drain", drainPromptWrites(ownerId), ownerId); return result; }
+                    const result = await initializationTiming.wait("script-callback", pending, ownerId); if (facade) await facade.flushVariables(ownerId); await initializationTiming.wait("prompt-drain", drainPromptWrites(ownerId), ownerId); return result; }
                 catch (error) {
                     // Keep the innermost owner, including failures after await and
                     // primitive/frozen rejections that cannot carry metadata.
@@ -2680,7 +2690,7 @@ window.__ModuleLoader__.load({
 					.replace(/{{\s*user\s*}}/gi, String(state.playerName || "你"))
 					.replace(/{{\s*char\s*}}/gi, String(state.characterName || "角色"));
 			};
-			facade = modules.installFacade({ installCompatibility: modules.installCompatibility, currentScript: currentScript, post: transport.post, createChatData: modules.createChatData, window: window, copy: copy, request: call, context: function () { return state; },
+			facade = modules.installFacade({ installCompatibility: modules.installCompatibility, currentScript: currentScript, post: transport.post, createChatData: modules.createChatData, createLocalVariables: modules.createLocalVariables, window: window, copy: copy, request: call, context: function () { return state; },
 				Popup: modules.createPopup({ document: window.document, parent: parent, token: token }) });
 			let regexSaveTimer = null;
 			async function persistGlobalRegexes() {
@@ -3151,6 +3161,7 @@ window.__ModuleLoader__.load({
 				+ 'createPopup:' + createTavernHelperPopup.toString() + ','
 				+ 'installCompatibility:' + installTavernCompatibilityDiagnostics.toString() + ','
 				+ 'createChatData:' + createTavernChatDataFacade.toString() + ','
+                + 'createLocalVariables:' + createTavernLocalVariables.toString() + ','
 				+ 'installFacade:' + installTavernHelperFacade.toString() + '});';
 			const modules = scripts.map(function (script) {
 				return { id: String(script && script.id || ""), system: String(script && script.system || ""), assetUrl: String(script && script.assetUrl || ""), content: String(script && script.content || "") };

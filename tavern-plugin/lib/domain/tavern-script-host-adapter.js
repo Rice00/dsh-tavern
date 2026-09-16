@@ -116,6 +116,10 @@ export function createTavernScriptHostAdapter(options = {}) {
   }
 
   async function updateVariables(sessionId, option, variables, expectedLifecycleRevision, eventId) {
+    return serializeWorldbook('variables:' + sessionId, () => updateVariablesNow(sessionId, option, variables, expectedLifecycleRevision, eventId))
+  }
+
+  async function updateVariablesNow(sessionId, option, variables, expectedLifecycleRevision, eventId) {
     const chat = await mutationChat(sessionId, eventId)
     await assertScriptEnabled(chat)
     if (!mutationIsCurrent(chat, expectedLifecycleRevision)) return staleMutation(chat)

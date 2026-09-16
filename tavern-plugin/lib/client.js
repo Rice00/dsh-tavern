@@ -2971,12 +2971,95 @@ window.__ModuleLoader__.load({
 			}
 		}
 
+		// ST's synchronous local-variable facade over the authoritative Helper chat store.
+		function createTavernLocalVariables({ context, request, copy, currentScript, reportError }) {
+		  const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
+		  const binding = () => JSON.stringify([context().chatId, context().lifecycleRevision || 0]);
+		  let owner = binding(), base = copy(context().chatVariables || {}), operations = [];
+		  const failures = new Map();
+		  const tasks = new Map();
+		  function apply(value, operation) {
+		    if (operation.remove) delete value[operation.key];
+		    else Object.defineProperty(value, operation.key, { value: copy(operation.value), enumerable: true, writable: true, configurable: true });
+		  }
+		  function project() {
+		    const value = copy(base);
+		    for (const operation of operations) apply(value, operation);
+		    context().chatVariables = value;
+		  }
+		  function sync() {
+		    if (owner !== binding()) { owner = binding(); operations = []; failures.clear(); }
+		    base = copy(context().chatVariables || {});
+		    project();
+		  }
+		  function mutate(key, value, remove = false) {
+		    if (typeof key !== 'string' || !key || key === '__proto__') throw new Error('聊天变量名称无效');
+		    if (owner !== binding()) sync();
+		    const operation = { key, ...(remove ? { remove: true } : { value: copy(value) }) };
+		    // Reject non-JSON values before changing the synchronous view.
+		    if (!remove && JSON.stringify(operation.value) === undefined) throw new Error('聊天变量必须是 JSON 值');
+		    const captured = owner, scriptId = currentScript().id;
+		    operations.push(operation); project();
+		    const task = request('updateTavernHelperVariables', { option: { type: 'chat', localMutation: operation } }).then(result => {
+		      if (result?.updated !== true || result?.stale) throw new Error('聊天已变化，变量未保存');
+		      if (owner === captured && binding() === captured) {
+		        if (!result.context) apply(base, operation);
+		      }
+		    }).catch(error => {
+		      if (owner === captured && binding() === captured) failures.set(scriptId, error);
+		      reportError(error);
+		      throw error;
+		    }).finally(() => {
+		      tasks.delete(task);
+		      if (owner === captured && binding() === captured) { operations = operations.filter(item => item !== operation); project(); }
+		    });
+		    tasks.set(task, scriptId);
+		    task.catch(() => {}); // ST setters return synchronously; flush propagates persistence failures.
+		    return value;
+		  }
+		  function get(name, args = {}) {
+		    const values = context().chatVariables || {}, key = args.key ?? name;
+		    let value = own(values, key) ? copy(values[key]) : undefined;
+		    if (args.index !== undefined) {
+		      try { value = JSON.parse(value)[args.index]; if (typeof value === 'object') value = JSON.stringify(value); } catch (_) {}
+		    }
+		    return value?.trim?.() === '' || Number.isNaN(Number(value)) ? (value || '') : Number(value);
+		  }
+		  function set(name, value, args = {}) {
+		    if (args.index !== undefined || args.as !== undefined) throw new Error('variables.local.set 暂不支持 index/as；请读取并更新完整变量');
+		    return mutate(name, value);
+		  }
+		  function add(name, value) {
+		    const current = get(name) || 0;
+		    try { const array = JSON.parse(current); if (Array.isArray(array)) { array.push(value); set(name, JSON.stringify(array)); return array; } } catch (_) {}
+		    const next = Number.isNaN(Number(value)) || Number.isNaN(Number(current)) ? String(current || '') + value : Number(current) + Number(value);
+		    if (Number.isNaN(next)) return '';
+		    set(name, next); return next;
+		  }
+		  return {
+		    api: Object.freeze({ get, set, has: name => own(context().chatVariables || {}, name), del: name => { mutate(name, undefined, true); }, add, inc: name => add(name, 1), dec: name => add(name, -1) }),
+		    sync,
+		    async flush(scriptId) {
+		      await Promise.allSettled([...tasks].filter(([, id]) => scriptId === undefined || id === scriptId).map(([task]) => task));
+		      const failed = [...failures].find(([id]) => scriptId === undefined || id === scriptId);
+		      if (failed) { failures.delete(failed[0]); throw failed[1]; }
+		    }
+		  };
+		}
+
 		function installTavernHelperFacade(options) {
 			const nativeWorldInfoSnapshots = new WeakMap();
 			const nativeWorldInfoByName = new Map();
 			const functionTools = new Map();
 			const { window, copy, context, request: call, Popup: HelperPopup } = options;
 			const chatData = options.createChatData({ copy: copy, context: context, request: call });
+            const localVariables = options.createLocalVariables({ context, request: call, copy, currentScript: options.currentScript, reportError: error => console.error(error) });
+            async function saveChatData() {
+                const chatId = context().chatId, revision = context().lifecycleRevision;
+                await localVariables.flush();
+                if (context().chatId !== chatId || context().lifecycleRevision !== revision) throw new Error("聊天已切换或历史版本已变化，插件数据未保存");
+                return chatData.save();
+            }
 			const extensionSettings = Object.assign(Object.create(null), copy(context().extensionSettings || {}));
 			// Tavern applies enabled card regexes without ST's per-avatar opt-in.
 			// Project that host-owned permission without persisting a fabricated setting.
@@ -3039,6 +3122,7 @@ window.__ModuleLoader__.load({
 			const eventSource = { on: window.eventOn, once: window.eventOnce, off: window.eventOff, removeListener: window.eventOff, makeFirst: window.eventMakeFirst, makeLast: window.eventMakeLast, emit: window.eventEmit };
 			const sillyTavern = {
 				TavernHelper: helper,
+                variables: Object.freeze({ local: localVariables.api }),
 				substituteParams: function (value) { return window.substitudeMacros(value); },
 				getContext: function () { return sillyTavern; },
 				eventSource: eventSource,
@@ -3099,9 +3183,9 @@ window.__ModuleLoader__.load({
 					if (type === "confirm" && legacyCleanup) return Promise.resolve(0);
 					return new HelperPopup(content, type, title, options).show();
 				},
-				saveChat: chatData.save,
-				saveMetadata: chatData.save,
-				saveMetadataDebounced: chatData.save,
+				saveChat: saveChatData,
+				saveMetadata: saveChatData,
+				saveMetadataDebounced: saveChatData,
 				updateChatMetadata: chatData.updateMetadata,
 				saveSettingsDebounced: saveExtensionSettings
 			};
@@ -3118,7 +3202,7 @@ window.__ModuleLoader__.load({
 			window.errorCatched = function (factory) { return function () { try { return factory.apply(this, arguments); } catch (error) { console.error(error); return {}; } }; };
 			window.retrieveDisplayedMessage = function () { return window.jQuery ? window.jQuery() : []; };
 			window.toastr = { success: console.info, info: console.info, warning: console.warn, error: console.error };
-			return { sync: chatData.sync };
+			return { sync: function (value) { chatData.sync(value); localVariables.sync(); }, flushVariables: localVariables.flush };
 		}
 
         // Bounded, value-free timings shared by every card's initialization.
@@ -3324,7 +3408,7 @@ window.__ModuleLoader__.load({
                     const previousSync = synchronousScriptId;
                     synchronousScriptId = ownerId;
                     try { pending = factory(); } finally { synchronousScriptId = previousSync; }
-                    const result = await initializationTiming.wait("script-callback", pending, ownerId); await initializationTiming.wait("prompt-drain", drainPromptWrites(ownerId), ownerId); return result; }
+                    const result = await initializationTiming.wait("script-callback", pending, ownerId); if (facade) await facade.flushVariables(ownerId); await initializationTiming.wait("prompt-drain", drainPromptWrites(ownerId), ownerId); return result; }
                 catch (error) {
                     // Keep the innermost owner, including failures after await and
                     // primitive/frozen rejections that cannot carry metadata.
@@ -3769,7 +3853,7 @@ window.__ModuleLoader__.load({
 					.replace(/{{\s*user\s*}}/gi, String(state.playerName || "你"))
 					.replace(/{{\s*char\s*}}/gi, String(state.characterName || "角色"));
 			};
-			facade = modules.installFacade({ installCompatibility: modules.installCompatibility, currentScript: currentScript, post: transport.post, createChatData: modules.createChatData, window: window, copy: copy, request: call, context: function () { return state; },
+			facade = modules.installFacade({ installCompatibility: modules.installCompatibility, currentScript: currentScript, post: transport.post, createChatData: modules.createChatData, createLocalVariables: modules.createLocalVariables, window: window, copy: copy, request: call, context: function () { return state; },
 				Popup: modules.createPopup({ document: window.document, parent: parent, token: token }) });
 			let regexSaveTimer = null;
 			async function persistGlobalRegexes() {
@@ -4240,6 +4324,7 @@ window.__ModuleLoader__.load({
 				+ 'createPopup:' + createTavernHelperPopup.toString() + ','
 				+ 'installCompatibility:' + installTavernCompatibilityDiagnostics.toString() + ','
 				+ 'createChatData:' + createTavernChatDataFacade.toString() + ','
+                + 'createLocalVariables:' + createTavernLocalVariables.toString() + ','
 				+ 'installFacade:' + installTavernHelperFacade.toString() + '});';
 			const modules = scripts.map(function (script) {
 				return { id: String(script && script.id || ""), system: String(script && script.system || ""), assetUrl: String(script && script.assetUrl || ""), content: String(script && script.content || "") };

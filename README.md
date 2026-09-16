@@ -69,9 +69,9 @@
 
 ### 纯小白安装（仅限 Windows x64）
 
-**[点击下载 Windows 一体版 EXE](https://github.com/flizzywine/dsh-tavern/releases/download/v1.8/DSH-Tavern-Desktop-2.0.5-x64-Portable.exe)**
+**[点击下载 Windows 一键在线安装 EXE](https://github.com/flizzywine/dsh-tavern/releases/download/v1.9/DSH-Tavern-Desktop-2.0.5-x64-Portable.exe)**
 
-下载后双击运行，按界面提示完成首次设置，无需另外安装 Node.js 或 DSH Desktop。内置 Desktop 2.0.5，酒馆可在界面中更新到最新版。
+下载后双击运行，**首次启动需要联网，自动安装当前兼容 Desktop 2.0.5 的最新版酒馆**，无需另外安装 Node.js 或 DSH Desktop。Desktop 固定为 2.0.5；已有安装和数据会保留，后续可在酒馆界面中更新。
 
 **为什么锁定 DSH 版本？** DSH 经常进行破坏性更新，DSH Desktop 和 DSHA 也会随之更新内置 DSH，可能导致原本能用的插件在宿主升级后无法运行。为避免用户更新后酒馆失效，本项目必须锁定已适配的 DSH 版本：安装器只接受适配版本，检测到非适配版本会停止安装。请使用下方列出的适配版本，等待本项目完成新版本适配后再升级宿主。
 

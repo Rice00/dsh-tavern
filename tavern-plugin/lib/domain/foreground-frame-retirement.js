@@ -1,3 +1,4 @@
+import { replaceSessionSurface } from './session-surface-mutations.js'
 import { randomUUID } from 'node:crypto'
 import { appendSessionEvent, sessionEvents } from './session-events.js'
 
@@ -11,10 +12,10 @@ export function retireForegroundFrames(session, { keepTurn } = {}) {
     if (event?.type !== 'user/message' || source?.kind !== 'plugin' || source.plugin !== 'dsh-tavern' || source.form !== 'foreground-frame') continue
     if (Number.isSafeInteger(keepTurn) && Number(source.trace?.turn) === keepTurn) continue
     if (!Array.isArray(data.content) || !data.content.length) continue
-    appendSessionEvent(session, 'user/message', {
+    replaceSessionSurface(session, 'user/message', {
       id: randomUUID(), role: 'user', content: [],
       source: { kind: 'plugin', plugin: 'dsh-tavern', form: 'foreground-frame', ...(source.trace === undefined ? {} : { trace: source.trace }) }
-    }, { surfaceOp: { op: 'replace', start: seq, end: seq }, sourceEventSeqs: [seq] })
+    }, { start: seq, end: seq, sourceEventSeqs: [seq] })
     count++
   }
   return count

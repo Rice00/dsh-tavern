@@ -330,7 +330,7 @@ test('游玩回复把 prompt 投影写回 DSH Session，同时保留完整展示
   assert.match(serverSource, /projectReply: projectRuntimeReply/)
   assert.match(lifecycle, /if \(saved\.reply\) replaceAssistantReply\(session, assistant, saved\.reply\.sessionText\)/)
   assert.doesNotMatch(lifecycle, /presentationHtml|\\u00a0/)
-  assert.match(replaceReply, /surfaceOp: \{ op: 'replace', start: result\.index, end: result\.index \}/)
+  assert.match(replaceReply, /replaceSessionSurface\(session, 'assistant\/message'/)
 })
 
 test('新会话取得可写 Session 后通过 Conversation Registry 原子发布', () => {

@@ -19,9 +19,9 @@ test('durable rollback excludes tool and reasoning turns including older rollbac
 test('reset reuses the session and retains its fixed prefix while removing task context', () => {
   let replacement
   const session = { surface: { nodes: [0, 1, 2] }, events: [
-    { type: 'user/message', data: { id: 'tavern-session-prefix:bg' } },
-    { type: 'user/message', data: { id: 'task' } },
-    { type: 'assistant/message', data: { turn: 1, message: { source: { kind: 'model' } } } }
+    { seq: 0, type: 'user/message', data: { id: 'tavern-session-prefix:bg' } },
+    { seq: 1, type: 'user/message', data: { id: 'task' } },
+    { seq: 2, type: 'assistant/message', data: { turn: 1, message: { source: { kind: 'model' } } } }
   ], append(type, data, options) { replacement = options.surfaceOp } }
   assert.equal(rewindBackgroundSurface(session, -1), 2)
   assert.deepEqual(replacement, { op: 'replace', start: 1, end: 2 })

@@ -1,3 +1,4 @@
+import { replaceSessionSurface } from './session-surface-mutations.js'
 import { restoredSurfaceSeqs } from './surface-restoration.js'
 import { sessionEvents, appendSessionEvent, surfaceReplacementRange } from './session-events.js'
 import { randomUUID } from 'node:crypto'
@@ -30,14 +31,11 @@ export function rewindBackgroundSurface(session, boundary) {
     }
   }
   if (source === null) throw new Error('后台 Agent checkpoint 之后存在消息，但找不到可用的模型来源')
-  appendSessionEvent(session, 'assistant/message', {
+  replaceSessionSurface(session, 'assistant/message', {
     turn,
     step,
     message: { id: randomUUID(), role: 'assistant', content: [], source }
-  }, {
-    surfaceOp: { op: 'replace', start: shadowed[0], end: shadowed[shadowed.length - 1] },
-    sourceEventSeqs: shadowed
-  })
+  }, { start: shadowed[0], end: shadowed[shadowed.length - 1], sourceEventSeqs: shadowed })
   return shadowed.length
 }
 

@@ -1,3 +1,4 @@
+import { replaceSessionSurface } from './domain/session-surface-mutations.js'
 import { createPresetDiagnostics } from './domain/preset-diagnostics.js'
 import { createIncrementalReplyView } from './domain/incremental-reply-view.js'
 import { createRequestPerformance } from './domain/request-performance.js'
@@ -3477,7 +3478,7 @@ export async function apply(ctx) {
     if (result === null || result.text === bodyText) return
     const previous = result.event && result.event.data && result.event.data.message
     if (previous === null || typeof previous !== 'object') return
-    appendSessionEvent(session, 'assistant/message', {
+    replaceSessionSurface(session, 'assistant/message', {
       turn: Number(result.event.data && result.event.data.turn) || 0,
       step: Number(result.event.data && result.event.data.step) || 1,
       message: Object.assign({}, previous, {
@@ -3485,10 +3486,7 @@ export async function apply(ctx) {
         source: { kind: 'model', provider: 'dsh-tavern', model: 'reply-projection' },
         content: [{ type: 'text', text: bodyText }]
       })
-    }, {
-      surfaceOp: { op: 'replace', start: result.index, end: result.index },
-      sourceEventSeqs: [result.index]
-    })
+    }, { start: result.index, end: result.index, sourceEventSeqs: [result.index] })
   }
 
   async function resolveChatRuntimePreset(chat) {

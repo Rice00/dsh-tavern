@@ -1,3 +1,4 @@
+import { replaceSessionSurface } from './session-surface-mutations.js'
 import { canUndoRollback, restoreSurface, preflightSurfaceRestore } from './surface-restoration.js'
 import { rewindBackgroundSurface } from './background-surface.js'
 import { sessionEvents, appendSessionEvent } from './session-events.js'
@@ -112,10 +113,10 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
     if (session.header?.version >= 3) {
       const preview = session.constructor.fromRestore(session.id, structuredClone(sessionEvents(session)), structuredClone(session.header), session.inheritedEventCount, 'detached')
       try {
-        appendSessionEvent(preview, 'assistant/message', {
+        replaceSessionSurface(preview, 'assistant/message', {
           turn: oldTurn, step: 1,
           message: { id: randomUUID(), role: 'assistant', content: [{ type: 'text', text: msgs0[oldAssistantIndex].text }], source: oldSource }
-        }, { surfaceOp: { op: 'replace', start: oldSeq, end: oldSeq }, sourceEventSeqs: [oldSeq] })
+        }, { start: oldSeq, end: oldSeq, sourceEventSeqs: [oldSeq] })
       } catch (error) {
         throw new Error('当前 DSH 不支持正文替换，未启动重新生成。' + str(error?.message || error), { cause: error })
       }
@@ -242,14 +243,11 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
       eventStart
     })
     // 正文替代先独立提交到可见 Surface；后台结算失败不能撤销用户已经得到的新正文。
-    appendSessionEvent(session, 'assistant/message', {
+    replaceSessionSurface(session, 'assistant/message', {
       turn: oldTurn,
       step: 1,
       message: { id: randomUUID(), role: 'assistant', content: [{ type: 'text', text: body }], source: oldSource }
-    }, {
-      surfaceOp: { op: 'replace', start: replacement.start, end: replacement.end },
-      sourceEventSeqs: replacement.shadowedSeqs
-    })
+    }, { start: replacement.start, end: replacement.end, sourceEventSeqs: replacement.shadowedSeqs })
     let settledChat = committedChat
     try {
       await queueSettlement(committedChat.id)
@@ -410,7 +408,7 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
 
     // 3) 原生消息面：用空消息替换最近一轮的所有 surface 节点（模型不再看到），UI 由客户端隐藏对应 turn tail
     try {
-      appendSessionEvent(session, 'assistant/message', {
+      replaceSessionSurface(session, 'assistant/message', {
         turn: rollbackSurface.turn,
         step: rollbackSurface.step,
         message: {
@@ -419,10 +417,7 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
           content: [],
           source: rollbackSurface.source
         }
-      }, {
-        surfaceOp: { op: 'replace', start: rollbackSurface.userSeq, end: rollbackSurface.endSeq },
-        sourceEventSeqs: shadowedSeqs
-      })
+      }, { start: rollbackSurface.userSeq, end: rollbackSurface.endSeq, sourceEventSeqs: shadowedSeqs })
     } catch (error) {
       // Keep append-only history intact. A rejected surface replacement must not consume the story checkpoint.
       try {

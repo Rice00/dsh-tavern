@@ -1,3 +1,4 @@
+import { replaceSessionSurface } from './session-surface-mutations.js'
 import { randomUUID } from 'node:crypto'
 import { appendSessionEvent, sessionEvents } from './session-events.js'
 
@@ -39,10 +40,7 @@ export function restoreSurface(session, targetNodes) {
       replaced = [seq]
     }
     if (i === markerIndex) data.tavernRestoredSurfaceSeqs = shadowed
-    appendSessionEvent(session, original.type, data, {
-      surfaceOp: { op: 'replace', start: replaced[0], end: replaced.at(-1) },
-      sourceEventSeqs: [...new Set([...replaced, original.seq])]
-    })
+    replaceSessionSurface(session, original.type, data, { start: replaced[0], end: replaced.at(-1), sourceEventSeqs: [...new Set([...replaced, original.seq])] })
   }
 }
 

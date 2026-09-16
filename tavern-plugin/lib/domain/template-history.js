@@ -1,3 +1,4 @@
+import { replaceSessionSurface } from './session-surface-mutations.js'
 import { randomUUID } from 'node:crypto'
 import { sessionEvents, appendSessionEvent } from './session-events.js'
 
@@ -43,8 +44,8 @@ export async function synchronizeTemplateHistory(session, chat, flush) {
     })
     if (!replaced) content.push({type:'text',text:body(message)})
     const replacement = { ...original, id: edit.id, content }
-    appendSessionEvent(session, edit.role + '/message', edit.role === 'assistant' ? { turn: edit.turn, step: 1, message: replacement } : replacement,
-      { surfaceOp: { op: 'replace', start: edit.seq, end: edit.seq }, sourceEventSeqs: [edit.seq] })
+    replaceSessionSurface(session, edit.role + '/message', edit.role === 'assistant' ? { turn: edit.turn, step: 1, message: replacement } : replacement,
+      { start: edit.seq, end: edit.seq, sourceEventSeqs: [edit.seq] })
     changed = true
   }
   if (changed) await flush(session)

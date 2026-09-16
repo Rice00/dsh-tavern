@@ -1,3 +1,4 @@
+import { replaceSessionSurface } from './session-surface-mutations.js'
 import { ensureSessionSystemHead, sessionEvents, appendSessionEvent } from './session-events.js'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
@@ -117,9 +118,9 @@ export async function ensureSessionStablePrefix(session, text, storage, revision
       // Freeze that same evaluated snapshot once when migrating, never reevaluate per turn.
       const context = needsSnapshot && /<%[\s\S]*?%>/.test(existing.text) && str(text).trim() ? str(text).trim() : existing.text
       const message = { ...fixedContextMessage(session, context), id: 'tavern-session-prefix:' + session.id + ':system-migration' }
-      const event = appendSessionEvent(session, 'user/message', message, activeLegacy ? {
-        surfaceOp: { op: 'replace', start: activeLegacy.seq, end: activeLegacy.seq }, sourceEventSeqs: [activeLegacy.seq]
-      } : { surfaceOp: 'append' })
+      const event = activeLegacy
+        ? replaceSessionSurface(session, 'user/message', message, { start: activeLegacy.seq, end: activeLegacy.seq, sourceEventSeqs: [activeLegacy.seq] })
+        : appendSessionEvent(session, 'user/message', message, { surfaceOp: 'append' })
       return messageRecord(event)
     }
     return existing

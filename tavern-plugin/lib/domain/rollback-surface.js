@@ -1,3 +1,4 @@
+import { replaceSessionSurface } from './session-surface-mutations.js'
 import { restoredSurfaceSeqs } from './surface-restoration.js'
 import { sessionEvents, appendSessionEvent, surfaceReplacementRange } from './session-events.js'
 import { randomUUID } from 'node:crypto'
@@ -310,15 +311,12 @@ export function clearFailedTurnSurface(input) {
   const makeId = typeof input.id === 'function' ? input.id : function () { return randomUUID() }
   // DSH permits plugin-injected user messages, but assistant messages must be
   // model-sourced on restore. Keep this empty tombstone explicitly plugin-owned.
-  appendSessionEvent(session, 'user/message', {
+  replaceSessionSurface(session, 'user/message', {
     id: makeId(),
     role: 'user',
     content: [],
     source: { kind: 'plugin', plugin: 'dsh-tavern-failed-turn-cleanup' }
-  }, {
-    surfaceOp: { op: 'replace', start: cleanup.start, end: cleanup.end },
-    sourceEventSeqs: cleanup.shadowedSeqs
-  })
+  }, { start: cleanup.start, end: cleanup.end, sourceEventSeqs: cleanup.shadowedSeqs })
   return cleanup.shadowedSeqs.length
 }
 
@@ -336,15 +334,12 @@ export function clearRegenerationAttemptSurface(input) {
     throw new Error('重新生成临时消息不是连续区间，无法安全清理')
   }
   const makeId = typeof input.id === 'function' ? input.id : function () { return randomUUID() }
-  appendSessionEvent(session, 'user/message', {
+  replaceSessionSurface(session, 'user/message', {
     id: makeId(),
     role: 'user',
     content: [],
     source: { kind: 'plugin', plugin: 'dsh-tavern-regeneration-abort' }
-  }, {
-    surfaceOp: { op: 'replace', start: temporary[0], end: temporary[temporary.length - 1] },
-    sourceEventSeqs: temporary
-  })
+  }, { start: temporary[0], end: temporary[temporary.length - 1], sourceEventSeqs: temporary })
   return temporary.length
 }
 

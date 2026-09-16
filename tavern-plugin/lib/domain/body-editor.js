@@ -1,3 +1,4 @@
+import { replaceSessionSurface } from './session-surface-mutations.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { editableReplyParts } from './reply-presentation.js'
 import { locateRegenerationSurface } from './rollback-surface.js'
@@ -22,10 +23,10 @@ export async function synchronizeBodyEdits(session, chat, flush) {
     const { id, seq, turn } = message.bodyEdit
     if (recorded.has(id)) continue
     if (!session.surface?.nodes.includes(seq)) throw new Error('编辑正文尚未同步，原消息已不在上下文中')
-    appendSessionEvent(session, 'assistant/message', {
+    replaceSessionSurface(session, 'assistant/message', {
       turn, step: 1,
       message: { id, role: 'assistant', content: [{ type: 'text', text: message.text }], source: { kind: 'model', provider: 'dsh-tavern', model: 'body-edit' } }
-    }, { surfaceOp: { op: 'replace', start: seq, end: seq }, sourceEventSeqs: [seq] })
+    }, { start: seq, end: seq, sourceEventSeqs: [seq] })
   }
   if ((chat.messages || []).some(message => message.bodyEdit)) await flush(session)
 }

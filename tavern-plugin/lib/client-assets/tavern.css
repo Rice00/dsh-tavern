@@ -954,3 +954,6 @@ body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
 .dsh-script-nav .dsh-script-nav-choose { display: block; margin: 8px 0 0 auto; min-height: 26px; padding: 3px 8px; color: #b78751; border-color: transparent; }
 .dsh-script-nav-pages { display: flex; justify-content: space-between; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--dsw-alias-border-l2); }
 .dsh-script-nav [role="alert"] { color: #c45f5f; }
+
+.dsh-script-nav .dsh-script-nav-notice { padding: 10px 12px; border: 1px solid rgba(183,135,81,.6); border-radius: 8px; background: rgba(183,135,81,.12); color: inherit; font-weight: 600; }
+.dsh-script-nav .dsh-script-nav-item[aria-current="step"] .dsh-script-nav-choose { opacity: 1; font-weight: 600; border-color: rgba(183,135,81,.5); background: rgba(183,135,81,.12); }

@@ -8,12 +8,12 @@ test('browse, paging and explicit idle-only cursor action remain separate', asyn
   const states = [], refs = [], calls = []
   let cursor = 0, refCursor = 0, effect, busy = false, current = 49
   const component = vm.runInNewContext(source + '; ScriptNavigation', { React: {
-    useState(initial) { const i = cursor++; if (!(i in states)) states[i] = initial; return [states[i], value => { states[i] = value }] },
+    useState(initial) { const i = cursor++; if (!(i in states)) states[i] = initial; return [states[i], value => { states[i] = typeof value === 'function' ? value(states[i]) : value }] },
     useRef(initial) { return refs[refCursor++] ||= { current: initial } }, useEffect(fn) { effect = fn },
     createElement: (type, props, ...children) => ({ type, props, children })
   }, liveTavernView: { invalidate() {} }, rpc: async (method, args) => {
     calls.push([method, args])
-    if (method === 'pointScript') { current = args.position - 1; return { message: '下一轮生效' } }
+    if (method === 'pointScript') { current = args.position - 1; return { cursor: current, message: '下一轮生效' } }
     const from = Math.max(1, Math.min((args.position || current + 1) - 4, 991))
     return { from, to: from + 9, totalChunks: 1000, cursor: current, revision: 1, scriptVersion: 1, cardPath: 'card',
       chunks: Array.from({ length: 10 }, (_, i) => ({ number: from + i, text: '正文' })) }
@@ -22,7 +22,7 @@ test('browse, paging and explicit idle-only cursor action remain separate', asyn
     cursor = 0; refCursor = 0
     const nodes = []
     function visit(node) { if (Array.isArray(node)) return node.forEach(visit); if (!node || typeof node !== 'object') return; nodes.push(node); node.children?.forEach(visit) }
-    visit(component({ sessionId: 's', cursor: 49, total: 1000, busy })); return nodes
+    visit(component({ sessionId: 's', cursor: current, total: 1000, busy })); return nodes
   }
   const flush = () => new Promise(resolve => setImmediate(resolve))
   render(); const dispose = effect(); await flush()
@@ -41,7 +41,11 @@ test('browse, paging and explicit idle-only cursor action remain separate', asyn
   await render().find(n => n.props?.['aria-label'] === '从第 500 块继续').props.onClick()
   assert.equal(calls.filter(c => c[0] === 'pointScript').length, 1)
   assert.equal(current, 499)
-  assert.match(JSON.stringify(render()), /下一轮生效/)
+  assert.match(JSON.stringify(render()), /游标已设为第 500 块/)
+  assert.match(JSON.stringify(render().find(n => n.props?.['aria-current'] === 'step')), /✓ 当前游标/)
+  effect(); await flush()
+  assert.match(JSON.stringify(render()), /游标已设为第 500 块/)
+  assert.match(JSON.stringify(render()), /当前游标：第 500 块/)
   await render().find(n => n.children?.includes('后 10 块')).props.onClick()
   assert.match(JSON.stringify(render()), /506–515/)
   dispose()

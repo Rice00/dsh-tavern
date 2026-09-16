@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "c30ecb18a32bf306bcfdc517a5ffd1c81ca5000b",
-  "releaseSequence": 225,
+  "revision": "06bd4e106c115740928b0fc66d0194e6cc3992ef",
+  "releaseSequence": 226,
   "version": "1.8.0",
   "files": [
     {
@@ -721,8 +721,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/rollback-surface.js",
-      "sha256": "e6f03d8d37ce9f74e7a76b04aae74c585dffcd75ece13ba77852fd2880608416",
-      "size": 16316
+      "sha256": "327b665135aa8d2e182eb02c9a325f24c84554c5cb37be1b639848965dd199e9",
+      "size": 16668
     },
     {
       "path": "tavern-plugin/lib/domain/round-history.js",
@@ -2501,12 +2501,12 @@
     },
     {
       "path": "tavern-plugin/lib/vendor/st-prompt-template/host-build/artifact/index.js",
-      "sha256": "e9c60357d98d6b150a462449ebbbfd84196666c2cebf0455b36a30019b818462",
-      "size": 465889
+      "sha256": "ed667f6adcf24901d46e8bc867af7851adbcfdd6f9b59b6486c71bb1075fd92a",
+      "size": 465912
     },
     {
       "path": "tavern-plugin/lib/vendor/st-prompt-template/host-build/artifact/manifest.json",
-      "sha256": "ecb36b4edbf6e60d2e7a904aceea873d0d28c91a9971f6ca1a368b0119d0ef6b",
+      "sha256": "67f62e93231bfd9e49aa4f9c7f46d38e14040a326f4795f222b065619e431e4b",
       "size": 16851
     },
     {
@@ -2561,8 +2561,8 @@
     },
     {
       "path": "tavern-plugin/lib/vendor/st-prompt-template/host-build/native-connection.js",
-      "sha256": "7b5daf7969d22b16a4fdab04b82e1550e1e05f275838156f706bed5818fd153f",
-      "size": 6829
+      "sha256": "d11302c001e5475a988119a8822e3c1b1a3d87609fb62c1c302b3eaf530ac970",
+      "size": 7137
     },
     {
       "path": "tavern-plugin/lib/vendor/st-prompt-template/host-build/panel.js",

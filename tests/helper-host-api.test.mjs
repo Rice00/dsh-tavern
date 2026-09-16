@@ -350,3 +350,19 @@ test('Helper 版本同步返回，await 调用及开场预览保持一致（issu
   assert.equal(w.getTavernHelperVersion, getVersion)
   assert.equal(w.TavernHelper.getTavernHelperVersion(), '4.8.19')
 })
+
+
+for (const frozen of [false, true]) test('nested script errors retain the failing owner through an outer host event: ' + frozen, async () => {
+  const run = helperHostHarness(), w = run.window
+  const original = new Error('chat-variable-host-adapter-not-configured')
+  if (frozen) Object.freeze(original)
+  w.__dshTavernHelperSetCurrentScript('b')
+  w.eventOn('inner', async () => { await tick(); throw original })
+  w.__dshTavernHelperSetCurrentScript('a')
+  w.eventOn('outer', () => w.eventEmit('inner'))
+  run.receive({ type: 'dsh-tavern-helper-event', name: 'outer', eventId: 'nested', args: [] })
+  await tick(); await tick()
+  const receipt = run.sent.find(x => x.type === 'dsh-tavern-helper-event-complete' && x.eventId === 'nested')
+  assert.equal(receipt.scriptId, 'b')
+  assert.equal(receipt.error, original.message)
+})

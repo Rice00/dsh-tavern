@@ -2746,7 +2746,7 @@ window.__ModuleLoader__.load({
 					post({ type: "dsh-tavern-helper-event-progress", eventId: eventId, scriptId: entry.scriptId, phase: "started" });
 					try { await invokeEventEntry(name, entry, args); }
 					catch (error) {
-						if (error && typeof error === "object") error.dshTavernScriptId = entry.scriptId;
+						if (error && typeof error === "object" && !error.dshTavernScriptId) error.dshTavernScriptId = entry.scriptId;
 						post({ type: "dsh-tavern-helper-event-progress", eventId: eventId, scriptId: entry.scriptId, phase: "failed" });
 						throw error;
 					}
@@ -3325,6 +3325,22 @@ window.__ModuleLoader__.load({
                     synchronousScriptId = ownerId;
                     try { pending = factory(); } finally { synchronousScriptId = previousSync; }
                     const result = await initializationTiming.wait("script-callback", pending, ownerId); await initializationTiming.wait("prompt-drain", drainPromptWrites(ownerId), ownerId); return result; }
+                catch (error) {
+                    // Keep the innermost owner, including failures after await and
+                    // primitive/frozen rejections that cannot carry metadata.
+                    if (error && error.dshTavernScriptId) throw error;
+                    let failure = error;
+                    try {
+                        if (failure && typeof failure === "object") failure.dshTavernScriptId = ownerId;
+                    } catch (_) {}
+                    if (!failure || failure.dshTavernScriptId !== ownerId) {
+                        failure = new Error(String(error && error.message || error));
+                        failure.cause = error;
+                        if (error && error.stack) failure.stack = error.stack;
+                        failure.dshTavernScriptId = ownerId;
+                    }
+                    throw failure;
+                }
 				finally { currentScriptId = previous; }
 			}
 			function stringHash(value, seed) {

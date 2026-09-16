@@ -932,3 +932,25 @@ body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
 .dsh-tavern-character-design-head .dsh-tavern-status-label { margin: 0; }
 
 .dsh-tavern-group-menu[popover] { position: fixed; inset: auto; margin: 0; overflow-y: auto; color: var(--dsw-alias-label-primary); }
+
+/* Script navigation stays compact inside the resizable status sidebar. */
+.dsh-script-nav { min-width: 0; font-size: 13px; line-height: 1.5; }
+.dsh-script-nav .dsh-tavern-status-label { font-size: 12px; letter-spacing: .03em; }
+.dsh-script-nav p { margin: 8px 0; font-size: 12px; line-height: 1.6; color: var(--dsw-alias-label-secondary); }
+.dsh-script-nav .dsh-script-nav-hint { margin: 0 0 12px; }
+.dsh-script-nav-toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 12px; }
+.dsh-script-nav input { box-sizing: border-box; flex: 1 1 72px; width: 80px; min-width: 64px; max-width: 160px; height: 32px; padding: 5px 9px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 7px; background: var(--dsw-specific-input-fill, transparent); color: var(--dsw-alias-label-primary); font: inherit; font-variant-numeric: tabular-nums; }
+.dsh-script-nav button { box-sizing: border-box; appearance: none; min-height: 32px; padding: 5px 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 7px; background: transparent; color: var(--dsw-alias-label-primary); font: inherit; font-size: 12px; line-height: 1.4; white-space: nowrap; cursor: pointer; transition: background .15s, border-color .15s; }
+.dsh-script-nav button:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); border-color: #b78751; }
+.dsh-script-nav button:disabled { opacity: .4; cursor: default; }
+.dsh-script-nav button:focus-visible, .dsh-script-nav input:focus-visible, .dsh-script-nav summary:focus-visible { outline: 2px solid #b78751; outline-offset: 2px; }
+.dsh-script-nav-toolbar button[type="submit"] { color: #b78751; border-color: rgba(183,135,81,.4); background: rgba(183,135,81,.08); }
+.dsh-script-nav .dsh-script-nav-range { margin: 12px 0 8px; font-size: 11px; font-variant-numeric: tabular-nums; }
+.dsh-script-nav .dsh-script-nav-item { margin: 0 0 8px; padding: 10px 12px; border-radius: 10px; background: transparent; }
+.dsh-script-nav .dsh-script-nav-item[aria-current="step"] { border-color: rgba(183,135,81,.65); background: rgba(183,135,81,.07); box-shadow: inset 3px 0 #b78751; }
+.dsh-script-nav summary { cursor: pointer; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; color: var(--dsw-alias-label-primary); }
+.dsh-script-nav summary::marker { color: var(--dsw-alias-label-secondary); font-size: 10px; }
+.dsh-script-nav .dsh-tavern-script-chunk-text { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--dsw-alias-border-l2); font-size: 12px; line-height: 1.8; overflow-wrap: anywhere; }
+.dsh-script-nav .dsh-script-nav-choose { display: block; margin: 8px 0 0 auto; min-height: 26px; padding: 3px 8px; color: #b78751; border-color: transparent; }
+.dsh-script-nav-pages { display: flex; justify-content: space-between; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--dsw-alias-border-l2); }
+.dsh-script-nav [role="alert"] { color: #c45f5f; }

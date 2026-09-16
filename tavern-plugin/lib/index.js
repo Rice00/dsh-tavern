@@ -3482,6 +3482,7 @@ export async function apply(ctx) {
       step: Number(result.event.data && result.event.data.step) || 1,
       message: Object.assign({}, previous, {
         id: randomUUID(),
+        source: { kind: 'model', provider: 'dsh-tavern', model: 'reply-projection' },
         content: [{ type: 'text', text: bodyText }]
       })
     }, {

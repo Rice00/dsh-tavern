@@ -142,3 +142,28 @@ test('前后台固定系统背景连续压缩三次仍不变，原事件和恢�
   }
   assert.equal(calls, 6)
 })
+
+
+test('standard 标识的酒馆旧会话仍可计量正文替换，不改历史', native, async t => {
+  const {ctx, Session} = await harness(t)
+  const session = Session.create('legacy-standard', [], {...Session.create('legacy-standard').header, agentPreset: 'standard'})
+  session.append('agent-preset/selected', {agentPreset: 'tavern'})
+  await ensureSessionSeedTrajectory(session)
+  const original = completed(session)
+  appendSessionEvent(session, 'assistant/message', {turn: 1, step: 1, message: {id: 'filtered', role: 'assistant', content: [{type: 'text', text: '处理后正文'}], source}}, {surfaceOp: {op: 'replace', start: original.seq, end: original.seq}, sourceEventSeqs: [original.seq]})
+  const events = JSON.stringify(session.snapshotEvents())
+  t.after(installTavernTokenMeter(ctx.tokenMeter))
+  assert.ok(ctx.tokenMeter.measure(session).totalTokens > 0)
+  assert.equal(JSON.stringify(session.snapshotEvents()), events)
+})
+
+
+test('带明确来源的正文替换不依赖预设名，保持 assistant 角色', native, async t => {
+  const {ctx, Session} = await harness(t)
+  const session = Session.create('explicit-projection')
+  const original = completed(session)
+  appendSessionEvent(session, 'assistant/message', {turn: 1, step: 1, message: {id: 'projection', role: 'assistant', content: [{type: 'text', text: '正文'}], source: {kind: 'model', provider: 'dsh-tavern', model: 'reply-projection'}}}, {surfaceOp: {op: 'replace', start: original.seq, end: original.seq}, sourceEventSeqs: [original.seq]})
+  t.after(installTavernTokenMeter(ctx.tokenMeter))
+  assert.ok(ctx.tokenMeter.measure(session).totalTokens > 0)
+  assert.equal(session.snapshotEvents().at(-1).data.message.role, 'assistant')
+})

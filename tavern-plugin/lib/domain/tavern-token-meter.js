@@ -1,4 +1,4 @@
-import { surfaceReplacementRange } from './session-events.js'
+import { sessionEvents, surfaceReplacementRange } from './session-events.js'
 const installations = new WeakMap()
 
 function isTavernSurfaceEdit(session, event) {
@@ -8,7 +8,11 @@ function isTavernSurfaceEdit(session, event) {
   if (source?.kind !== 'model') return false
   if (source.provider === 'dsh-tavern' && source.model === 'synthetic-trajectory' &&
       message.id?.startsWith('tavern-seed-trajectory:')) return true
-  if (!['tavern', 'tavern-background'].includes(session.header?.agentPreset)) return false
+  const owned = source.provider === 'dsh-tavern' && source.model === 'reply-projection'
+  // The header records creation defaults; selection is persisted as an event.
+  const selected = sessionEvents(session).findLast(item => item.type === 'agent-preset/selected')
+  const preset = selected?.data?.agentPreset ?? session.header?.agentPreset
+  if (!owned && !['tavern', 'tavern-background'].includes(preset)) return false
   const replacement = event.surfaceOp
   const refs = event.sourceEventSeqs
   if (replacement?.op !== 'replace' || !Array.isArray(refs) || refs.length === 0) return false

@@ -9268,6 +9268,32 @@ window.__ModuleLoader__.load({
 			);
 		}
 
+        function observeTurnErrorProjection(root, apply, host = window) {
+            let frame = null, disposed = false;
+            const selector = '[data-chat-flow-kind], [data-turn-tail]';
+            function containsRows(node) {
+                return node.nodeType === 1 && (node.matches(selector) || !!node.querySelector(selector));
+            }
+            const observer = new host.MutationObserver(function (records) {
+                if (disposed || !records.some(function (record) {
+                    if (record.type === "attributes") return true;
+                    // Native error contents may replace our controls; prose streaming cannot.
+                    if (record.target.closest?.('[data-chat-flow-kind="turn-error"]')) return true;
+                    return Array.from(record.addedNodes).some(containsRows) || Array.from(record.removedNodes).some(containsRows);
+                })) return;
+                if (frame === null) frame = host.requestAnimationFrame(function () {
+                    frame = null;
+                    if (!disposed) apply();
+                });
+            });
+            observer.observe(root, { childList: true, subtree: true, attributes: true,
+                attributeFilter: ["data-chat-flow-kind", "data-chat-flow-key", "data-chat-turn", "data-turn-tail"] });
+            return { disconnect() {
+                disposed = true; observer.disconnect();
+                if (frame !== null) host.cancelAnimationFrame(frame);
+                frame = null;
+            } };
+        }
 		function SupersededTurnErrors(props) {
 			const marker = React.useRef(null);
 			const running = props.useSession(function (snapshot) { return snapshot.running; });
@@ -9290,8 +9316,7 @@ window.__ModuleLoader__.load({
                 });
 				const apply = function () { projection.apply(turns); controls.apply(); };
 				apply();
-				const observer = new window.MutationObserver(apply);
-				observer.observe(root, { childList: true, subtree: true });
+				const observer = observeTurnErrorProjection(root, apply);
 				return function () { observer.disconnect(); controls.dispose(); projection.dispose(); };
 			}, [props.sessionId, revision]);
 			return React.createElement("span", { ref: marker, hidden: true, "data-tavern-error-projection": props.sessionId });

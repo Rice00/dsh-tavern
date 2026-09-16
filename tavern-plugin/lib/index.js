@@ -1560,7 +1560,7 @@ export async function apply(ctx) {
     userPreferenceProfile,
     presets: runtimePresets,
     settings: readTavernSettings,
-    cardGreeting: function () { return runtimePrompt('card-mode-greeting') },
+    cardGreeting: function () { return prompt('card-mode-greeting') },
     emptyCardWorkspace,
     id: uid,
     native: {
@@ -2756,7 +2756,7 @@ export async function apply(ctx) {
           const target = await waitForWritableSession({ registry: agentRegistry, sessions: sessionStore, sessionId: chat.sessionId, sleep })
           legacyWorkspaceText = await ensureNativeCardWorkspace(target.session, chat)
         }
-        return { task, text: runtimePrompt(promptName), legacyWorkspaceText }
+        return { task, text: prompt(promptName), legacyWorkspaceText }
       }
       case 'getResourceWorkspace': return { path: dataRoot + '/resources' }
       case 'listResources': return await listTavernResources()

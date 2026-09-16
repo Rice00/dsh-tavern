@@ -189,8 +189,6 @@ export async function apply(ctx) {
 	const tavernScriptDispatch = createTavernScriptDispatch({
     publishSignal: function (sessionId, signal) { sessionSignals.publish(sessionId, signal) }
   })
-  const fullTemplateRuntime = createFullTemplateRuntime({ publishSignal: (id, signal) => sessionSignals.publish(id, signal) })
-  ctx.effect(() => () => fullTemplateRuntime.dispose())
   async function promptTemplateRuntime(sessionId) { return fullTemplateRuntime.forSession(sessionId) }
   const commands = ctx.get('commands')
   if (commands) ctx.effect(function* () {
@@ -209,6 +207,8 @@ export async function apply(ctx) {
   const dataRoot = resolveTavernDataRoot()
   const stablePrefixStorage = createSessionStablePrefixStorage(dataRoot + '/session-prefixes')
   const profileData = createProfileDataStore({ dataRoot })
+  const fullTemplateRuntime = createFullTemplateRuntime({ store: profileData, publishSignal: (id, signal) => sessionSignals.publish(id, signal) })
+  ctx.effect(() => () => fullTemplateRuntime.dispose())
   const cardOrganization = createCardOrganization(profileData)
   const worldbookRecallLog = createWorldbookRecallLog({ store: profileData })
   const userPreferenceProfile = createUserPreferenceProfile({ store: profileData })
@@ -1012,7 +1012,7 @@ export async function apply(ctx) {
       const worldbook = cardDiagnostics.card ? await worldBooks.bound(chat.cardPath, cardDiagnostics.card, chat) : null
       cardDiagnostics.worldbook = worldbook ? { source: worldbook.source, document: worldbook.view.raw } : null
     } catch { cardDiagnostics.errors.push('绑定世界书读取失败') }
-    const exported = await createMvuDiagnosticExport({ cardDiagnostics, performanceDiagnostics: { ...performanceDiagnostics.read(), requests: requestPerformance.read(), replyProjection: incrementalReplyView.stats() }, updateDiagnostics: applicationUpdater.diagnostics(), sessionId, backgroundSessionIds, displayDiagnostics: { version: 1, frames: (chat.messages || []).filter(message => message.displayRuntime).slice(-20).flatMap(message => (message.displayRuntime.frames || []).map(frame => ({ turn: message.turn, partIndex: frame.partIndex, panelId: frame.panelId, placement: frame.placement, capturedAt: frame.capturedAt, console: frame.console, errors: frame.errors, network: frame.network }))) }, apiDiagnostics: await apiDiagnostics.read(sessionId).catch(() => null), compatibilityDiagnostics: compatibilityDiagnostic, store: mvuDiagnostics, sceneDiagnostics: imageDiagnostic, sessions: sessionStore, persistence: ctx.get('sessionPersistence'), query: ctx.get('sessionQuery'), attachments: ctx.get('attachments'), environment: { mvu: OFFICIAL_MVU_VERSION, mvuAsset: inspectOfficialMvuAsset(), runtime: { generation: runtimeGeneration, platform: process.platform, arch: process.arch, nodeVersion: process.version } } })
+    const exported = await createMvuDiagnosticExport({ cardDiagnostics, performanceDiagnostics: { ...performanceDiagnostics.read(), requests: requestPerformance.read(), replyProjection: incrementalReplyView.stats() }, updateDiagnostics: applicationUpdater.diagnostics(), sessionId, backgroundSessionIds, displayDiagnostics: { version: 1, frames: (chat.messages || []).filter(message => message.displayRuntime).slice(-20).flatMap(message => (message.displayRuntime.frames || []).map(frame => ({ turn: message.turn, partIndex: frame.partIndex, panelId: frame.panelId, placement: frame.placement, capturedAt: frame.capturedAt, console: frame.console, errors: frame.errors, network: frame.network }))) }, apiDiagnostics: await apiDiagnostics.read(sessionId).catch(() => null), compatibilityDiagnostics: compatibilityDiagnostic, store: mvuDiagnostics, sceneDiagnostics: imageDiagnostic, sessions: sessionStore, persistence: ctx.get('sessionPersistence'), query: ctx.get('sessionQuery'), attachments: ctx.get('attachments'), environment: { templateRuntime: await fullTemplateRuntime.inspect(sessionId), mvu: OFFICIAL_MVU_VERSION, mvuAsset: inspectOfficialMvuAsset(), runtime: { generation: runtimeGeneration, platform: process.platform, arch: process.arch, nodeVersion: process.version } } })
     return { filename: exported.filename, base64: exported.buffer.toString('base64') }
   }
   async function attachPlayChatDebug(targetSessionId, sourceSessionId, turn) {
@@ -3014,9 +3014,10 @@ export async function apply(ctx) {
 	      case 'updateTavernHelperMessages': return await tavernScriptHostAdapter.updateMessages(args && args.sessionId, args && args.messages, args && args.expectedLifecycleRevision, args && args.eventId)
 	      case 'createTavernHelperMessages': return await tavernScriptHostAdapter.createMessages(args && args.sessionId, args && args.messages, args && args.option, args && args.expectedLifecycleRevision, args && args.eventId)
       case 'releaseFullTemplateRuntime': return { released: fullTemplateRuntime.dispatch.dispose(args.sessionId, args.runtimeId) }
+      case 'heartbeatFullTemplateRuntime': return fullTemplateRuntime.heartbeat(args.sessionId, args.runtimeId, args.phase, args.initializationError)
       case 'claimFullTemplateWork': return fullTemplateRuntime.dispatch.claim(args.sessionId, args.runtimeId, args.ready, args.initializationError)
-      case 'startFullTemplateWork': return fullTemplateRuntime.dispatch.start(args.sessionId, args.eventId, args.leaseToken, args.runtimeId)
-      case 'completeFullTemplateWork': return { completed: fullTemplateRuntime.dispatch.complete(args.sessionId, args.eventId, args.args, args.runtimeId, args.leaseToken, args.error) }
+      case 'startFullTemplateWork': return await fullTemplateRuntime.start(args.sessionId, args.eventId, args.leaseToken, args.runtimeId)
+      case 'completeFullTemplateWork': return { completed: await fullTemplateRuntime.complete(args.sessionId, args.eventId, args.args, args.runtimeId, args.leaseToken, args.error) }
       case 'getFullTemplateWorldbook': return await tavernScriptHostAdapter.getWorldbook(args.sessionId, args.name, true)
       case 'replaceFullTemplateWorldbook': return await tavernScriptHostAdapter.replaceWorldbook(args.sessionId, args.name, args.entries, args.expectedEntries, true)
       case 'executeFullTemplateCommand': return await fullTemplateRuntime.forSession(args.sessionId).command(args.text)

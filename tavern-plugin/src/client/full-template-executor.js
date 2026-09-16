@@ -19,10 +19,29 @@ function createTemplateIdleWait({ schedule = setTimeout, cancel = clearTimeout }
   };
 }
 
+// Independent liveness: a blocked template operation must not stop presence renewal.
+function createTemplateHeartbeat({ rpc, runtimeId, schedule = setTimeout, cancel = clearTimeout }) {
+  let stopped = false, timer = null, phase = 'initializing', error = '';
+  async function tick() {
+    try { await rpc('heartbeatFullTemplateRuntime', { runtimeId, phase, initializationError: error }); }
+    catch (_) { /* Transport failures are retried; execution is never replayed here. */ }
+    finally { if (!stopped) timer = schedule(tick, 10000); }
+  }
+  void tick();
+  return { phase(value, message = '') { phase = value; error = message; },
+    dispose() { stopped = true; if (timer !== null) cancel(timer); } };
+}
+
 // Compatibility transport for template builds predating the session task queue.
 // The official plugin still owns projection and persistence; never retry started work.
 function createLegacyTemplateWorkProcessor(plugin, rpc, runtimeId) {
+  let pendingReceipt = null;
   return async function processNext() {
+    if (pendingReceipt) {
+      await rpc('completeFullTemplateWork', pendingReceipt);
+      pendingReceipt = null;
+      return true;
+    }
     const work = await rpc('claimFullTemplateWork', { runtimeId, ready: true });
     if (!work.event) return false;
     const identity = { runtimeId, eventId: work.event.id, leaseToken: work.leaseToken };
@@ -35,7 +54,9 @@ function createLegacyTemplateWorkProcessor(plugin, rpc, runtimeId) {
       finally { await plugin.flush(); }
       receipt = { args: [result] };
     } catch (error) { receipt = { error: String(error.stack || error) }; }
-    await rpc('completeFullTemplateWork', { ...identity, ...receipt });
+    pendingReceipt = { ...identity, ...receipt };
+    await rpc('completeFullTemplateWork', pendingReceipt);
+    pendingReceipt = null;
     return true;
   };
 }
@@ -66,7 +87,7 @@ function createFullTemplateExecutor({ window: hostWindow, rpc: invoke, executeSl
       if (owner !== record || event.source !== frame.contentWindow || data?.token !== token || !['full-template-rpc','template-close'].includes(data.type)) return;
       if(data.type === 'template-close') { frame.hidden=true; return; }
       try {
-        if (!['getFullTemplateRuntimeInfo','getFullPromptTemplateState','saveFullPromptTemplateState','saveFullPromptTemplateSettings','saveFullPromptTemplateGlobals','countFullTemplateTokens','claimFullTemplateWork','startFullTemplateWork','completeFullTemplateWork','getFullTemplateWorldbook','replaceFullTemplateWorldbook','executeTemplateHostCommand'].includes(data.method)) throw new Error('Unsupported template RPC');
+        if (!['getFullTemplateRuntimeInfo','getFullPromptTemplateState','saveFullPromptTemplateState','saveFullPromptTemplateSettings','saveFullPromptTemplateGlobals','countFullTemplateTokens','heartbeatFullTemplateRuntime','claimFullTemplateWork','startFullTemplateWork','completeFullTemplateWork','getFullTemplateWorldbook','replaceFullTemplateWorldbook','executeTemplateHostCommand'].includes(data.method)) throw new Error('Unsupported template RPC');
         const result = data.method === 'executeTemplateHostCommand' ? {pipe: await executeSlash(data.args.text, sessionId, {waitForCompletion:false}).then(value => typeof value === 'string' ? value : '')} : await invoke(data.method, data.args || {}, sessionId);
         if (result?.ok === false) throw new Error(result.error || 'Template RPC failed');
         if (owner === record) frame.contentWindow.postMessage({ token, requestId: data.requestId, result }, '*');
@@ -87,8 +108,10 @@ import * as YAML from '/api/dsh-tavern/vendor/runtime-assets/yaml/index.mjs';
 const token=${JSON.stringify(token)},sessionId=${JSON.stringify(sessionId)},runtimeId=token;
 let sequence=0,context,plugin,panel,templateHost,dirty=true,panelRequested=false,lastSync=0;const pending=new Map();
 const idleWait=(${createTemplateIdleWait.toString()})();
-const rpc=(method,args={})=>new Promise((resolve,reject)=>{const requestId=++sequence;pending.set(requestId,{resolve,reject});parent.postMessage({type:'full-template-rpc',token,requestId,method,args},'*')});
-addEventListener('message',event=>{if(event.source!==parent||event.data?.token!==token)return;const data=event.data;if(data.type==='template-dirty'){dirty=true;idleWait.wake();return}if(data.type==='template-open'){panelRequested=true;idleWait.wake();return}const item=pending.get(data.requestId);if(!item)return;pending.delete(data.requestId);data.error?item.reject(new Error(data.error)):item.resolve(data.result)});
+const rpc=(method,args={})=>new Promise((resolve,reject)=>{const requestId=++sequence;const timer=setTimeout(()=>{pending.delete(requestId);reject(new Error('模板 RPC 超时：'+method))},15000);pending.set(requestId,{resolve,reject,timer});parent.postMessage({type:'full-template-rpc',token,requestId,method,args},'*')});
+addEventListener('message',event=>{if(event.source!==parent||event.data?.token!==token)return;const data=event.data;if(data.type==='template-dirty'){dirty=true;idleWait.wake();return}if(data.type==='template-open'){panelRequested=true;idleWait.wake();return}const item=pending.get(data.requestId);if(!item)return;pending.delete(data.requestId);clearTimeout(item.timer);data.error?item.reject(new Error(data.error)):item.resolve(data.result)});
+const heartbeat=(${createTemplateHeartbeat.toString()})({rpc,runtimeId});
+addEventListener('pagehide',()=>heartbeat.dispose(),{once:true});
 window.toastr=Object.fromEntries(['info','success','warning','error'].map(key=>[key,message=>console[key==='error'?'error':'log'](message)]));
 window.YAML=YAML;
 window.SillyTavern={getContext:()=>Object.assign({},context,templateHost)};
@@ -103,18 +126,19 @@ async function run(){
   for(const method of ['project','flush','synchronize']) if(typeof plugin?.[method]!=='function') throw new Error('完整提示词模板版本不匹配：缺少 '+method+'；入口 '+entryUrl+'；接口 '+methods.join(',')+'，请更新酒馆并刷新页面');
   const processNext=typeof plugin.processNext==='function' ? ()=>plugin.processNext() : (${createLegacyTemplateWorkProcessor.toString()})(plugin,rpc,runtimeId);
   if(typeof plugin.processNext!=='function')console.warn('完整模板使用旧版任务接口', {entryUrl,methods});
+  heartbeat.phase('ready');
   context=plugin.context;
   panel=createTemplatePanel({rpc,plugin,close:()=>parent.postMessage({token,type:'template-close'},'*')});
   while(true){
    try {
    if(!await processNext()) {
     if(panelRequested){panelRequested=false;await panel.open()}
-    if(!sessionId.startsWith('opening:') && dirty && Date.now()-lastSync>1000){dirty=false;lastSync=Date.now();try{const result=await plugin.synchronize();if(result.deferred)dirty=true;}catch(error){console.error('模板消息同步失败',error);dirty=true;}}
+    if(!sessionId.startsWith('opening:') && dirty && Date.now()-lastSync>1000){dirty=false;lastSync=Date.now();heartbeat.phase('synchronizing');try{const result=await plugin.synchronize();if(result.deferred)dirty=true;}catch(error){console.error('模板消息同步失败',error);dirty=true;}finally{heartbeat.phase('ready');}}
     await idleWait.wait();
    } else idleWait.reset();
    }catch(error){console.error('完整模板连接中断，正在重连',error);await new Promise(resolve=>setTimeout(resolve,1000));}
   }
- }catch(error){console.error('完整模板初始化失败',error);await rpc('claimFullTemplateWork',{runtimeId,ready:false,initializationError:String(error.stack||error)});}
+ }catch(error){heartbeat.phase('failed',String(error.message||error));console.error('完整模板初始化失败',error);await rpc('claimFullTemplateWork',{runtimeId,ready:false,initializationError:String(error.stack||error)});}
 }
 run();
 </script>`;

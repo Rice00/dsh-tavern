@@ -3,7 +3,7 @@
  * dispatch protects remote leases. This queue owns orchestration between them.
  */
 export function createTemplateSessionTasks({ connection, plugin, dispatch }) {
-  let tail = Promise.resolve(), closing = false, disposal
+  let tail = Promise.resolve(), closing = false, disposal, pendingReceipt
   function enqueue(action) {
     if (closing) return Promise.reject(new Error('Template session disposed'))
     const next = tail.then(action)
@@ -41,6 +41,11 @@ export function createTemplateSessionTasks({ connection, plugin, dispatch }) {
     // Start only after local work drains. A receipt transport failure must not
     // be reclassified as execution failure, nor cause the template to run twice.
     processNext: () => enqueue(async () => {
+      if (pendingReceipt) {
+        await dispatch.complete(pendingReceipt.work, pendingReceipt.receipt)
+        pendingReceipt = null
+        return true
+      }
       const work = await dispatch.claim()
       if (!work.event) return false
       const started = await dispatch.start(work)
@@ -52,7 +57,9 @@ export function createTemplateSessionTasks({ connection, plugin, dispatch }) {
       } catch (error) {
         receipt = { error: String(error.stack || error) }
       }
+      pendingReceipt = { work, receipt }
       await dispatch.complete(work, receipt)
+      pendingReceipt = null
       return true
     }),
     dispose() {

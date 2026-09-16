@@ -29,9 +29,11 @@ export function createTemplateLifecycle() {
       const message = chat[index]
       if (!(message.template_rendered?.hash === h64ToString(message.mes) && message.template_rendered.swipe === (message.swipe_id || 0)) && !matches(message.template_display,message)) pending.add(index)
     }
-    mountTemplateMessages({renderIndices:pending})
+    // Yield between bounded batches so generation work can run before the next batch.
+    const batch = new Set(settings.enabled && settings.render_enabled ? [...pending].slice(0, 8) : pending)
+    mountTemplateMessages({renderIndices:batch})
     if (previous && chat.length < previous.length) await eventSource.emit('MESSAGE_DELETED', chat.length)
-    for (const index of pending) {
+    for (const index of batch) {
       const message = chat[index], old = previous?.[index]
       const swipe = message.swipe_id || 0
       const sourceChanged = !old || old.mes !== message.mes || old.swipe_id !== swipe
@@ -52,9 +54,10 @@ export function createTemplateLifecycle() {
     }
     if (pending.size) await saveChatConditional()
     if (changedDefinition) definition = copy(currentDefinition)
-    previous = chat.map(({mes,swipe_id,swipes}) => ({mes,swipe_id,swipes:[...(swipes || [])]}))
+    previous = chat.map(({mes,swipe_id,swipes}, index) => pending.has(index) && !batch.has(index)
+      ? previous?.[index] : ({mes,swipe_id,swipes:[...(swipes || [])]}))
     if (changedWorlds) worlds = copy(snapshot.worldbooks)
     if (changedSettings) features = copy(snapshot.extension_settings.EjsTemplate)
-    return { synchronized: pending.size > 0 }
+    return { synchronized: batch.size > 0, deferred: pending.size > batch.size }
   }
 }

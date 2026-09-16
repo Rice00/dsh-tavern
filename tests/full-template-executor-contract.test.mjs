@@ -81,3 +81,48 @@ test('空闲领取逐步退避，任务通知立即唤醒且不会丢失提前�
   assert.equal([...timers.values()][0].delay, 100)
   idle.wake(); await next
 })
+
+test('执行器忙于同步时，独立心跳仍续报且不会领取或重跑任务', async () => {
+  const scope = vm.createContext({})
+  vm.runInContext(source, scope)
+  const sent = [], timers = []
+  const heartbeat = scope.createTemplateHeartbeat({ runtimeId: 'page', rpc: async (method, args) => sent.push({method, ...args}),
+    schedule: fn => { timers.push(fn); return fn }, cancel: fn => timers.splice(timers.indexOf(fn), 1) })
+  await new Promise(r => setImmediate(r))
+  heartbeat.phase('synchronizing')
+  await timers.shift()()
+  assert.deepEqual(sent.map(x => x.phase), ['initializing', 'synchronizing'])
+  assert.ok(sent.every(x => x.method === 'heartbeatFullTemplateRuntime'))
+  heartbeat.dispose()
+  assert.equal(timers.length, 0)
+})
+
+test('回执失联后只重发保留的回执，不重新执行模板', async () => {
+  const scope = vm.createContext({})
+  vm.runInContext(source, scope)
+  let runs = 0, receipts = 0
+  const process = scope.createLegacyTemplateWorkProcessor({ project: async () => { runs++; return 'saved' }, flush: async () => {} }, async method => {
+    if (method === 'claimFullTemplateWork') return { event: { id: 'e', name: 'render', args: ['x'] }, leaseToken: 'l' }
+    if (method === 'startFullTemplateWork') return { started: true }
+    if (++receipts === 1) throw new Error('lost')
+    return { completed: true }
+  }, 'page')
+  await assert.rejects(process(), /lost/)
+  await process()
+  assert.equal(runs, 1)
+  assert.equal(receipts, 2)
+})
+
+test('iframe RPC 回包丢失时按期限失败并清除待办，不永久挂起', async () => {
+  const line = source.split('\n').find(line => line.startsWith('const rpc='))
+  const timers = [], pending = new Map()
+  const scope = vm.createContext({ pending, sequence: 0, token: 'page', parent: {postMessage() {}},
+    setTimeout(fn, delay) { timers.push({fn, delay}); return timers.length } })
+  vm.runInContext(line + ';this.rpc=rpc', scope)
+  const call = scope.rpc('getFullPromptTemplateState')
+  const rejected = assert.rejects(call, /模板 RPC 超时：getFullPromptTemplateState/)
+  assert.equal(timers[0].delay, 15000)
+  timers[0].fn()
+  await rejected
+  assert.equal(pending.size, 0)
+})

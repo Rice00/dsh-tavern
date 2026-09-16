@@ -57,3 +57,62 @@ test('初始化失败立即报告具体原因，不等待在线超时', async ()
   await assert.rejects(runtime.forSession('s').render('x'), /模板模块加载失败/)
   runtime.dispose()
 })
+
+test('任务与回执落盘，回执丢失后跨进程重建仍可确认，不再执行', async t => {
+  const { mkdtemp, rm, readdir } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { createProfileDataStore } = await import('../tavern-plugin/lib/profile-data-store.js')
+  const root = await mkdtemp(join(tmpdir(), 'template-journal-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const store = createProfileDataStore({ dataRoot: root })
+  const runtime = createFullTemplateRuntime({ store, publishSignal() {} })
+  runtime.heartbeat('s', 'page', 'ready')
+  const output = runtime.forSession('s').render('test')
+  let work
+  for (let i = 0; i < 100; i++) {
+    work = runtime.dispatch.claim('s', 'page', true)
+    if (work.event) break
+    await new Promise(r => setTimeout(r, 2))
+  }
+  assert.ok(work.event)
+  const file = 'template-work/' + (await readdir(join(root, 'template-work')))[0]
+  assert.equal((await store.readJson(file)).phase, 'queued')
+  assert.equal((await runtime.start('s', work.event.id, work.leaseToken, 'page')).started, true)
+  assert.equal((await store.readJson(file)).phase, 'executing')
+  assert.equal(await runtime.complete('s', work.event.id, ['saved'], 'page', work.leaseToken), true)
+  assert.equal(await output, 'saved')
+  runtime.dispose()
+  const restarted = createFullTemplateRuntime({ store, publishSignal() { throw new Error('must not replay') } })
+  assert.equal(await restarted.complete('s', work.event.id, ['saved'], 'page', work.leaseToken), true)
+  assert.equal(await restarted.complete('s', work.event.id, ['saved'], 'other', work.leaseToken), false)
+  restarted.dispose()
+})
+
+test('初始化中的执行器报告未就绪，不谎报用户没打开页面', async () => {
+  const runtime = createFullTemplateRuntime({ readyTimeoutMs: 5 })
+  runtime.heartbeat('s', 'page', 'initializing')
+  await assert.rejects(runtime.forSession('s').render('x'), /尚未就绪.*initializing/)
+  runtime.dispose()
+})
+
+test('刷新页面释放尚未执行的任务后，以同一任务 ID 重新领取', async () => {
+  let offers = 0, firstId
+  const runtime = createFullTemplateRuntime({ readyTimeoutMs: 100, publishSignal(id) {
+    offers++
+    const work = runtime.dispatch.claim(id, offers === 1 ? 'old' : 'new', true)
+    if (offers === 1) {
+      firstId = work.event.id
+      runtime.dispatch.dispose(id, 'old')
+      runtime.heartbeat(id, 'new', 'ready')
+    } else {
+      assert.equal(work.event.id, firstId)
+      runtime.dispatch.start(id, work.event.id, work.leaseToken, 'new')
+      runtime.dispatch.complete(id, work.event.id, ['ok'], 'new', work.leaseToken)
+    }
+  } })
+  runtime.heartbeat('s', 'old', 'ready')
+  assert.equal(await runtime.forSession('s').render('x'), 'ok')
+  assert.equal(offers, 2)
+  runtime.dispose()
+})

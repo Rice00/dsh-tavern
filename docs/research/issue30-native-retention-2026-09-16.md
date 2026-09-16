@@ -44,3 +44,13 @@ rm tavern-plugin/lib/background-agent-sessions-probe-old.js
 ```
 
 逐轮数据保存在同目录 `issue30-native-retention-2026-09-16.json`。脚本重新运行的结果写到 `/tmp/retention-native-*.json`。
+
+## 空闲后台释放补充验证
+
+后台所有权模块新增默认 5 分钟空闲释放与 8 个常驻实例上限；超限时优先释放最久未使用的空闲实例。运行、排队和压缩中的任务受保护，因此繁忙时可以暂时超过上限。释放前等待 Session 保存成功；保存或释放失败保留引用，至少 60 秒后重试。
+
+释放只移除内存实例和请求引用，保留父会话到后台 Session ID 的映射以及磁盘历史。新任务与同一父会话的回收串行，释放中的新任务等待回收结束，再恢复原 Session。
+
+`tests/background-agent-idle.test.mjs` 覆盖空闲期限、LRU、任务与释放交错、运行/压缩保护、保存失败退避及自动定时释放。`tests/background-agent-idle-native.test.mjs` 使用本机 DSH 和真实 JSONL 持久化，验证释放后宿主 Agent/Session 注册表均不再持有该后台；下一任务恢复相同 ID，且模型请求保留释放前的历史。该验证使用临时数据和本地模型。
+
+这些限制仅覆盖 Tavern 持有的后台实例，不是宿主全局会话缓存策略，也不保证整个 Desktop 的 RSS 低于某个数值。

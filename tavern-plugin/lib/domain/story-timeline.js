@@ -107,6 +107,9 @@ export function createStoryTimeline(options = {}) {
       presentation: chat.presentation === undefined ? null : chat.presentation,
       presentationWarnings: Array.isArray(chat.presentationWarnings) ? chat.presentationWarnings : [],
       macroState: chat.macroState === undefined ? null : chat.macroState,
+      variables: chat.variables,
+      tavernPluginMetadata: chat.tavernPluginMetadata,
+      tavernHelperScriptVariables: chat.tavernHelperScriptVariables,
       tavernScriptPrompts: chat.tavernScriptPrompts || [],
       runtimeInputs: chat.runtimeInputs === undefined ? null : chat.runtimeInputs,
       posture: str(chat.posture),
@@ -129,6 +132,12 @@ export function createStoryTimeline(options = {}) {
     chat.presentation = clone(source.presentation === undefined ? null : source.presentation)
     chat.presentationWarnings = clone(Array.isArray(source.presentationWarnings) ? source.presentationWarnings : [])
     if (Object.hasOwn(source, 'macroState')) chat.macroState = clone(source.macroState)
+    // These chat-local values belong to the story, unlike model/UI settings.
+    // Absence in the historical state must also remove values created later.
+    for (const key of ['variables', 'tavernPluginMetadata', 'tavernHelperScriptVariables']) {
+      if (Object.hasOwn(source, key)) chat[key] = clone(source[key])
+      else delete chat[key]
+    }
     if (Object.hasOwn(source, 'runtimeInputs')) chat.runtimeInputs = clone(source.runtimeInputs)
     chat.tavernScriptPrompts = clone(source.tavernScriptPrompts || [])
     chat.posture = str(source.posture)

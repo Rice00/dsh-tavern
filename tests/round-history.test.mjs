@@ -655,6 +655,43 @@ for (const first of [true, false]) test(`请求 HTTP 500 且没有正文时仅�
   assert.deepEqual(h.chat.timeline, before.timeline)
 })
 
+for (const absent of [false, true]) {
+  for (const action of ['rollback', 'regenerate', 'failed-regenerate']) test(`剧情恢复聊天变量与元数据：${action}，历史缺省=${absent}`, async () => {
+    const h = harness({ checkpoint: true, journal: true })
+    const fields = ['variables', 'tavernPluginMetadata', 'tavernHelperScriptVariables']
+    const before = { variables: { gold: 10 }, tavernPluginMetadata: { quest: 'start' }, tavernHelperScriptVariables: { script: { count: 1 } } }
+    const future = { variables: { gold: 0 }, tavernPluginMetadata: { quest: 'finished' }, tavernHelperScriptVariables: { script: { count: 2 } } }
+    if (!absent) Object.assign(h.revisions.get(1), structuredClone(before))
+    Object.assign(h.chat, structuredClone(future), { backgroundModel: 'current-model' })
+    // Browser notifications cannot repair authoritative state while offline.
+    delete h.options.scripts.dispatchEvent
+    const assertRestored = () => {
+      for (const field of fields) {
+        assert.deepEqual(h.chat[field], absent ? undefined : before[field], field)
+        assert.equal(Object.hasOwn(h.chat, field), !absent, field + ' presence')
+      }
+      assert.equal(h.chat.backgroundModel, 'current-model')
+    }
+    const history = h.create()
+    if (action === 'rollback') {
+      await history.rollback('session', 'chat')
+      assertRestored()
+      await history.undoRollback('session', 'chat')
+      for (const field of fields) assert.deepEqual(h.chat[field], future[field])
+    } else {
+      h.beforeGenerate(assertRestored)
+      if (action === 'failed-regenerate') {
+        h.setGeneration('throw')
+        await assert.rejects(history.regenerate('chat', '', 'session'), /fixture generation failed/)
+        for (const field of fields) assert.deepEqual(h.chat[field], future[field])
+      } else {
+        await history.regenerate('chat', '', 'session')
+        assertRestored()
+      }
+    }
+  })
+}
+
 test('误回退后撤销恢复正文、变量和 checkpoint，并保留原生日志', async () => {
   const h = harness({ checkpoint: true, journal: true })
   h.chat._storageRevision = 9

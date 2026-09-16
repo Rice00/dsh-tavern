@@ -82,7 +82,7 @@ test('旧版 Desktop 经最新安装脚本走 CDN 覆盖升级：补丁落盘、
   const downloaded = await (await fetch(`${base}/source@${revision}/${installerName}`)).text()
   await writeFile(bootstrap, (isWindows ? '\uFEFF' : '') + downloaded)
   const verifyPatch = path.join(mocks, 'verify-patches.cjs')
-  await writeFile(verifyPatch, `const fs=require('node:fs'), path=require('node:path'); const app=process.argv[process.argv.indexOf('--dir')+1]; for(const file of ${JSON.stringify(patches)}) fs.readFileSync(path.join(app,file));`)
+  await writeFile(verifyPatch, `const fs=require('node:fs'), path=require('node:path'); const app=process.argv[process.argv.indexOf('--dir')+1]; for(const file of ${JSON.stringify(patches)}) fs.readFileSync(path.join(app,file)); if(process.env.DSH_TEST_DEPENDENCY_EXIT) process.exit(Number(process.env.DSH_TEST_DEPENDENCY_EXIT));`)
   for (const [name, body] of [
     ['git', isWindows ? '@exit /b 1\r\n' : '#!/bin/sh\nexit 1\n'],
     ['dsh', isWindows ? '@exit /b 0\r\n' : '#!/bin/sh\nexit 0\n'],
@@ -98,8 +98,8 @@ test('旧版 Desktop 经最新安装脚本走 CDN 覆盖升级：补丁落盘、
   // own builtin module search path instead of inheriting the incompatible one.
   if (isWindows) for (const key of Object.keys(env)) if (key.toLowerCase() === 'psmodulepath') delete env[key]
   env[isWindows ? 'Path' : 'PATH'] = mocks + path.delimiter + searchPath
-  const run = () => execute(isWindows ? 'powershell.exe' : 'sh', isWindows
-    ? ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', bootstrap] : [bootstrap], { env, timeout: 45000, maxBuffer: 1024 * 1024 })
+  const run = (extraEnv = {}) => execute(isWindows ? 'powershell.exe' : 'sh', isWindows
+    ? ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', bootstrap] : [bootstrap], { env: { ...env, ...extraEnv }, timeout: 45000, maxBuffer: 1024 * 1024 })
   try { await run() } catch (error) { throw new Error(error.stdout + '\n' + error.stderr) }
   assert.equal(await readFile(path.join(app, 'installed.txt'), 'utf8'), 'install --host desktop')
   assert.deepEqual(JSON.parse(await readFile(path.join(app, 'dsh-tavern-runtime.json'), 'utf8')), manifest)
@@ -108,6 +108,12 @@ test('旧版 Desktop 经最新安装脚本走 CDN 覆盖升级：补丁落盘、
   for (const [file, content] of protectedFiles) assert.equal(await readFile(file, 'utf8'), content)
   assert.ok(!requests.includes('/forbidden-archive'), 'CDN success must not fall back to archive')
   assert.ok(!requests.some(url => /escape|do-not-download/.test(url)))
+  // EXIT cleanup must preserve a dependency failure, including on macOS sh.
+  await assert.rejects(run({ DSH_TEST_DEPENDENCY_EXIT: '23' }), error => {
+    assert.equal(error.code, isWindows ? 1 : 23)
+    assert.doesNotMatch(error.stdout, /DSH Tavern Desktop 版安装完成/)
+    return true
+  })
   // Failed CDN verification must not overwrite installed resources or report success.
   corruptPatch = true
   await assert.rejects(run())

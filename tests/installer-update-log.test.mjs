@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {mkdtemp,readFile,writeFile,mkdir,rm} from 'node:fs/promises'
-import {execFileSync} from 'node:child_process'
+import {execFileSync, spawnSync} from 'node:child_process'
 import path from 'node:path'
 import os from 'node:os'
 import {readUpdateDiagnostics} from '../bin/update-diagnostics.mjs'
@@ -13,7 +13,7 @@ test('独立安装的 Git 失败在回退前落盘，记录步骤、退出码和
   await mkdir(path.join(root,'bin'))
   await writeFile(path.join(root,'bin/git'),'#!/bin/sh\nprintf "fatal: https://user:secret@example.com/repo?token=secret password=secret\\n" >&2\nexit 42\n',{mode:0o755})
   const block=source.slice(source.indexOf('# Standalone bootstrap'),source.indexOf('echo "正在增量同步'))
-  await writeFile(path.join(root,'probe.sh'),block+'\nrun_git git.archive archive || true\n')
+  await writeFile(path.join(root,'probe.sh'),'set -eu\n'+block+'\nrun_git git.archive archive || true\n')
   execFileSync('sh',[path.join(root,'probe.sh')],{env:{...process.env,DSH_ROOT:root,TEMP_DIR:root,DSH_TAVERN_UPDATE_LOG_ROOT:path.join(root,'logs'),PATH:path.join(root,'bin')+':'+process.env.PATH},stdio:'pipe'})
   const logs=readUpdateDiagnostics(path.join(root,'logs')).records
   const failure=logs.find(r=>r.event==='installer.stage.failed')
@@ -44,4 +44,20 @@ test('PowerShell 引导日志使用同样的脱敏与持久格式',async()=>{
   const [record]=readUpdateDiagnostics(root).records
   assert.equal(record.exitCode,128);assert.equal(record.step,'git.fetch');assert.doesNotMatch(record.output,/secret/)
  }finally{await rm(root,{recursive:true,force:true})}
+})
+
+test('独立安装清理临时目录时不会吞掉未定义变量的失败退出码', async () => {
+ const root = await mkdtemp(path.join(os.tmpdir(), 'installer-exit-'))
+ try {
+  const temporary = path.join(root, 'dsh-tavern-install.fixture')
+  await mkdir(temporary)
+  const cleanup = source.slice(source.indexOf('cleanup()'), source.indexOf('fail()'))
+  const probe = path.join(root, 'probe.sh')
+  await writeFile(probe, 'set -eu\n' + cleanup + '\nunset DSH_TEST_UNSET_VALUE\nfail_expansion() { echo "$DSH_TEST_UNSET_VALUE"; }\nif fail_expansion; then :; fi\n')
+  const result = spawnSync('sh', [probe], { env: { ...process.env, TEMP_DIR: temporary, TMP_BASE: root }, encoding: 'utf8' })
+  assert.ifError(result.error)
+  assert.notEqual(result.status, 0, result.stderr)
+  assert.match(result.stderr, /DSH_TEST_UNSET_VALUE/)
+  await assert.rejects(readFile(temporary), { code: 'ENOENT' })
+ } finally { await rm(root, { recursive: true, force: true }) }
 })

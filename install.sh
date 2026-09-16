@@ -53,7 +53,7 @@ if [ "${INSTALL_HOST}" = "cli" ]; then
   if [ ! -f "$DSH_ROOT/apps/dsh-tavern/.dsh-tavern-local.json" ] && [ ! -f "$DSH_ROOT/.dsh-tavern-install-root" ]; then
     for entry in apps runtime tools profiles profile-data source-cache logs backups settings.yaml; do
       if [ -e "$DSH_ROOT/$entry" ] || [ -L "$DSH_ROOT/$entry" ]; then
-        echo "安装目录存在冲突：$DSH_ROOT/$entry。请选择空目录，或使用原有安装目录。" >&2
+        echo "安装目录存在冲突：${DSH_ROOT}/${entry}。请选择空目录，或使用原有安装目录。" >&2
         exit 1
       fi
     done
@@ -79,14 +79,19 @@ TMP_BASE=${TMP_BASE%/}
 TEMP_DIR=$(mktemp -d "${TMP_BASE}/dsh-tavern-install.XXXXXX")
 TARGET_COMMIT=${DSH_TAVERN_TARGET_COMMIT:-}
 
+INSTALL_COMPLETED=0
 cleanup() {
-  install_exit=$?
+  install_exit=$1
+  # Older macOS sh can report zero after a nounset error inside a conditional.
+  if [ "$install_exit" -eq 0 ] && [ "${INSTALL_COMPLETED:-0}" -ne 1 ]; then install_exit=1; fi
+  trap - EXIT HUP INT TERM
   if command -v update_log >/dev/null 2>&1; then update_log installer.finished bootstrap "$install_exit" '' ''; fi
   case "${TEMP_DIR}" in
     "${TMP_BASE}"/dsh-tavern-install.*) rm -rf -- "${TEMP_DIR}" ;;
   esac
+  exit "$install_exit"
 }
-trap cleanup EXIT HUP INT TERM
+trap 'cleanup "$?"' EXIT HUP INT TERM
 
 fail() {
   echo "安装失败：$1" >&2
@@ -153,7 +158,7 @@ run_git() {
   cat "${TEMP_DIR}/git.stdout" "${TEMP_DIR}/git.stderr" >"${TEMP_DIR}/git.output"
   if [ "$git_code" -eq 0 ]; then git_event=installer.stage.succeeded; else git_event=installer.stage.failed; fi
   update_log "$git_event" "$git_step" "$git_code" "$git_started" "${TEMP_DIR}/git.output"
-  if [ "$git_code" -ne 0 ]; then echo "Git 步骤失败：$git_step（退出码 $git_code），正在尝试备用源。" >&2; fi
+  if [ "$git_code" -ne 0 ]; then echo "Git 步骤失败：${git_step}（退出码 ${git_code}），正在尝试备用源。" >&2; fi
   return "$git_code"
 }
 update_log installer.started bootstrap '' '' ''
@@ -305,3 +310,5 @@ else
   echo "DSH Tavern 安装完成。请使用上方完整访问地址，或运行 dsh-tavern open 打开网页。"
   echo "以后可以使用：dsh-tavern {start|open|stop|restart|status|update}（新终端生效）"
 fi
+
+INSTALL_COMPLETED=1

@@ -6,6 +6,8 @@ set -eu
 export npm_config_registry="${DSH_TAVERN_NPM_REGISTRY:-https://registry.npmmirror.com}"
 # pnpm 11 reads pnpm_config_* instead of npm_config_*.
 export pnpm_config_registry="$npm_config_registry"
+# Optional pnpm version checks must not hold a completed installation open.
+export pnpm_config_update_notifier=false
 
 INSTALL_HOST=${DSH_TAVERN_HOST:-cli}
 case ${INSTALL_HOST} in

@@ -11328,8 +11328,8 @@ window.__ModuleLoader__.load({
                 createTab: () => ({ tab: { id: "dsh-tavern:conversation-settings", type: "dsh-tavern:conversation-settings", title: "本局设置" }, patch: { panelOpen: true } }),
                 component: props => React.createElement(TavernConversationSettingsTab, { sessionId: props.scope.sessionId, sessions: ctx.sessions })
             }), "dsh-tavern: conversation settings tab");
-            ctx.effect(() => slots.inject("conversation.session.header.lineage", () => slots.register(
-                { name: "conversation.session.header.lineage", id: "dsh-tavern-background-identity", order: 90 },
+            ctx.effect(() => slots.inject("conversation.session.header.utilities", () => slots.register(
+                { name: "conversation.session.header.utilities", id: "dsh-tavern-background-identity", order: 85 },
                 props => React.createElement(BackgroundIdentity, props)
             )), "dsh-tavern: background identity");
             ctx.effect(() => slots.inject("conversation.session.header.utilities", () => slots.register(

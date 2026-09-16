@@ -20,6 +20,20 @@ test('default manual never follows native pressure; settings validate bounds', a
   for (const policy of [{ mode: 'bad' }, { rounds: 0 }, { percent: 100 }, { rounds: 1.5 }]) assert.throws(() => compactionPolicy(policy))
   const h = fixture(); h.pressure = 100; h.round(1); await h.run(); assert.deepEqual(h.calls, [])
 })
+test('idle manual checks after rollback do not write metadata and invalidate its undo revision', async () => {
+  const h = fixture()
+  h.chat.timeline.branchId = 'rolled-back'
+  h.chat._storageRevision = 23
+  h.chat.rollbackUndo = { ready: true, storageRevision: 23 }
+  h.chat.contextCompaction = { branch: 'main', operation: null }
+  let writes = 0
+  const update = h.deps.updateChat
+  h.deps.updateChat = (...args) => { writes++; return update(...args) }
+  const before = structuredClone(h.chat)
+  await h.run()
+  assert.equal(writes, 0)
+  assert.deepEqual(h.chat, before)
+})
 test('round mode counts distinct completed story turns; manual success resets baseline', async () => {
   const h = fixture(); h.policy = { mode: 'rounds', rounds: 2 }; await h.run()
   h.round(1); h.round(1); h.chat.messages.push({ role: 'assistant', turn: 90, greeting: true }); await h.run(); assert.equal(h.calls.length, 0)
@@ -47,7 +61,7 @@ test('partial failure persists across restart, manual retry only repeats failed 
   await h.run({ manual: true }); assert.deepEqual(h.calls, ['foreground', 'background', 'background'])
 })
 test('restart recovers a dispatched successful foreground from native evidence without reissuing it', async () => {
-  const h = fixture(); await h.run(); h.chat.contextCompaction.operation = { id: 'old', status: 'running', foregroundSessionId: 'front', backgroundSessionId: 'back', foreground: { status: 'dispatching', before: 7 }, background: { status: 'pending' } }
+  const h = fixture(); h.chat.contextCompaction = { operation: { id: 'old', status: 'running', foregroundSessionId: 'front', backgroundSessionId: 'back', foreground: { status: 'dispatching', before: 7 }, background: { status: 'pending' } } }
   h.restart(); await h.run(); assert.deepEqual(h.calls, ['background']); assert.equal(h.chat.contextCompaction.operation.status, 'completed')
 })
 test('scoped native policy preserves non-Tavern behavior and restores on disposal', async () => {

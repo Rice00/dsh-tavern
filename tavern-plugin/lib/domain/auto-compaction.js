@@ -38,6 +38,9 @@ export function createAutoCompaction(deps) {
   async function execute(initial, options) {
     const signal = options.signal || new AbortController().signal
     let chat = initial, state = chat.contextCompaction || {}, policy = compactionPolicy(await deps.policy())
+    // An idle manual policy has no work or baseline to maintain. In particular,
+    // do not invalidate rollback's undo point with a bookkeeping-only write.
+    if (!options.manual && state.operation?.status !== 'running' && policy.mode === 'manual') return null
     let rounds = storyRoundKeys(chat)
     const branch = chat.timeline?.branchId || ''
     const policyKey = JSON.stringify(policy)
@@ -48,7 +51,6 @@ export function createAutoCompaction(deps) {
     let operation = state.operation
     const recover = operation?.status === 'running'
     if (!options.manual && !recover) {
-      if (policy.mode === 'manual') return null
       // A partial/failed operation requires explicit retry. Never spin at the same threshold.
       if (['partial', 'failed'].includes(operation?.status)) return operation
       const fresh = rounds.filter(key => !(state.baseline || []).includes(key))

@@ -4,4 +4,4 @@
 
 正文生成是前台职责；候选生成和状态结算共享一个对话级持久后台 Session，减少重复注入和反复研究剧情。任务仍以不同 operation 提交：候选只能写候选与向前 `point`，结算只能写获准的派生状态。
 
-世界书不再是 Agent 任务。常驻条目进入前台稳定前缀，非常驻条目按 Tavern 关键词规则确定性匹配后投影到下一轮正文，详见[世界书激活设计](../design/worldbook-recall.md)。因此后台 participant 不接触世界书原文，也不存在 `worldbook` operation。
+世界书先由 Tavern 本地按关键词规则匹配和渲染；候选池超过阈值时，在正文准备阶段以 `worldbook-filter` operation 请求同一个持久后台 Session 筛选。筛选只允许从本次候选池删减，不绕过作者触发条件，也不处理常驻与脚本明确调度的条目。任务绑定、失败恢复、压缩互斥和回退沿用共享后台生命周期，详见[世界书激活设计](../design/worldbook-recall.md)。

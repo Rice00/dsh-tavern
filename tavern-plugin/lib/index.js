@@ -4,7 +4,7 @@ import { createManualCharacterDesign } from './domain/manual-character-design.js
 import { prepareTemplateHistory, synchronizeTemplateHistory } from './domain/template-history.js'
 import { createFullTemplateRuntime } from './domain/full-template-runtime.js'
 import { estimateWorldBookTokens } from './domain/worldbook-activation.js'
-import { createWorldbookFilterPrototype, WORLD_BOOK_FILTER_TOOLS } from './domain/worldbook-filter-prototype.js'
+import { createWorldbookFilter, WORLD_BOOK_FILTER_TOOLS } from './domain/worldbook-filter.js'
 import { adoptConversationFeatures, adoptConversationBackground, patchConversationBackground } from './domain/conversation-background.js'
 import { clearLegacyTavernDefault } from './domain/legacy-agent-default.js'
 import { conversationStateAtTurn, conversationForkBoundary } from './domain/conversation-fork-point.js'
@@ -1614,7 +1614,7 @@ export async function apply(ctx) {
     runtime: promptTemplateRuntime,
     globalVariables: readPromptTemplateGlobalVariables,
     scanText: scriptPromptScanText,
-    filterCandidates: input => worldbookFilterPrototype(input)
+    filterCandidates: input => worldbookFilter(input)
   })
   const chatHistoryImporter = createChatHistoryImportService({
     projectWorldBookTemplates: nativeWorldBookTemplateContext,
@@ -1684,7 +1684,6 @@ export async function apply(ctx) {
     },
     resolveStablePrefixRevision: async input => Number((await chatForSession(input.sessionId))?.cardContextRevision) || 0,
     resolveStablePrefix: async function (input) {
-      if (input.task === 'worldbook-filter') return ''
       // Image tasks share the opening snapshot; current-worldbook replacement stays disabled above
       // because a requested illustration may target an earlier story turn.
       const chat = await chatForSession(input.sessionId)
@@ -1713,7 +1712,10 @@ export async function apply(ctx) {
       })
     }
   })
-  const worldbookFilterPrototype = createWorldbookFilterPrototype({ runAgent: input => backgroundAgentRunner.run(input), selection: backgroundModelSelection })
+  const worldbookFilter = createWorldbookFilter({
+    runAgent: input => backgroundAgentRunner.run(input), selection: backgroundModelSelection,
+    beginTask: chat => backgroundTasks.begin(chat, 'worldbook-filter')
+  })
   const characterDesignDocuments = createCharacterDesignDocumentTools({
     store: { readChat, updateChat },
     now: Date.now

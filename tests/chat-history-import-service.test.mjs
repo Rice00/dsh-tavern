@@ -132,12 +132,12 @@ test('历史导入复用正式世界书投影，当前输入不重复占用扫�
 
 for (const textOnly of [false,true]) test(`历史导入装配真实筛选器仍不调用 Agent（textOnly=${textOnly}）`, async()=>{
  const h=fixture(), runtime=await UpstreamTemplateRuntime.create()
- const {createWorldbookFilterPrototype}=await import('../tavern-plugin/lib/domain/worldbook-filter-prototype.js')
+ const {createWorldbookFilter}=await import('../tavern-plugin/lib/domain/worldbook-filter.js')
  let calls=0
  const worldBook={view:{entries:[{comment:'[initvar]',content:'hp: 10',enabled:false},
   ...['walk','rest'].flatMap(word=>Array.from({length:6},(_,i)=>({ref:word+i,enabled:true,primaryKeys:[word],content:`${word} rule ${i}`})))]}}
  const project=createForegroundWorldbook({bound:async()=>worldBook,runtime:async()=>runtime,globalVariables:async()=>({}),
-  filterCandidates:createWorldbookFilterPrototype({selection:()=>({}),runAgent:async()=>{calls++;throw Error('model transport reached')}})})
+  filterCandidates:createWorldbookFilter({selection:()=>({}),beginTask:async()=>({participantRequest:{},fail:async()=>{}}),runAgent:async()=>{calls++;throw Error('model transport reached')}})})
  h.options.worldBooks.bound=async()=>worldBook;h.options.projectForegroundWorldbook=project
  await createChatHistoryImportService(h.options).import({...input,textOnly})
  assert.equal(calls,0)

@@ -348,10 +348,17 @@ export function createTurnOrchestrator(options) {
       return { ready: true, mode, cardName: card === null ? (str(state.draft && state.draft.name) || '卡片工作台') : card.name, text: plan.text }
     }
 
-    // Resolve current input, history and script scan text in one activation pass.
-    // This shares the five-entry cap and preserves mixed blue/green ordering.
+    // Screening can persist a shared background task. Save the pending body and
+    // input first, then continue from its latest timeline instead of overwriting it.
+    if (typeof options.projectForegroundWorldbook === 'function') await store.writeChat(chat, { source: 'foreground.prepare-worldbook' })
     const foregroundWorldBook = typeof options.projectForegroundWorldbook === 'function'
       ? await options.projectForegroundWorldbook({ chat, card, turn, userText: runtimeUserText }) : null
+    if (typeof options.projectForegroundWorldbook === 'function') {
+      chat = await store.chatForSession(input.sessionId)
+      const current = chat && timeline.inspect({ chat })
+      if (!current || current.branchId !== foregroundOperation.basedOn.branchId || current.revision !== foregroundOperation.basedOn.revision ||
+          current.operations[foregroundOperation.operationId]?.status !== 'running') throw new Error('剧情已变化，本次正文准备已过期')
+    }
     const templateWorldBook = foregroundWorldBook || await projectWorldBookTemplates({ chat, card, turn, userText: runtimeUserText })
     const scriptWorldBook = !foregroundWorldBook && typeof options.projectScriptPromptWorldbook === 'function' ? await options.projectScriptPromptWorldbook({ chat, card, turn }) : null
     const worldBookContext = foregroundWorldBook ? str(foregroundWorldBook.context) : [str(chat.preparedWorldBookContext).trim(), str(scriptWorldBook && scriptWorldBook.context).trim(), templateWorldBook?.dynamicConstants ? '' : str(templateWorldBook && templateWorldBook.context).trim()].filter(Boolean).join('\n\n')

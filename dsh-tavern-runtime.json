@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "05e2be0b8cde6a6e8a229d5470d651588a321a55",
-  "releaseSequence": 265,
+  "revision": "e26fe2630a0632773e6f5a6956c559f6bedb09ba",
+  "releaseSequence": 266,
   "version": "1.9.0",
   "files": [
     {
@@ -256,8 +256,8 @@
     },
     {
       "path": "tavern-plugin/lib/background-agent-task.js",
-      "sha256": "c54e909972cef566eaf2bbbb4c4cd57c169c06b8d883ce26009a42f3c84c1763",
-      "size": 23280
+      "sha256": "34cc04ea9e7575f676a23e4cd727a6bd32a9530f73b64841ee50e123d94bb609",
+      "size": 23340
     },
     {
       "path": "tavern-plugin/lib/client-assets/tavern.css",
@@ -801,8 +801,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/scene-illustration.js",
-      "sha256": "e235c40cc577ed9197982f54f1734485aabee96de30c6adda95221a54aa52ccb",
-      "size": 43825
+      "sha256": "c687d9a4390db6c49f99f68462d1d6bd671d7f13fe748137c009f268035ee5ba",
+      "size": 43915
     },
     {
       "path": "tavern-plugin/lib/domain/scene-image-adjustment.js",
@@ -1241,8 +1241,8 @@
     },
     {
       "path": "tavern-plugin/lib/index.js",
-      "sha256": "da31711c8b954d2106dbcf783babcb0df79c56659fba2b4e942ce33578dcc35d",
-      "size": 283155
+      "sha256": "73c8653f6c7c79385b1ba006d1d56c366a45b2e884a6b8278e41cf7cac15f721",
+      "size": 283248
     },
     {
       "path": "tavern-plugin/lib/profile-data-store.js",
@@ -1251,13 +1251,13 @@
     },
     {
       "path": "tavern-plugin/lib/prompt-catalog.js",
-      "sha256": "e04a95ca43e173aaa45b2d2dad7b068a3d7a75d2a9e3ad1e3c8a24497ab42bfe",
-      "size": 2352
+      "sha256": "557814be028fd12adff1447b53a18661338d886c2d259b7bfc8bfa19dbaa2342",
+      "size": 2761
     },
     {
       "path": "tavern-plugin/lib/scene-image-prompts.js",
-      "sha256": "e5a294b7b46ae495006a290ebaacc4a744b37eb11ec503dedcbdad1d4dcbd5de",
-      "size": 630
+      "sha256": "307cb846fe04b60a6d72246d18a8b69a6c827632412cde870c07c26babfc9dce",
+      "size": 638
     },
     {
       "path": "tavern-plugin/lib/vendor/dsh-image-gen-LICENSE",
@@ -3586,8 +3586,8 @@
     },
     {
       "path": "tavern-plugin/prompts/README.md",
-      "sha256": "ea1a89473388b9e7b2292cd7ffa4ffcf1dfff259babdc1dcd96a3faf059b7a3d",
-      "size": 2765
+      "sha256": "7c4b18dea55c251a299ff0fe790ef1818f023e05df75aaa3064b47ae038bb681",
+      "size": 2888
     },
     {
       "path": "tavern-plugin/prompts/scene-image-adjustment.md",

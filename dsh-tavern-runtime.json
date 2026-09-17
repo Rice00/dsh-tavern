@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "81cf758ecfabe974ddadcada95a75fc73cba019f",
-  "releaseSequence": 261,
+  "revision": "442eed9bf2989b4fee0821c69b9d24d4447a9e93",
+  "releaseSequence": 262,
   "version": "1.9.0",
   "files": [
     {
@@ -946,8 +946,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/session-surface-mutations.js",
-      "sha256": "a30cd5b3fd017258f578e2f1515870a80d53eaff4802fa34da32f22203a2085f",
-      "size": 5069
+      "sha256": "0bd71d27689bce646e6cdab2150c582cb1d4105a899e484ac932417a3821d4fb",
+      "size": 5646
     },
     {
       "path": "tavern-plugin/lib/domain/session-turn-result.js",
@@ -1131,8 +1131,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/tavern-token-meter.js",
-      "sha256": "0af09dedb3d550d1ef8daf0a50244b25693783ba3167b4f81aece5fb1b8fa7f1",
-      "size": 2479
+      "sha256": "c86cc1ac99e3df22a014c8aaa4552f34b844ef91eb5f384da8745a3ff20c14d8",
+      "size": 2494
     },
     {
       "path": "tavern-plugin/lib/domain/template-history.js",

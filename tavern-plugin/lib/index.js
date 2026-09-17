@@ -902,7 +902,7 @@ export async function apply(ctx) {
     const savedCard = change.view
     savedCard.path = cardPath
     savedCard.extensions = cardPreparation.present({ card: savedWorkspace, as: 'card-extensions' })
-    await syncCardName(cardPath, savedCard.name)
+    if (change.nameChanged) await syncCardName(cardPath, savedCard.name)
     return Object.assign({}, change, { card: savedCard })
   }
   async function replaceCardVariables(cardPath, variables) {

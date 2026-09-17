@@ -408,6 +408,7 @@ export function createCandidateGenerator(options) {
       ].join('\n\n'),
       backgroundContext: context.stableText,
       turnContext: context.dynamicText,
+      candidateScriptWindow: context.candidateScriptWindow,
       systemPromptText: context.systemPromptText,
       postHistoryText: context.postHistoryText,
       messages,

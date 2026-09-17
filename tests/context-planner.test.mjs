@@ -268,6 +268,9 @@ test('剧本候选注入人物卡但排除文风示例，剧本块放在动态�
   assert.doesNotMatch(result.stableText, /多写动作|右手按着剑柄|两人沿石阶走近钟楼/)
   assert.match(result.dynamicText, /多写动作|右手按着剑柄|两人沿石阶走近钟楼/)
   assert.doesNotMatch(result.dynamicText, /剧本候选任务|名字: 阿芙拉|谨慎而直接|保持冷静/)
+  assert.ok(result.dynamicText.endsWith(result.candidateScriptWindow.text))
+  assert.deepEqual(result.candidateScriptWindow.positions, [2])
+  assert.match(result.candidateScriptWindow.text, /两人沿石阶走近钟楼/)
 })
 
 test('没有召回结果时，正文规划器不会回退读取人物卡内的世界书', async () => {

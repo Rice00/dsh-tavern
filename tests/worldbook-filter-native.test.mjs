@@ -8,6 +8,7 @@ import { createBackgroundAgentRunner } from '../tavern-plugin/lib/background-age
 import { createWorldbookFilter, WORLD_BOOK_FILTER_TOOLS } from '../tavern-plugin/lib/domain/worldbook-filter.js'
 import { createStoryTimeline } from '../tavern-plugin/lib/domain/story-timeline.js'
 import { createBackgroundTaskCoordinator } from '../tavern-plugin/lib/domain/background-task-coordinator.js'
+import { SCRIPT_READ_TOOL } from '../tavern-plugin/lib/domain/candidate-generation.js'
 import { sessionEvents } from '../tavern-plugin/lib/domain/session-events.js'
 
 test('原生 DSH 筛选工具、结算与重启恢复使用同一后台 Session 和固定背景', { skip: !process.env.DSH_BOOT_MODULE, timeout: 30000 }, async t => {
@@ -89,6 +90,32 @@ test('原生 DSH 筛选工具、结算与重启恢复使用同一后台 Session 
   assert.deepEqual(requests[3].tools, requests[2].tools)
   assert.equal(requests[3].system, requests[2].system)
   assert.ok(Buffer.byteLength(JSON.stringify(requests[3])) - Buffer.byteLength(JSON.stringify(requests[2])) < 10000)
+  // Exercise script-window references through the same native append pipeline.
+  const heading = '【剧本候选参考 · 游标 1 / 3】'
+  const scriptText = heading + '\n[chunk-1]\n' + 'script-body-'.repeat(2000)
+  const candidateInput = { sessionId: 'parent', task: 'candidate', persistent: true, selection,
+    persistentSessionId: first.traceSessionId, messages: [], tools: [SCRIPT_READ_TOOL],
+    turnContext: '当前指导\n\n' + scriptText,
+    candidateScriptWindow: { heading, text: scriptText, positions: [1] },
+    onToolCall: async () => JSON.stringify({ chunks: [{ text: scriptText }] }) }
+  await runner.run(candidateInput)
+  await ctx.sessions.flush(runner.requestSession(first.traceSessionId))
+  await runner.dispose()
+  runner = makeRunner()
+  await runner.run(candidateInput)
+  await runner.run(candidateInput)
+  const scriptFirst = requests.at(-3), scriptSecond = requests.at(-2), scriptThird = requests.at(-1)
+  assert.match(currentText(scriptFirst), /script-body-/)
+  assert.doesNotMatch(currentText(scriptSecond), /script-body-/)
+  assert.match(currentText(scriptSecond), /tavern_read_script/)
+  assert.deepEqual(normalized(scriptThird).slice(0, normalized(scriptSecond).length), normalized(scriptSecond))
+  assert.deepEqual(normalized(scriptSecond).slice(0, normalized(scriptFirst).length), normalized(scriptFirst))
+  assert.equal(scriptSecond.system, scriptFirst.system)
+  assert.deepEqual(scriptSecond.tools, scriptFirst.tools)
+  assert.equal(scriptThird.system, scriptSecond.system)
+  assert.deepEqual(scriptThird.tools, scriptSecond.tools)
+  assert.ok(Buffer.byteLength(currentText(scriptSecond)) < 1200)
+  console.log('script-window task bytes:', Buffer.byteLength(currentText(scriptFirst)), Buffer.byteLength(currentText(scriptSecond)))
   const descriptors = sessionEvents(runner.requestSession(first.traceSessionId)).filter(event => event.type === 'subagent/descriptor')
   assert.equal(descriptors.length, 1)
   assert.equal(descriptors[0].data.label, '酒馆后台 Agent')

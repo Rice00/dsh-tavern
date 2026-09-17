@@ -201,7 +201,11 @@ window.__ModuleLoader__.load({
                 return result;
             }).then(function (result) {
 				tavernRuntimeGenerationMonitor.observe(result && result.runtimeGeneration);
-				if (!result || !result.ok) throw new Error(result && result.error ? result.error : "操作失败");
+				if (!result || !result.ok) {
+					const error = new Error(result && result.error ? result.error : "操作失败");
+					if (typeof result?.errorCode === "string" && result.errorCode) error.code = result.errorCode;
+					throw error;
+				}
 				return viewRead ? viewRead.accept(result) : result;
 			}).catch(function (error) {
                 if (trace) trace.failed = true;
@@ -1597,6 +1601,7 @@ window.__ModuleLoader__.load({
                 }
 				else {
 					const error = new Error(String(data.error || "Helper 调用失败"));
+					if (typeof data.errorCode === "string" && data.errorCode) error.code = data.errorCode;
 					error.dshTavernScriptId = task.owner.scriptId;
 					error.dshTavernEventId = task.owner.eventId;
 					error.dshTavernMethod = task.method;
@@ -2189,7 +2194,7 @@ window.__ModuleLoader__.load({
 						if (data.eventId) parent.postMessage({ type: "dsh-tavern-helper-event-complete", token: token, eventId: data.eventId, args: copy(args || []) }, "*");
 					}).catch(function (error) {
 						console.error(error);
-						if (data.eventId) parent.postMessage({ type: "dsh-tavern-helper-event-complete", token: token, eventId: data.eventId, scriptId: String(error && error.dshTavernScriptId || ""), error: String(error && error.message || error), args: suppliedArgs }, "*");
+						if (data.eventId) parent.postMessage({ type: "dsh-tavern-helper-event-complete", token: token, eventId: data.eventId, scriptId: String(error && error.dshTavernScriptId || ""), error: String(error && error.message || error), errorCode: String(error && error.code || ""), args: suppliedArgs }, "*");
 					});
 				}
 			});
@@ -3473,6 +3478,15 @@ window.__ModuleLoader__.load({
 						const script = pending && record.scripts.get(String(pending.activeScriptId || ""));
 						const source = script ? "人物卡脚本「" + script.name + "」" : "人物卡脚本「" + record.name + "」";
 						const error = new Error((script ? "人物卡脚本「" + script.name + "」" : "共享脚本沙箱") + "处理事件「" + String(name) + "」超时（" + String(now() - startedAt) + "ms）");
+						error.code = "TAVERN_SCRIPT_EVENT_TIMEOUT";
+						// A card may catch a rejected RPC and keep waiting. Preserve the
+						// first failure instead of masking it with a generic idle timeout.
+						if (pending.writeError) {
+							error.cause = pending.writeError;
+							error.message += "；此前宿主调用失败" + (pending.writeError.code ? " [" + pending.writeError.code + "]" : "") + "：" + String(pending.writeError.message || pending.writeError);
+						}
+						if (diagnostics && diagnostics.length < 50) diagnostics.push({ kind: "timeout", name: String(name), scriptId: String(pending.activeScriptId || ""),
+							errorCode: error.code, causeCode: String(pending.writeError?.code || ""), pendingCalls: pending.writes?.size || 0, elapsedMs: now() - startedAt });
 						const timeoutKey = record.id + "\n" + String(name);
 						if (!reportedEventTimeouts.has(timeoutKey)) {
 							reportedEventTimeouts.add(timeoutKey);
@@ -3699,6 +3713,8 @@ window.__ModuleLoader__.load({
 							const script = record.scripts.get(String(data.scriptId || pending.activeScriptId || ""));
 							const prefix = script ? "人物卡脚本「" + script.name + "」" : "共享脚本沙箱";
 							const error = new Error(prefix + "处理事件「" + pending.name + "」失败：" + String(data.error));
+							if (typeof data.errorCode === "string" && data.errorCode) error.code = data.errorCode;
+							if (pending.diagnostics && pending.diagnostics.length < 50) pending.diagnostics.push({ kind: "event-error", name: pending.name, scriptId: String(data.scriptId || pending.activeScriptId || ""), errorCode: String(error.code || "") });
 							reportError(script ? "人物卡脚本「" + script.name + "」" : "人物卡共享脚本沙箱", error);
 							pending.reject(error);
 						} else if (pending.writeError) pending.reject(pending.writeError);
@@ -3732,7 +3748,7 @@ window.__ModuleLoader__.load({
 				}
 				if (data.type !== "dsh-tavern-helper-call" || !allowedMethods.has(data.method)) return;
 				if (data.eventId && (closedEventIds.has(String(data.eventId)) || pendingEvents.get(String(data.eventId))?.finishing)) {
-					post(record, { type: "dsh-tavern-helper-response", requestId: data.requestId, ok: false, error: "事件已经结束，已拒绝迟到写入" });
+					post(record, { type: "dsh-tavern-helper-response", requestId: data.requestId, ok: false, error: "事件已经结束，已拒绝迟到写入", errorCode: "TAVERN_SCRIPT_EVENT_CLOSED" });
 					return;
 				}
 					let mutationArgs = Object.assign({}, data.args || {}, { apiCallOrigin: { scriptId: String(data.scriptId || ""), scriptName: String(record.scripts.get(String(data.scriptId || ""))?.name || ""), eventId: String(data.eventId || ""), requestId: String(data.requestId || "") } });
@@ -3757,7 +3773,7 @@ window.__ModuleLoader__.load({
 					rpcTask = (record.rpcTail || Promise.resolve()).catch(function () {}).then(function () {
 						if (record.queuedPromptBatch === batch) record.queuedPromptBatch = null;
 						if (records.get(record.id) !== record) throw new Error("脚本运行时已失效");
-						if (data.eventId && closedEventIds.has(String(data.eventId))) throw new Error("事件已经结束，已拒绝迟到写入");
+						if (data.eventId && closedEventIds.has(String(data.eventId))) throw Object.assign(new Error("事件已经结束，已拒绝迟到写入"), { code: "TAVERN_SCRIPT_EVENT_CLOSED" });
 						return Promise.resolve(invoke(data.method, mutationArgs, record.sessionId)).then(async function (result) {
                             if (!result || !result.contextDelta || records.get(record.id) !== record) return result;
                             const next = applyTavernVariableReceipt(record.context, result.contextDelta);
@@ -3802,7 +3818,7 @@ window.__ModuleLoader__.load({
 					post(record, { type: "dsh-tavern-helper-response", requestId: data.requestId, ok: true, result: result });
 					if ((data.method === "updateTavernHelperPrompts" || data.method === "updateTavernHelperVariables" || data.method === "updateTavernHelperMessages" || data.method === "createTavernHelperMessages" || data.method === "replaceTavernHelperWorldbook" || data.method === "saveTavernExtensionSettings" || data.method === "saveTavernWorldInfo" || data.method === "saveTavernChatData") && result && result.updated !== false && result.stale !== true && records.get(record.id) === record) reportMutation(record.sessionId, data.method, result.contextDelta ? Object.assign({}, result, { context: record.context }) : result);
 				}, function (error) {
-					post(record, { type: "dsh-tavern-helper-response", requestId: data.requestId, ok: false, error: String(error && error.message || error) });
+					post(record, { type: "dsh-tavern-helper-response", requestId: data.requestId, ok: false, error: String(error && error.message || error), errorCode: String(error && error.code || "") });
 				});
 			}
 			hostWindow.addEventListener("message", receive);

@@ -30,3 +30,17 @@ test('真实 RPC 包装关联请求、导出浏览器时间点并兼容非安全
   assert.equal(rows.at(-1).failed, true)
   assert.equal(scope.performanceActiveRequests, 0)
 })
+
+test('HTTP RPC 拒因保留结构化错误码，兼容旧服务端的纯文本错误', async () => {
+  const source = await readFile(new URL('../tavern-plugin/src/client/main.js', import.meta.url), 'utf8')
+  const start = source.indexOf('\t\tfunction rpc(method,')
+  let response = { ok: false, error: '事件不匹配', errorCode: 'MVU_SETTLEMENT_EVENT_MISMATCH' }
+  const scope = vm.createContext({ window: {}, performance, Date,
+    performanceReportAt: Date.now(), pagePerformanceStarted: Date.now(), pagePerformance: {},
+    beginSessionViewRead: () => null, tavernRuntimeGenerationMonitor: { observe() {} },
+    readTavernJsonResponse: res => res.json(), fetch: async () => ({ json: async () => response }) })
+  vm.runInContext(source.slice(start, source.indexOf('\n\t\tfunction recordImageInteraction', start)), scope)
+  await assert.rejects(scope.rpc('updateTavernHelperVariables', {}, 's'), error => error.message === '事件不匹配' && error.code === 'MVU_SETTLEMENT_EVENT_MISMATCH')
+  response = { ok: false, error: '旧服务端错误' }
+  await assert.rejects(scope.rpc('updateTavernHelperVariables', {}, 's'), error => error.message === '旧服务端错误' && error.code === undefined)
+})

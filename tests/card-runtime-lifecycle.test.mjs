@@ -966,3 +966,28 @@ test('最新楼层转为历史后，多轮状态广播不重建其 iframe 或更
   assert.equal(h.posts.length, sent)
   h.stop()
 })
+
+for (const completes of [false, true]) test(`写入拒绝的错误码到达脚本并保留至事件${completes ? '失败回执' : '超时'}`, async () => {
+  let now = 0
+  const h = sandbox({ now: () => now, eventTimeoutMs: 10 })
+  h.runtime.sync('A', view())
+  const frame = h.ready(), diagnostics = []
+  h.respond(() => Promise.reject(Object.assign(new Error('脚本写入不属于当前 MVU 结算事件'), { code: 'MVU_SETTLEMENT_EVENT_MISMATCH' })))
+  const event = h.runtime.emit('UPDATE', [1], context(), diagnostics, 'rejected-event')
+  let failure
+  const done = event.catch(error => { failure = error })
+  h.message(frame, 'dsh-tavern-helper-call', { eventId: 'rejected-event', scriptId: 'script', requestId: 'write', method: 'updateTavernHelperVariables', args: {} })
+  await tick()
+  const reply = frame.contentWindow.messages.find(x => x.requestId === 'write')
+  if (completes) h.message(frame, 'dsh-tavern-helper-event-complete', { eventId: 'rejected-event', scriptId: 'script', error: reply.error, errorCode: reply.errorCode })
+  else {
+    now = 20
+    for (const timer of [...h.timers.values()]) if (timer.delay === 10) timer.run()
+  }
+  await done
+  h.runtime.dispose()
+  assert.equal(reply.errorCode, 'MVU_SETTLEMENT_EVENT_MISMATCH')
+  assert.match(failure.message, /不属于当前 MVU 结算事件/)
+  assert.equal(completes ? failure.code : failure.cause?.code, 'MVU_SETTLEMENT_EVENT_MISMATCH')
+  if (!completes) assert.equal(diagnostics.at(-1).causeCode, 'MVU_SETTLEMENT_EVENT_MISMATCH')
+})

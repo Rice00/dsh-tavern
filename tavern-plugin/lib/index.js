@@ -3412,7 +3412,8 @@ export async function apply(ctx) {
             return
           }
           res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
-          res.end(JSON.stringify({ ok: false, error: str(err && err.message || err) }))
+          res.end(JSON.stringify({ ok: false, error: str(err && err.message || err),
+            errorCode: typeof err?.code === 'string' ? err.code : undefined }))
         }
       }
     }), 'dsh-tavern: web route')

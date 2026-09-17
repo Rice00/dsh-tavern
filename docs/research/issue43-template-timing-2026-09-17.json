@@ -2903,5 +2903,624 @@
         }
       ]
     }
-  ]
+  ],
+  "optimized": {
+    "revision": "05a732e19fdf88cc7eac0b19b3789d4ed440387f",
+    "warmupRounds": 1,
+    "measuredRounds": 3,
+    "platform": "darwin",
+    "arch": "arm64",
+    "node": "v22.22.0",
+    "browser": "145.0.7632.6",
+    "results": [
+      {
+        "name": "large",
+        "large": true,
+        "journal": true,
+        "mode": "normal",
+        "skipQueued": false,
+        "cardBytes": 770053,
+        "worldbookBytes": 972839,
+        "medianMs": 2339.410832999999,
+        "rounds": [
+          {
+            "warmup": true,
+            "ms": 2463.745667,
+            "browserWallMs": 2468.100000023842,
+            "summary": {
+              "server": {
+                "resource.card": {
+                  "count": 41,
+                  "totalMs": 37.78237599999943,
+                  "medianMs": 0.9179589999998825,
+                  "bytes": 0
+                },
+                "resource.readText": {
+                  "count": 41,
+                  "totalMs": 16.96091599999977,
+                  "medianMs": 0.39449999999987995,
+                  "bytes": 0
+                },
+                "resource.bound": {
+                  "count": 41,
+                  "totalMs": 261.1209129999993,
+                  "medianMs": 6.25716599999987,
+                  "bytes": 0
+                },
+                "journal.read": {
+                  "count": 40,
+                  "totalMs": 41.12908499999935,
+                  "medianMs": 0.7222500000000309,
+                  "bytes": 0
+                },
+                "rpc:claim": {
+                  "count": 79,
+                  "totalMs": 13.32574999999838,
+                  "medianMs": 0.29187500000011823,
+                  "bytes": 1310126
+                },
+                "fsync.lock": {
+                  "count": 80,
+                  "totalMs": 310.35612499999957,
+                  "medianMs": 3.8689999999999145,
+                  "bytes": 0
+                },
+                "fsync.data": {
+                  "count": 80,
+                  "totalMs": 323.7487109999995,
+                  "medianMs": 3.819874999999911,
+                  "bytes": 0
+                },
+                "fsync.directory": {
+                  "count": 160,
+                  "totalMs": 640.3016179999984,
+                  "medianMs": 3.8342079999999896,
+                  "bytes": 0
+                },
+                "journal.write": {
+                  "count": 80,
+                  "totalMs": 1430.2956229999998,
+                  "medianMs": 17.843832999999904,
+                  "bytes": 35770
+                },
+                "rpc:start": {
+                  "count": 40,
+                  "totalMs": 726.2393350000007,
+                  "medianMs": 18.143458999999893,
+                  "bytes": 1560
+                },
+                "chat.slice": {
+                  "count": 40,
+                  "totalMs": 11.027292999999645,
+                  "medianMs": 0.2658339999998134,
+                  "bytes": 0
+                },
+                "settings.read": {
+                  "count": 40,
+                  "totalMs": 26.307371999999532,
+                  "medianMs": 0.2748340000000553,
+                  "bytes": 0
+                },
+                "globals.read": {
+                  "count": 40,
+                  "totalMs": 4.86254400000189,
+                  "medianMs": 0.11779200000000856,
+                  "bytes": 0
+                },
+                "rpc:getFullPromptTemplateState": {
+                  "count": 40,
+                  "totalMs": 653.6213740000003,
+                  "medianMs": 15.951167000000169,
+                  "bytes": 8974
+                },
+                "rpc:complete": {
+                  "count": 40,
+                  "totalMs": 717.1325859999997,
+                  "medianMs": 17.879458999999997,
+                  "bytes": 720
+                }
+              },
+              "browser": {
+                "rpc:claim": {
+                  "count": 80,
+                  "totalMs": 103.19999980926514,
+                  "medianMs": 1.1999999284744263,
+                  "bytes": 0
+                },
+                "rpc:start": {
+                  "count": 40,
+                  "totalMs": 762.0000002384186,
+                  "medianMs": 19,
+                  "bytes": 0
+                },
+                "rpc:getFullPromptTemplateState": {
+                  "count": 40,
+                  "totalMs": 696.900000333786,
+                  "medianMs": 17.09999990463257,
+                  "bytes": 0
+                },
+                "connection.refresh": {
+                  "count": 40,
+                  "totalMs": 705.3000005483627,
+                  "medianMs": 17.399999976158142,
+                  "bytes": 0
+                },
+                "plugin.refresh": {
+                  "count": 40,
+                  "totalMs": 0.19999992847442627,
+                  "medianMs": 0,
+                  "bytes": 0
+                },
+                "plugin.project": {
+                  "count": 40,
+                  "totalMs": 54.99999988079071,
+                  "medianMs": 1.1999999284744263,
+                  "bytes": 0
+                },
+                "connection.flush": {
+                  "count": 40,
+                  "totalMs": 0,
+                  "medianMs": 0,
+                  "bytes": 0
+                },
+                "rpc:complete": {
+                  "count": 40,
+                  "totalMs": 810.9999998807907,
+                  "medianMs": 19.100000023841858,
+                  "bytes": 0
+                }
+              }
+            }
+          },
+          {
+            "warmup": false,
+            "ms": 2410.9093749999997,
+            "browserWallMs": 2416.2000000476837,
+            "summary": {
+              "server": {
+                "resource.card": {
+                  "count": 41,
+                  "totalMs": 38.46491499999911,
+                  "medianMs": 0.9327499999999418,
+                  "bytes": 0
+                },
+                "resource.readText": {
+                  "count": 41,
+                  "totalMs": 16.304458000001887,
+                  "medianMs": 0.3930000000000291,
+                  "bytes": 0
+                },
+                "resource.bound": {
+                  "count": 41,
+                  "totalMs": 253.02495900000076,
+                  "medianMs": 6.240917000000081,
+                  "bytes": 0
+                },
+                "journal.read": {
+                  "count": 40,
+                  "totalMs": 31.533917000001566,
+                  "medianMs": 0.5954169999995429,
+                  "bytes": 0
+                },
+                "rpc:claim": {
+                  "count": 76,
+                  "totalMs": 13.461665999997422,
+                  "medianMs": 0.3016250000000582,
+                  "bytes": 1310012
+                },
+                "fsync.lock": {
+                  "count": 80,
+                  "totalMs": 312.9070429999979,
+                  "medianMs": 4.0493749999996,
+                  "bytes": 0
+                },
+                "fsync.data": {
+                  "count": 80,
+                  "totalMs": 345.70070699999815,
+                  "medianMs": 4.4692919999997684,
+                  "bytes": 0
+                },
+                "fsync.directory": {
+                  "count": 160,
+                  "totalMs": 662.9267899999986,
+                  "medianMs": 4.3312919999998485,
+                  "bytes": 0
+                },
+                "journal.write": {
+                  "count": 80,
+                  "totalMs": 1466.513083000003,
+                  "medianMs": 18.3485840000003,
+                  "bytes": 36004
+                },
+                "rpc:start": {
+                  "count": 40,
+                  "totalMs": 746.3759149999983,
+                  "medianMs": 18.84741699999995,
+                  "bytes": 1560
+                },
+                "chat.slice": {
+                  "count": 40,
+                  "totalMs": 10.2501219999981,
+                  "medianMs": 0.25320799999917654,
+                  "bytes": 0
+                },
+                "settings.read": {
+                  "count": 40,
+                  "totalMs": 27.75416999999743,
+                  "medianMs": 0.26787500000000364,
+                  "bytes": 0
+                },
+                "globals.read": {
+                  "count": 40,
+                  "totalMs": 4.681170000000293,
+                  "medianMs": 0.10899999999946886,
+                  "bytes": 0
+                },
+                "rpc:getFullPromptTemplateState": {
+                  "count": 40,
+                  "totalMs": 649.3209570000026,
+                  "medianMs": 15.851042000000234,
+                  "bytes": 8360
+                },
+                "rpc:complete": {
+                  "count": 40,
+                  "totalMs": 732.6276669999984,
+                  "medianMs": 18.41454199999953,
+                  "bytes": 720
+                }
+              },
+              "browser": {
+                "rpc:claim": {
+                  "count": 78,
+                  "totalMs": 98.49999964237213,
+                  "medianMs": 1.100000023841858,
+                  "bytes": 0
+                },
+                "rpc:start": {
+                  "count": 40,
+                  "totalMs": 780.0999997854233,
+                  "medianMs": 19.700000047683716,
+                  "bytes": 0
+                },
+                "rpc:getFullPromptTemplateState": {
+                  "count": 40,
+                  "totalMs": 691.1999995708466,
+                  "medianMs": 16.899999976158142,
+                  "bytes": 0
+                },
+                "connection.refresh": {
+                  "count": 40,
+                  "totalMs": 697.5999999046326,
+                  "medianMs": 17,
+                  "bytes": 0
+                },
+                "plugin.refresh": {
+                  "count": 40,
+                  "totalMs": 0.19999992847442627,
+                  "medianMs": 0,
+                  "bytes": 0
+                },
+                "plugin.project": {
+                  "count": 40,
+                  "totalMs": 44.200000286102295,
+                  "medianMs": 1.100000023841858,
+                  "bytes": 0
+                },
+                "connection.flush": {
+                  "count": 40,
+                  "totalMs": 0,
+                  "medianMs": 0,
+                  "bytes": 0
+                },
+                "rpc:complete": {
+                  "count": 40,
+                  "totalMs": 774.7000004053116,
+                  "medianMs": 19.5,
+                  "bytes": 0
+                }
+              }
+            }
+          },
+          {
+            "warmup": false,
+            "ms": 2339.410832999999,
+            "browserWallMs": 2343.2999999523163,
+            "summary": {
+              "server": {
+                "resource.card": {
+                  "count": 41,
+                  "totalMs": 40.19933299999684,
+                  "medianMs": 0.9471249999996871,
+                  "bytes": 0
+                },
+                "resource.readText": {
+                  "count": 41,
+                  "totalMs": 17.99812899999688,
+                  "medianMs": 0.39820899999995163,
+                  "bytes": 0
+                },
+                "resource.bound": {
+                  "count": 41,
+                  "totalMs": 253.05504099999962,
+                  "medianMs": 6.1955840000000535,
+                  "bytes": 0
+                },
+                "journal.read": {
+                  "count": 40,
+                  "totalMs": 22.39733299999898,
+                  "medianMs": 0.5370830000001661,
+                  "bytes": 0
+                },
+                "rpc:claim": {
+                  "count": 71,
+                  "totalMs": 13.560495999999148,
+                  "medianMs": 0.2977080000000569,
+                  "bytes": 1309828
+                },
+                "fsync.lock": {
+                  "count": 80,
+                  "totalMs": 319.50512399999934,
+                  "medianMs": 4.002666999999747,
+                  "bytes": 0
+                },
+                "fsync.data": {
+                  "count": 80,
+                  "totalMs": 280.8033359999972,
+                  "medianMs": 3.5534170000000813,
+                  "bytes": 0
+                },
+                "fsync.directory": {
+                  "count": 160,
+                  "totalMs": 646.3505779999987,
+                  "medianMs": 3.8882080000003043,
+                  "bytes": 0
+                },
+                "journal.write": {
+                  "count": 80,
+                  "totalMs": 1398.912005000002,
+                  "medianMs": 17.605458,
+                  "bytes": 36046
+                },
+                "rpc:start": {
+                  "count": 40,
+                  "totalMs": 711.5203360000014,
+                  "medianMs": 17.805707999999868,
+                  "bytes": 1560
+                },
+                "chat.slice": {
+                  "count": 40,
+                  "totalMs": 10.041371999999683,
+                  "medianMs": 0.23812499999985448,
+                  "bytes": 0
+                },
+                "settings.read": {
+                  "count": 40,
+                  "totalMs": 30.09291299999677,
+                  "medianMs": 0.2720840000001772,
+                  "bytes": 0
+                },
+                "globals.read": {
+                  "count": 40,
+                  "totalMs": 4.847797999999784,
+                  "medianMs": 0.11437500000010914,
+                  "bytes": 0
+                },
+                "rpc:getFullPromptTemplateState": {
+                  "count": 40,
+                  "totalMs": 652.7880419999956,
+                  "medianMs": 15.847124999999323,
+                  "bytes": 8360
+                },
+                "rpc:complete": {
+                  "count": 40,
+                  "totalMs": 699.7674560000014,
+                  "medianMs": 18.06091599999945,
+                  "bytes": 720
+                }
+              },
+              "browser": {
+                "rpc:claim": {
+                  "count": 73,
+                  "totalMs": 97.19999980926514,
+                  "medianMs": 1.100000023841858,
+                  "bytes": 0
+                },
+                "rpc:start": {
+                  "count": 40,
+                  "totalMs": 746.1000000238419,
+                  "medianMs": 18.799999952316284,
+                  "bytes": 0
+                },
+                "rpc:getFullPromptTemplateState": {
+                  "count": 40,
+                  "totalMs": 694.5999999046326,
+                  "medianMs": 16.899999976158142,
+                  "bytes": 0
+                },
+                "connection.refresh": {
+                  "count": 40,
+                  "totalMs": 701.599999666214,
+                  "medianMs": 17,
+                  "bytes": 0
+                },
+                "plugin.refresh": {
+                  "count": 40,
+                  "totalMs": 0.10000002384185791,
+                  "medianMs": 0,
+                  "bytes": 0
+                },
+                "plugin.project": {
+                  "count": 40,
+                  "totalMs": 43.90000009536743,
+                  "medianMs": 1.100000023841858,
+                  "bytes": 0
+                },
+                "connection.flush": {
+                  "count": 40,
+                  "totalMs": 0,
+                  "medianMs": 0,
+                  "bytes": 0
+                },
+                "rpc:complete": {
+                  "count": 40,
+                  "totalMs": 743.5000003576279,
+                  "medianMs": 19.100000023841858,
+                  "bytes": 0
+                }
+              }
+            }
+          },
+          {
+            "warmup": false,
+            "ms": 2240.2062920000008,
+            "browserWallMs": 2243.7999999523163,
+            "summary": {
+              "server": {
+                "resource.card": {
+                  "count": 41,
+                  "totalMs": 38.32212599999548,
+                  "medianMs": 0.9369590000005701,
+                  "bytes": 0
+                },
+                "resource.readText": {
+                  "count": 41,
+                  "totalMs": 17.595625999998447,
+                  "medianMs": 0.3942079999997077,
+                  "bytes": 0
+                },
+                "resource.bound": {
+                  "count": 41,
+                  "totalMs": 249.4267490000002,
+                  "medianMs": 6.077332999999271,
+                  "bytes": 0
+                },
+                "journal.read": {
+                  "count": 40,
+                  "totalMs": 21.314834000006158,
+                  "medianMs": 0.5233339999995223,
+                  "bytes": 0
+                },
+                "rpc:claim": {
+                  "count": 68,
+                  "totalMs": 12.986460000010993,
+                  "medianMs": 0.29712499999914144,
+                  "bytes": 1309724
+                },
+                "fsync.lock": {
+                  "count": 80,
+                  "totalMs": 283.0543750000015,
+                  "medianMs": 3.5222499999999854,
+                  "bytes": 0
+                },
+                "fsync.data": {
+                  "count": 80,
+                  "totalMs": 242.97166499999366,
+                  "medianMs": 2.7847079999992275,
+                  "bytes": 0
+                },
+                "fsync.directory": {
+                  "count": 160,
+                  "totalMs": 644.2389540000095,
+                  "medianMs": 3.849040999999488,
+                  "bytes": 0
+                },
+                "journal.write": {
+                  "count": 80,
+                  "totalMs": 1319.6696629999988,
+                  "medianMs": 16.51599999999962,
+                  "bytes": 36084
+                },
+                "rpc:start": {
+                  "count": 40,
+                  "totalMs": 665.2837920000038,
+                  "medianMs": 16.77299999999923,
+                  "bytes": 1560
+                },
+                "chat.slice": {
+                  "count": 40,
+                  "totalMs": 9.85371300000952,
+                  "medianMs": 0.24562499999956344,
+                  "bytes": 0
+                },
+                "settings.read": {
+                  "count": 40,
+                  "totalMs": 27.47508199999902,
+                  "medianMs": 0.260707999999795,
+                  "bytes": 0
+                },
+                "globals.read": {
+                  "count": 40,
+                  "totalMs": 4.751500000000306,
+                  "medianMs": 0.11525000000074215,
+                  "bytes": 0
+                },
+                "rpc:getFullPromptTemplateState": {
+                  "count": 40,
+                  "totalMs": 641.5009129999926,
+                  "medianMs": 15.648208000000523,
+                  "bytes": 8360
+                },
+                "rpc:complete": {
+                  "count": 40,
+                  "totalMs": 666.5690400000003,
+                  "medianMs": 16.66808299999866,
+                  "bytes": 720
+                }
+              },
+              "browser": {
+                "rpc:claim": {
+                  "count": 70,
+                  "totalMs": 92.99999976158142,
+                  "medianMs": 1.100000023841858,
+                  "bytes": 0
+                },
+                "rpc:start": {
+                  "count": 40,
+                  "totalMs": 698.8999998569489,
+                  "medianMs": 17.700000047683716,
+                  "bytes": 0
+                },
+                "rpc:getFullPromptTemplateState": {
+                  "count": 40,
+                  "totalMs": 683.5000001192093,
+                  "medianMs": 16.700000047683716,
+                  "bytes": 0
+                },
+                "connection.refresh": {
+                  "count": 40,
+                  "totalMs": 689.9000005722046,
+                  "medianMs": 16.90000009536743,
+                  "bytes": 0
+                },
+                "plugin.refresh": {
+                  "count": 40,
+                  "totalMs": 0.2999999523162842,
+                  "medianMs": 0,
+                  "bytes": 0
+                },
+                "plugin.project": {
+                  "count": 40,
+                  "totalMs": 42.69999969005585,
+                  "medianMs": 1.100000023841858,
+                  "bytes": 0
+                },
+                "connection.flush": {
+                  "count": 40,
+                  "totalMs": 0,
+                  "medianMs": 0,
+                  "bytes": 0
+                },
+                "rpc:complete": {
+                  "count": 40,
+                  "totalMs": 707.7000000476837,
+                  "medianMs": 17.600000023841858,
+                  "bytes": 0
+                }
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
 }

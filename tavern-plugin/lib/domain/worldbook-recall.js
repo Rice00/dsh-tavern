@@ -186,7 +186,7 @@ export async function projectWorldBookTemplates(input = {}) {
   for (const entry of controllers) {
     const random = input.randomSeed ? entryRandom(input.randomSeed, entry.ref) : (input.random || Math.random)
     const result = isWorldBookTemplateEntry(entry)
-      ? await runtime.render(templateBody(entry.content), Object.assign({}, templateContext, { scopes, randomSeed: input.randomSeed, randomRef: entry.ref }))
+      ? await (runtime.renderProjection || runtime.render).call(runtime, templateBody(entry.content), Object.assign({}, templateContext, { scopes, randomSeed: input.randomSeed, randomRef: entry.ref }))
       : { ok: true, text: entry.content, scopes }
     if (!result.ok) {
       diagnostics.push({ kind: 'worldbook-template', code: result.kind, ref: str(entry.ref) })

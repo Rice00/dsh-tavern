@@ -1,9 +1,9 @@
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
+import { fingerprintJsonProjection as digest, copyJsonProjection } from './immutable-json-projection.js'
 
-const digest = value => createHash('sha256').update(JSON.stringify(value) ?? 'undefined').digest('base64url')
 const fields = value => Object.fromEntries(Object.entries(value).map(([key, item]) => [key, digest(item)]))
 function changes(value, before, hashes) {
-  return { set: Object.fromEntries(Object.entries(value).filter(([key, item]) => before[key] !== hashes[key])),
+  return { set: Object.fromEntries(Object.entries(value).filter(([key, item]) => before[key] !== hashes[key]).map(([key, item]) => [key, copyJsonProjection(item)])),
     remove: Object.keys(before).filter(key => !Object.hasOwn(value, key)) }
 }
 
@@ -27,7 +27,7 @@ export function createFullPromptTemplateSync({ capacity = 32 } = {}) {
     const result = compatible ? { cursor: nextCursor, baseCursor: cursor, delta: {
       state: unchanged ? {set:{},remove:[]} : changes(state, before.state, stateHashes), environment: changes(snapshot.environment, before.environment, environmentHashes),
       chat: { length: unchangedLength ?? chat.length, set: unchanged ? [] : chat.flatMap((row, index) => hashes[index] === before.chat[index] ? [] : [[index, row]]) }
-    } } : { ...snapshot, cursor: nextCursor }
+    } } : { ...snapshot, environment: Object.fromEntries(Object.entries(snapshot.environment).map(([key, item]) => [key, copyJsonProjection(item)])), cursor: nextCursor }
     if (compatible) readers.delete(cursor)
     readers.set(nextCursor, { chatId: state.chatId, sessionId: state.sessionId,
       revision:state.stateRevision, lifecycle:state.lifecycleRevision, chat: hashes, state: stateHashes, environment: environmentHashes })

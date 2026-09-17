@@ -203,7 +203,7 @@ test('大世界书 render 仅传激活引用，模板正文与顺序作用域保
   }))
   const calls = []
   const projected = await projectWorldBookTemplates({ worldBook: { view: { displayName: '大世界书', entries } }, chat: chat(), card: card(),
-    runtime: { render: async (template, context) => {
+    runtime: { render: async () => { throw new Error('worldbook must use transient projection') }, renderProjection: async (template, context) => {
       calls.push({ template, context: structuredClone(context) })
       const step = Number(context.scopes.local.step || 0) + 1
       return { ok: true, text: String(step), scopes: { ...context.scopes, local: { step } }, activationRequests: [{ ref: 'entry:265', force: true }] }

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { diffJson } from './json-mutation.js'
 import { createFullPromptTemplateSync } from './full-prompt-template-sync.js'
+import { createJsonProjectionCache } from './immutable-json-projection.js'
 import { resourceSaveSummary, observeResourceSave } from './resource-save-summary.js'
 import { projectFullPromptTemplateState, applyFullPromptTemplateState, validateFullPromptTemplateSave, expandFullPromptTemplatePatch } from './full-prompt-template-state.js'
 import { mutateScriptPrompts } from './tavern-script-prompts.js'
@@ -39,6 +40,7 @@ const MVU_RETRY_AFTER_MS = 3100
  */
 export function createTavernScriptHostAdapter(options = {}) {
   const syncTemplateState = createFullPromptTemplateSync()
+  const templateCharacters = createJsonProjectionCache({ capacity: 8, maxBytes: 16 * 1024 * 1024 })
   const mutationTails = new Map()
   const settlementTransactions = new Map()
 
@@ -115,11 +117,11 @@ export function createTavernScriptHostAdapter(options = {}) {
     })
   }
 
-  async function updateVariables(sessionId, option, variables, expectedLifecycleRevision, eventId) {
-    return serializeWorldbook('variables:' + sessionId, () => updateVariablesNow(sessionId, option, variables, expectedLifecycleRevision, eventId))
+  async function updateVariables(sessionId, option, variables, expectedLifecycleRevision, eventId, contextBaseline) {
+    return serializeWorldbook('variables:' + sessionId, () => updateVariablesNow(sessionId, option, variables, expectedLifecycleRevision, eventId, contextBaseline))
   }
 
-  async function updateVariablesNow(sessionId, option, variables, expectedLifecycleRevision, eventId) {
+  async function updateVariablesNow(sessionId, option, variables, expectedLifecycleRevision, eventId, contextBaseline) {
     const chat = await mutationChat(sessionId, eventId)
     await assertScriptEnabled(chat)
     if (!mutationIsCurrent(chat, expectedLifecycleRevision)) return staleMutation(chat)
@@ -139,16 +141,69 @@ export function createTavernScriptHostAdapter(options = {}) {
       })
       return { updated: true, target: { type: 'character' }, characterVariables: structuredClone(saved) }
     }
+    const canPatch = options.patchChat && Number.isSafeInteger(chat._storageRevision) && chat._storageRevision > 0
+      && !settlementTransactions.has(str(sessionId))
+    // Capture references to replaced values, not copies of the entire history.
+    // Message variable arrays are mutated in place by the compatibility API.
+    const before = canPatch ? {
+      variables: chat.variables,
+      scripts: chat.tavernHelperScriptVariables && { ...chat.tavernHelperScriptVariables },
+      messages: option?.type === 'message' ? (chat.messages || []).map(message =>
+        Array.isArray(message?.variables) ? message.variables.slice() : message?.variables) : []
+    } : null
+    const baseRevision = chat._storageRevision
+    const compact = canPatch && contextBaseline?.chatId === chat.id
+      && contextBaseline.stateRevision === baseRevision
+      && contextBaseline.lifecycleRevision === (chat.tavernHelperLifecycleRevision || 0)
+      && (chat.messages || []).every(message => message && typeof message === 'object')
+    let patched = false
     const updated = replaceTavernHelperVariables(chat, { option, variables })
     const transactional = transactionResult(sessionId, updated, false, eventId)
     if (transactional !== null) return transactional
-    try { await options.writeChat(chat, { source: 'tavern-helper.variables' }) }
+    try {
+      let saved
+      if (canPatch) {
+        const path = updated.type === 'message' ? ['messages', updated.messageId, 'variables']
+          : [updated.type === 'chat' ? 'variables' : 'tavernHelperScriptVariables']
+        const previous = updated.type === 'message' ? before.messages[updated.messageId]
+          : updated.type === 'chat' ? before.variables : before.scripts
+        const current = updated.type === 'message' ? chat.messages[updated.messageId].variables
+          : updated.type === 'chat' ? chat.variables : chat.tavernHelperScriptVariables
+        // Match the existing JSON store's normalization (including sparse swipes).
+        const normalized = JSON.parse(JSON.stringify(current))
+        const changes = diffJson(previous, normalized).map(change => ({ ...change, path: [...path, ...change.path] }))
+        saved = await options.patchChat(chat.id, chat._storageRevision, changes, {
+          source: 'tavern-helper.variables',
+          assertCurrent: () => assertTransactionEvent(settlementTransactions.get(str(sessionId)), eventId)
+        })
+        if (saved) {
+          patched = true
+          const { messages: _messages, ...header } = saved
+          Object.assign(chat, header)
+          if (updated.type === 'message') chat.messages[updated.messageId].variables = normalized
+        }
+      }
+      // A competing revision needs the existing three-way merge/conflict checks.
+      if (!saved) await options.writeChat(chat, { source: 'tavern-helper.variables' })
+    }
     catch (error) {
       if (error && error.code === 'DSH_TAVERN_CHAT_CONFLICT') {
         const latest = await options.resolveChat(str(sessionId))
         if (latest !== undefined && !mutationIsCurrent(latest, expectedLifecycleRevision)) return staleMutation(latest)
       }
       throw error
+    }
+    if (compact && patched) {
+      // Project only the affected floor, never the complete history. Keep the
+      // selected swipe semantics of the full compatibility projection.
+      const changes = updated.type === 'message'
+        ? { messageId: updated.messageId, message: { ...projectTavernHelperContext({ messages: [chat.messages[updated.messageId]] }).messages[0], message_id: updated.messageId } }
+        : updated.type === 'chat' ? { chatVariables: structuredClone(chat.variables || {}) }
+          : { scriptVariables: structuredClone(chat.tavernHelperScriptVariables || {}) }
+      return { updated: true, target: updated, contextDelta: {
+        version: 1, chatId: chat.id, lifecycleRevision: chat.tavernHelperLifecycleRevision || 0,
+        baseRevision, stateRevision: chat._storageRevision, ...changes
+      } }
     }
     return { updated: true, target: updated, context: projectTavernHelperContext(chat) }
   }
@@ -343,20 +398,29 @@ export function createTavernScriptHostAdapter(options = {}) {
     const chat = reuse ? selected.chat : changed ? changed.chat : await resolveChat(sessionId)
     assertTemplateChat(chat)
     const card = await options.readCard(chat)
-    const record = await options.worldBooks.bound(chat.cardPath, card, chat)
-    const book = record ? await exportBoundWorldbook(record) : null
-    const worldName = str(record?.view?.displayName)
+    let templateBook
+    if (options.worldBooks.templateSnapshot) templateBook = await options.worldBooks.templateSnapshot(chat.cardPath, card, chat)
+    else {
+      const record = await options.worldBooks.bound(chat.cardPath, card, chat)
+      const book = record ? await exportBoundWorldbook(record) : null
+      const worldName = str(record?.view?.displayName)
+      templateBook = { worldName, worldbooks: worldName && book ? { [worldName]: book } : {} }
+    }
+    const { worldName, worldbooks } = templateBook
     const extensionSettings = options.fullExtensionSettings ? await options.fullExtensionSettings.read() : {}
     extensionSettings.variables = { ...extensionSettings.variables, global: options.globalVariables ? await options.globalVariables.read() : {} }
     if (!Array.isArray(extensionSettings.regex)) extensionSettings.regex = []
-    const character = { ...card, data: { ...card, extensions: { ...card.extensions, ...(worldName ? { world: worldName } : {}) } } }
+    const characters = templateCharacters(JSON.stringify([chat.cardPath, worldName]), JSON.stringify(card), text => {
+      const source = JSON.parse(text)
+      return [{ ...source, data: { ...source, extensions: { ...source.extensions, ...(worldName ? { world: worldName } : {}) } } }]
+    })
     const snapshot = {
       capabilities: {statePatch:1},
       state: projectFullPromptTemplateState(chat),
-      environment: { characters: [character], name1: str(chat.macroState?.userName) || '你', name2: str(card.name),
+      environment: { characters, name1: str(chat.macroState?.userName) || '你', name2: str(card.name),
         this_chid: '0', extension_settings: extensionSettings,
         world_names: worldName ? [worldName] : [], selected_world_info: [],
-        worldbooks: worldName && book ? { [worldName]: book } : {},
+        worldbooks,
         dsh: { settling: settlementTransactions.has(str(sessionId)) || ['pending', 'running'].includes(chat.settleStatus), cardPath: chat.cardPath, model: options.modelFor ? await options.modelFor(chat) : chat.model?.model || chat.model || '', regexScripts: card.extensions?.regex_scripts || [] } }
     }
     if (changed) {

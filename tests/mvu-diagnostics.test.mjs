@@ -100,6 +100,7 @@ test('诊断记录持久化、限量，并移除凭据', async () => {
   const data = storage()
   const store = createMvuDiagnosticStore(data, { maxRecords: 3 })
   for (let n = 0; n < 5; n++) await store.record('s1', { stage: 'runtime', diagnosticId: 'op:1', n, apiKey: 'SECRET', message: 'Bearer SECRET https://host/x?token=SECRET' })
+  await store.flush()
   const exported = await createMvuDiagnosticStore(data, { maxRecords: 3 }).read('s1')
   assert.equal(exported.records.length, 3)
   assert.equal(exported.dropped, 2)
@@ -338,4 +339,20 @@ test('诊断包包含本局预设与正则并脱敏，过大时仍可导出其�
   const large=await createMvuDiagnosticExport({sessionId:'s',store:createMvuDiagnosticStore(storage()),presetDiagnostics:{preset:{content:'x'.repeat(8*1024*1024)}}})
   assert.match(zipText(large.buffer),/预设及正则资料超过 8 MiB/)
   assert.match(zipText(large.buffer),/mvu\/diagnostics.json/)
+})
+
+test('写盘失败时诊断导出包含内存日志并明确标记未持久化', async t => {
+  const data = storage()
+  let failing = true
+  const store = createMvuDiagnosticStore({ ...data, updateJson(...args) {
+    if (failing) return Promise.reject(Error('disk full'))
+    return data.updateJson(...args)
+  } }, { flushDelayMs: 60000 })
+  t.after(async () => { failing = false; await store.dispose() })
+  await store.record('s', { stage: 'pending-export', token: 'DO_NOT_EXPORT' })
+  const exported = await createMvuDiagnosticExport({ sessionId: 's', store })
+  const text = zipText(exported.buffer)
+  assert.match(text, /pending-export/)
+  assert.match(text, /"persistence":"pending"/)
+  assert.doesNotMatch(text, /DO_NOT_EXPORT/)
 })

@@ -229,6 +229,7 @@ export async function apply(ctx) {
   }
   const tavernExtensionSettings = createTavernExtensionSettings(profileData)
   const mvuDiagnostics = createMvuDiagnosticStore(profileData)
+  ctx.effect(() => () => mvuDiagnostics.dispose(), 'dsh-tavern: flush diagnostic logs')
   const apiDiagnostics = createTavernApiDiagnostics(profileData)
   const compatibilityDiagnostics = createTavernCompatibilityDiagnosticStore(profileData)
   const tavernRemoteAssets = createTavernRemoteAssetPinStore({
@@ -902,7 +903,7 @@ export async function apply(ctx) {
     const savedCard = change.view
     savedCard.path = cardPath
     savedCard.extensions = cardPreparation.present({ card: savedWorkspace, as: 'card-extensions' })
-    await syncCardName(cardPath, savedCard.name)
+    if (change.nameChanged) await syncCardName(cardPath, savedCard.name)
     return Object.assign({}, change, { card: savedCard })
   }
   async function replaceCardVariables(cardPath, variables) {
@@ -3022,8 +3023,9 @@ export async function apply(ctx) {
       }
       case 'attachPlayChatDebug': return { reference: await attachPlayChatDebug(args && args.targetSessionId, args && args.sourceSessionId, args && args.turn) }
       case 'captureDisplayRuntime': return await captureDisplayRuntime(args && args.sessionId, args && args.turn, args && args.partIndex, args && args.runtime)
+	      case 'getTavernHelperContext': return { context: await tavernScriptHostAdapter.context(args && args.sessionId) }
 	      case 'updateTavernHelperPrompts': return await tavernScriptHostAdapter.updatePrompts(args && args.sessionId, args && args.operation, args && args.expectedLifecycleRevision, args && args.eventId)
-	      case 'updateTavernHelperVariables': return await tavernScriptHostAdapter.updateVariables(args && args.sessionId, args && args.option, args && args.variables, args && args.expectedLifecycleRevision, args && args.eventId)
+	      case 'updateTavernHelperVariables': return await tavernScriptHostAdapter.updateVariables(args && args.sessionId, args && args.option, args && args.variables, args && args.expectedLifecycleRevision, args && args.eventId, args && args.contextBaseline)
 	      case 'updateTavernHelperMessages': return await tavernScriptHostAdapter.updateMessages(args && args.sessionId, args && args.messages, args && args.expectedLifecycleRevision, args && args.eventId)
 	      case 'createTavernHelperMessages': return await tavernScriptHostAdapter.createMessages(args && args.sessionId, args && args.messages, args && args.option, args && args.expectedLifecycleRevision, args && args.eventId)
       case 'releaseFullTemplateRuntime': return { released: fullTemplateRuntime.dispatch.dispose(args.sessionId, args.runtimeId) }

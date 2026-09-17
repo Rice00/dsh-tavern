@@ -185,3 +185,83 @@ test('未就绪的排队任务失败仍保留取消诊断', async () => {
   assert.match(record.error, /未响应/)
   runtime.dispose()
 })
+
+async function claimWork(runtime, sessionId = 's') {
+  for (let i = 0; i < 100; i++) {
+    const work = runtime.dispatch.claim(sessionId, 'page', true)
+    if (work.event) return work
+    await new Promise(resolve => setTimeout(resolve, 2))
+  }
+  throw new Error('No template work offered')
+}
+
+test('世界书临时渲染零日志读写，回执重传在下一任务期间仍可确认', async () => {
+  let reads = 0, writes = 0
+  const runtime = createFullTemplateRuntime({ publishSignal() {}, store: {
+    readJson: async () => { reads++; return null }, writeJson: async () => { writes++ }
+  } })
+  runtime.heartbeat('s', 'page', 'ready')
+  const engine = runtime.forSession('s')
+  const first = engine.renderProjection('first', { scopes: { local: { count: 1 } } })
+  const work = await claimWork(runtime)
+  assert.equal(work.event.name, 'render')
+  assert.equal(work.event.args[0].context.scopes.local.count, 1)
+  assert.equal((await runtime.start('s', work.event.id, 'wrong', 'page')).started, false)
+  assert.equal((await runtime.start('s', work.event.id, work.leaseToken, 'page')).started, true)
+  assert.equal(await runtime.complete('s', work.event.id, ['first'], 'page', work.leaseToken), true)
+  assert.equal(await first, 'first')
+  const second = engine.renderProjection('second')
+  const next = await claimWork(runtime)
+  assert.equal(await runtime.complete('s', work.event.id, [], 'page', work.leaseToken), true)
+  assert.equal(await runtime.complete('other', work.event.id, [], 'page', work.leaseToken), false)
+  assert.equal(await runtime.complete('s', work.event.id, [], 'other', work.leaseToken), false)
+  assert.equal(await runtime.complete('s', work.event.id, [], 'page', 'wrong'), false)
+  await runtime.start('s', next.event.id, next.leaseToken, 'page')
+  await runtime.complete('s', next.event.id, ['second'], 'page', next.leaseToken)
+  assert.equal(await second, 'second')
+  assert.equal(reads, 0)
+  assert.equal(writes, 0)
+  runtime.dispose()
+})
+
+test('临时渲染超时后不重跑，迟到回执不可完成后续任务，也不写日志', async () => {
+  let writes = 0
+  const runtime = createFullTemplateRuntime({ executionTimeoutMs: 100, publishSignal() {}, store: {
+    readJson: async () => null, writeJson: async () => { writes++ }
+  } })
+  runtime.heartbeat('s', 'page', 'ready')
+  const output = runtime.forSession('s').renderProjection('slow')
+  const rejected = assert.rejects(output, /执行超时/)
+  const work = await claimWork(runtime)
+  await runtime.start('s', work.event.id, work.leaseToken, 'page')
+  await rejected
+  assert.equal(await runtime.complete('s', work.event.id, ['late'], 'page', work.leaseToken), false)
+  assert.equal(writes, 0)
+  runtime.dispose()
+})
+
+test('重启丢弃临时回执，普通任务仍保存并恢复回执', async () => {
+  const records = new Map(), writes = []
+  const store = { readJson: async path => records.get(path), writeJson: async (path, job) => {
+    records.set(path, structuredClone(job)); writes.push(job.phase)
+  } }
+  const runtime = createFullTemplateRuntime({ store, publishSignal() {} })
+  runtime.heartbeat('s', 'page', 'ready')
+  const engine = runtime.forSession('s')
+  const output = engine.command('/test')
+  const durable = await claimWork(runtime)
+  await runtime.start('s', durable.event.id, durable.leaseToken, 'page')
+  await runtime.complete('s', durable.event.id, ['saved'], 'page', durable.leaseToken)
+  await output
+  const projection = engine.renderProjection('temporary')
+  const transient = await claimWork(runtime)
+  await runtime.start('s', transient.event.id, transient.leaseToken, 'page')
+  await runtime.complete('s', transient.event.id, ['temporary'], 'page', transient.leaseToken)
+  await projection
+  runtime.dispose()
+  const restarted = createFullTemplateRuntime({ store, publishSignal() { throw Error('must not replay') } })
+  assert.equal(await restarted.complete('s', transient.event.id, [], 'page', transient.leaseToken), false)
+  assert.equal(await restarted.complete('s', durable.event.id, [], 'page', durable.leaseToken), true)
+  assert.deepEqual(writes, ['executing', 'completed'])
+  restarted.dispose()
+})

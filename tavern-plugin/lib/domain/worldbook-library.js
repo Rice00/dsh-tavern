@@ -1,5 +1,6 @@
 import { mergeWorldBooks } from './worldbook-merge.js'
-import { exportCharacterBook, exportSillyTavernWorldBook, inspectWorldBookDocument, prepareWorldBookImport, updateWorldBookDocument } from './worldbook-resource.js'
+import { exportCharacterBook, exportSillyTavernWorldBook, inspectWorldBookDocument, prepareWorldBookImport, updateWorldBookDocument, worldBookDisplayName } from './worldbook-resource.js'
+import { freezeJsonProjection, createJsonProjectionCache } from './immutable-json-projection.js'
 
 function str(value) {
   return typeof value === 'string' ? value : (value === undefined || value === null ? '' : String(value))
@@ -24,6 +25,8 @@ export function createWorldBookLibrary(options = {}) {
   const cards = options.cards
   const normalizePath = options.normalizePath
   const removeStandalone = options.removeStandalone
+  const templateRecords = createJsonProjectionCache(), templateSnapshots = new WeakMap()
+  const emptyTemplateSnapshot = freezeJsonProjection({ worldName: '', worldbooks: {} })
   if (!resources || !cards || typeof normalizePath !== 'function' || typeof removeStandalone !== 'function') {
     throw new Error('World Book Library 缺少资源、人物卡或路径 adapter')
   }
@@ -36,12 +39,24 @@ export function createWorldBookLibrary(options = {}) {
     return { kind: 'standalone', path: normalizePath(source.path, 'worldbook') }
   }
 
-  async function readRecord(locator, suppliedCard) {
+  function templateRecord(text, source, filename) {
+    const key = JSON.stringify([source, filename])
+    return templateRecords(key, text, () => {
+      let document
+      try { document = JSON.parse(text) } catch (error) { throw new Error('世界书工作版 JSON 损坏: ' + error.message) }
+      return { source: clone(source), document: exportSillyTavernWorldBook(document),
+        view: { displayName: worldBookDisplayName(document, { filename }) } }
+    })
+  }
+
+  async function readRecord(locator, suppliedCard, templateOnly = false) {
     const source = sourceOf(locator)
     if (source.kind === 'card') {
       const card = suppliedCard ?? await cards.read(source.cardPath)
       if (card === undefined) throw new Error('人物卡不存在: ' + source.cardPath)
       const document = embeddedDocument(card)
+      if (templateOnly) return templateRecord(JSON.stringify(document),
+        { kind: 'card', cardPath: source.cardPath, cardName: card.name }, card.name)
       return {
         source: { kind: 'card', cardPath: source.cardPath, cardName: card.name },
         document,
@@ -50,6 +65,7 @@ export function createWorldBookLibrary(options = {}) {
     }
     const text = await resources.readText(source.path)
     if (text === undefined) throw new Error('世界书不存在: ' + source.path)
+    if (templateOnly) return templateRecord(text, source, source.path.split('/').pop())
     let document
     try { document = JSON.parse(text) } catch (error) { throw new Error('世界书工作版 JSON 损坏: ' + error.message) }
     return {
@@ -174,10 +190,11 @@ export function createWorldBookLibrary(options = {}) {
     return { source, cards: cardRows, boundCards, conflict: false }
   }
 
-  async function bound(cardPath, card, chat) {
+  async function resolveBound(cardPath, card, chat, templateOnly = false) {
     if (chat?.openingWorldbookSnapshot?.version === 1) {
       const snapshot = chat.openingWorldbookSnapshot
       if (snapshot.document === null) return null
+      if (templateOnly) return templateRecord(JSON.stringify(snapshot.document), snapshot.source)
       return { source: clone(snapshot.source), document: clone(snapshot.document),
         localChatId: chat.id, view: inspectWorldBookDocument(snapshot.document) }
     }
@@ -191,7 +208,7 @@ export function createWorldBookLibrary(options = {}) {
       const source = sourceOf(locator)
       const key = JSON.stringify(source)
       if (!records.has(key)) records.set(key, readRecord(source,
-        source.kind === 'card' && source.cardPath === normalizedCardPath ? card : undefined))
+        source.kind === 'card' && source.cardPath === normalizedCardPath ? card : undefined, templateOnly))
       return records.get(key)
     }
     const current = await binding(cardPath, { card, read })
@@ -200,9 +217,24 @@ export function createWorldBookLibrary(options = {}) {
     if (current.kind === 'multiple') {
       const resolved = await Promise.all(current.books.map(book => read(book.source)))
       const merged = mergeWorldBooks(resolved)
+      if (templateOnly) return templateRecord(JSON.stringify(merged.document), { kind: 'merged', sources: resolved.map(record => record.source) })
       return { source: current.source, document: merged.document, localChatId: chat?.id, mergedSources: merged.sources, view: inspectWorldBookDocument(merged.document) }
     }
     return await read(current.source)
+  }
+
+  async function bound(cardPath, card, chat) { return await resolveBound(cardPath, card, chat) }
+
+  async function templateSnapshot(cardPath, card, chat) {
+    const record = await resolveBound(cardPath, card, chat, true)
+    if (!record) return emptyTemplateSnapshot
+    let snapshot = templateSnapshots.get(record)
+    if (!snapshot) {
+      const worldName = record.view.displayName
+      snapshot = freezeJsonProjection({ worldName, worldbooks: { [worldName]: record.document } })
+      templateSnapshots.set(record, snapshot)
+    }
+    return snapshot
   }
 
   async function bind(cardPath, locator) {
@@ -311,5 +343,5 @@ export function createWorldBookLibrary(options = {}) {
     return { removed: source.cardPath, kind: 'embedded' }
   }
 
-  return Object.freeze({ catalog, get, binding, associations, bound, bind, setBindings, unbind, import: importBook, update, replaceNative, export: exportBook, characterBookForCard, remove })
+  return Object.freeze({ catalog, get, binding, associations, bound, templateSnapshot, bind, setBindings, unbind, import: importBook, update, replaceNative, export: exportBook, characterBookForCard, remove })
 }

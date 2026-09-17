@@ -93,7 +93,8 @@ async function runCase(browser, name, { large=true, journal=true, mode='normal',
   const readCard=timed('resource.card',async()=>JSON.parse(await readFile(join(root,'card.json'),'utf8')))
   const library=createWorldBookLibrary({normalizePath:path=>path,removeStandalone:async()=>{throw Error('read only benchmark')},
     resources:{readText:timed('resource.readText',()=>readFile(join(root,'book.json'),'utf8')),bindingForCard:async()=>({kind:'standalone',path:'book.json',available:true})},cards:{read:readCard}})
-  const books={bound:timed('resource.bound',library.bound),export:timed('resource.export',library.export)}
+  const books={bound:timed('resource.bound',library.bound),export:timed('resource.export',library.export),
+    ...(library.templateSnapshot ? {templateSnapshot:timed('resource.templateSnapshot',library.templateSnapshot)} : {})}
   const globalVariables=createPromptTemplateGlobalVariables(data),settings=createTavernExtensionSettings(data)
   const adapter=createTavernScriptHostAdapter({resolveChat:timed('chat.read',()=>persistence.read('chat')),resolveChatSlice:timed('chat.slice',(_id,indices)=>persistence.readSlice('chat',indices)),
     resolveChangedChatSlice:(_id,revision)=>persistence.readChangedSlice('chat',revision),writeChat:persistence.write,updateChat:persistence.update,patchChat:persistence.patch,readChatRevision:persistence.readRevision,
@@ -114,6 +115,11 @@ async function runCase(browser, name, { large=true, journal=true, mode='normal',
         const ms=performance.now()-begin;measuring=false
         assert.equal(result.error,null);assert.equal(result.renderedEntries.length,20);assert.deepEqual(result.log.templateDiagnostics,[]);assert.equal(result.prefixContext,Array.from({length:20},(_,i)=>(i+1)+':'+(large?3800:32)).join('\n\n'))
         assert.equal((await persistence.read('chat')).variables.counter,undefined)
+        // Exercise the production opt-in, not the no-journal benchmark variant.
+        if (journal && typeof runtime.forSession('s').renderProjection === 'function') {
+          assert.equal(metrics.filter(row=>row.name==='journal.write').length,0)
+          assert.equal(metrics.filter(row=>row.name==='journal.read').length,0)
+        }
         res.setHeader('Content-Type','application/json');res.end(JSON.stringify({ms,refs:result.refs,context:result.prefixContext,server:metrics}));return
       }
       if(path.startsWith('/rpc/')){

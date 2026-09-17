@@ -6,9 +6,12 @@ export function createFullTemplateRuntime({ publishSignal, claimTimeoutMs = 3000
   const dispatch = createTavernScriptDispatch({ publishSignal, presenceTtlMs: 60000, claimTimeoutMs, executionTimeoutMs })
   let disposed = false
   const jobs = new Map()
+  // Projection receipts are useful only while their caller is alive. Retain
+  // identities (not rendered payloads) for transport retries, with bounded memory.
+  const projectionReceipts = new Map()
   const journalPath = id => 'template-work/' + createHash('sha256').update(id).digest('hex') + '.json'
   async function saveJob(id, job) {
-    if (store) await store.writeJson(journalPath(id), job)
+    if (store && !job.transient) await store.writeJson(journalPath(id), job)
   }
   const health = new Map()
   const tails = new Map()
@@ -38,18 +41,20 @@ export function createFullTemplateRuntime({ publishSignal, claimTimeoutMs = 3000
       check()
     })
   }
-  async function invoke(sessionId, operation, input) {
+  async function invoke(sessionId, operation, input, transient = false) {
     if (disposed) throw new Error('完整提示词模板运行时已停止')
     if (!sessionId) throw new Error('完整提示词模板缺少所属会话')
     const previous = tails.get(sessionId) || Promise.resolve()
     const pending = previous.catch(() => {}).then(async () => {
-      const prior = store && await store.readJson(journalPath(sessionId))
+      const prior = !transient && store && await store.readJson(journalPath(sessionId))
       // Recovery acknowledges receipts; it never replays template input. Keep
       // the payload in the dispatch closure, not in every journal phase.
       const job = { id: randomUUID(), operation, inputBytes: Buffer.byteLength(JSON.stringify(input)), phase: 'queued', createdAt: Date.now(),
+        ...(transient ? { transient: true } : {}),
         previous: prior ? { id: prior.id, operation: prior.operation, phase: prior.phase, createdAt: prior.createdAt } : null }
       // Queued work has no side effects and is never replayed after restart.
-      // Persist the execution intent before start, and the receipt before ack.
+      // Durable work persists intent before start and receipt before ack.
+      // Transient projections retain only an in-process receipt identity.
       jobs.set(sessionId, job)
       try {
       for (let attempt = 0; attempt < 2; attempt++) {
@@ -83,6 +88,10 @@ export function createFullTemplateRuntime({ publishSignal, claimTimeoutMs = 3000
       prepareWorldbook: (entries, context = {}) => invoke(sessionId, 'worldbook', { entries, context }),
       command: text => invoke(sessionId, 'command', { text }),
       render: (template, context = {}) => invoke(sessionId, 'render', { template, context: JSON.parse(JSON.stringify(context)) }),
+      // Opt-in for foreground worldbook projections whose caller does not
+      // survive restart. Keep ordinary renders and commands durable. Started
+      // projections are still never replayed automatically: EJS may call out.
+      renderProjection: (template, context = {}) => invoke(sessionId, 'render', { template, context: JSON.parse(JSON.stringify(context)) }, true),
       renderMessages: (messages, context = {}) => invoke(sessionId, 'messages', { messages, context }),
       projectRequest: request => invoke(sessionId, 'request', { request }),
       initializeVariables: (entries, context = {}) => invoke(sessionId, 'initialize', { entries, context })
@@ -99,6 +108,8 @@ export function createFullTemplateRuntime({ publishSignal, claimTimeoutMs = 3000
     return dispatch.start(sessionId, eventId, leaseToken, runtimeId)
   }
   async function complete(sessionId, eventId, args, runtimeId, leaseToken, error = '') {
+    const receipt = projectionReceipts.get(eventId)
+    if (receipt) return receipt.sessionId === sessionId && receipt.runtimeId === runtimeId && receipt.leaseToken === leaseToken
     const job = jobs.get(sessionId) || (store && await store.readJson(journalPath(sessionId)))
     if (!job || job.id !== eventId || job.runtimeId !== runtimeId || job.leaseToken !== leaseToken) return false
     if (job.phase === 'completed') return true
@@ -106,7 +117,12 @@ export function createFullTemplateRuntime({ publishSignal, claimTimeoutMs = 3000
     const completed = { ...job, phase: 'completed', receipt: { args, error }, completedAt: Date.now() }
     await saveJob(sessionId, completed)
     Object.assign(job, completed)
-    return dispatch.complete(sessionId, eventId, args, runtimeId, leaseToken, error)
+    const accepted = dispatch.complete(sessionId, eventId, args, runtimeId, leaseToken, error)
+    if (accepted && job.transient) {
+      projectionReceipts.set(eventId, { sessionId, runtimeId, leaseToken })
+      while (projectionReceipts.size > 256) projectionReceipts.delete(projectionReceipts.keys().next().value)
+    }
+    return accepted
   }
   function heartbeat(sessionId, runtimeId, phase, initializationError = '') {
     const ready = ['ready', 'working', 'synchronizing'].includes(phase)
@@ -120,5 +136,5 @@ export function createFullTemplateRuntime({ publishSignal, claimTimeoutMs = 3000
       task: job ? { id: job.id, operation: job.operation, phase: job.phase, createdAt: job.createdAt,
         completedAt: job.completedAt, error: job.error, previous: job.previous } : null }
   }
-  return { dispatch, forSession, heartbeat, start, complete, inspect, dispose: () => { disposed = true; for (const id of sessions) dispatch.dispose(id); sessions.clear() } }
+  return { dispatch, forSession, heartbeat, start, complete, inspect, dispose: () => { disposed = true; for (const id of sessions) dispatch.dispose(id); sessions.clear(); projectionReceipts.clear() } }
 }

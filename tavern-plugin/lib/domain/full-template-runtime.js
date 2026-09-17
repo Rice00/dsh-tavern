@@ -44,7 +44,9 @@ export function createFullTemplateRuntime({ publishSignal, claimTimeoutMs = 3000
     const previous = tails.get(sessionId) || Promise.resolve()
     const pending = previous.catch(() => {}).then(async () => {
       const prior = store && await store.readJson(journalPath(sessionId))
-      const job = { id: randomUUID(), operation, input, phase: 'queued', createdAt: Date.now(),
+      // Recovery acknowledges receipts; it never replays template input. Keep
+      // the payload in the dispatch closure, not in every journal phase.
+      const job = { id: randomUUID(), operation, inputBytes: Buffer.byteLength(JSON.stringify(input)), phase: 'queued', createdAt: Date.now(),
         previous: prior ? { id: prior.id, operation: prior.operation, phase: prior.phase, createdAt: prior.createdAt } : null }
       await saveJob(sessionId, job)
       jobs.set(sessionId, job)

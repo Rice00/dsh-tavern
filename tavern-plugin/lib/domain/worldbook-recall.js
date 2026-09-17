@@ -177,7 +177,10 @@ export async function projectWorldBookTemplates(input = {}) {
     worldBookSettings: worldBookSettings(input.worldBook),
     worldBookRandom: input.random,
     worldBookEntries: resources.map(function (entry) {
-      return templateResource(entry, input.worldBook && input.worldBook.view && input.worldBook.view.displayName)
+      // Template content is read from the executor's authoritative environment.
+      // This list only maps upstream activations back to Tavern entry references.
+      return { uid: entry.sourceUid ?? entry.ref, id: str(entry.sourceUid ?? entry.ref),
+        ref: entry.ref, world: str(input.worldBook?.view?.displayName) }
     })
   }
   for (const entry of controllers) {

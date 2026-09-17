@@ -155,7 +155,8 @@ test('原生世界书把 EJS 控制器移出稳定前缀，并可按最新 MVU �
   const stable = constantWorldBookContext({ worldBook })
   const projected = await projectWorldBookTemplates({
     worldBook,
-    runtime,
+    runtime: { render: (template, context) => runtime.render(template, context,
+      worldBook.view.entries.map(item => ({ ...item, uid: item.sourceUid ?? item.ref, world: worldBook.view.displayName }))) },
     card: { name: '阿芙拉' },
     chat: {
       macroState: { userName: '叶舟', global: {} },
@@ -194,3 +195,27 @@ test('原生世界书控制器失败时局部跳过，不把模板源码发送�
   assert.deepEqual(mvuUpdateRulesFromWorldBook(worldBook), ['登记0', '登记1', '登记2'])
   assert.deepEqual(prepareWorldBookRecall({ worldBook, chat: chat('少林'), turn: 2 }).refs, ['entry:3'])
  })
+
+test('大世界书 render 仅传激活引用，模板正文与顺序作用域保持完整', async () => {
+  const entries = Array.from({ length: 266 }, (_, index) => ({
+    ...entry('entry:' + index, index < 20 ? '<%= value %>' : '世界书正文'.repeat(800), { constant: index < 20 }),
+    sourceUid: index
+  }))
+  const calls = []
+  const projected = await projectWorldBookTemplates({ worldBook: { view: { displayName: '大世界书', entries } }, chat: chat(), card: card(),
+    runtime: { render: async (template, context) => {
+      calls.push({ template, context: structuredClone(context) })
+      const step = Number(context.scopes.local.step || 0) + 1
+      return { ok: true, text: String(step), scopes: { ...context.scopes, local: { step } }, activationRequests: [{ ref: 'entry:265', force: true }] }
+    } }
+  })
+  assert.equal(calls.length, 20)
+  assert.equal(projected.context, Array.from({ length: 20 }, (_, i) => String(i + 1)).join('\n\n'))
+  assert.deepEqual(projected.activationRequests, entries.slice(0, 20).reverse().map(item => ({ ref: 'entry:265', force: true, sourceRef: item.ref })))
+  assert.deepEqual(calls.map(call => call.template), Array(20).fill('<%= value %>'))
+  assert.deepEqual(calls.map(call => call.context.scopes.local.step || 0), Array.from({ length: 20 }, (_, i) => i))
+  assert.deepEqual(calls[0].context.worldBookEntries, entries.map(item => ({ uid: item.sourceUid, id: String(item.sourceUid), ref: item.ref, world: '大世界书' })))
+  const referenceBytes = Buffer.byteLength(JSON.stringify(calls[0].context.worldBookEntries))
+  const originalBytes = Buffer.byteLength(JSON.stringify(entries))
+  assert.ok(referenceBytes < originalBytes * 0.03, `${referenceBytes} / ${originalBytes}`)
+})

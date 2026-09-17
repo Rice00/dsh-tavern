@@ -116,3 +116,34 @@ test('刷新页面释放尚未执行的任务后，以同一任务 ID 重新领�
   assert.equal(offers, 2)
   runtime.dispose()
 })
+
+test('大输入只用于派发，所有持久化阶段仅记录体积且支持重启确认', async () => {
+  const records = new Map(), writes = []
+  const store = { readJson: async path => records.get(path), writeJson: async (path, value) => {
+    const saved = structuredClone(value); records.set(path, saved); writes.push(saved)
+  } }
+  const runtime = createFullTemplateRuntime({ store, publishSignal() {} })
+  runtime.heartbeat('s', 'page', 'ready')
+  const template = '秘密模板'.repeat(100000)
+  const output = runtime.forSession('s').render(template)
+  let work
+  for (let i = 0; i < 100; i++) {
+    work = runtime.dispatch.claim('s', 'page', true)
+    if (work.event) break
+    await new Promise(resolve => setTimeout(resolve, 2))
+  }
+  assert.equal(work.event.args[0].template, template)
+  await runtime.start('s', work.event.id, work.leaseToken, 'page')
+  await runtime.complete('s', work.event.id, [{ ok: true, text: '结果' }], 'page', work.leaseToken)
+  assert.deepEqual(await output, { ok: true, text: '结果' })
+  runtime.dispose()
+  assert.deepEqual(writes.map(job => job.phase), ['queued', 'executing', 'completed'])
+  for (const job of writes) {
+    assert.equal(job.input, undefined)
+    assert.equal(job.inputBytes, Buffer.byteLength(JSON.stringify({ template, context: {} })))
+    assert.ok(Buffer.byteLength(JSON.stringify(job)) < 1024)
+  }
+  const restarted = createFullTemplateRuntime({ store, publishSignal() { throw new Error('must not replay') } })
+  assert.equal(await restarted.complete('s', work.event.id, [], 'page', work.leaseToken), true)
+  restarted.dispose()
+})

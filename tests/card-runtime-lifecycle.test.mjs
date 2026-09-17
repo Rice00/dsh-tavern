@@ -1088,3 +1088,25 @@ test('真实父页和 Helper 沙箱互联：首个事件及完成回执都丢失
   assert.equal(h.errors.length, 0)
   h.runtime.dispose()
 })
+
+test('touch relay is authenticated, scoped to frame ancestors and retired on disposal', () => {
+  const h = host(), sent = [];
+  h.window.getComputedStyle = node => node.css;
+  h.window.document = { scrollingElement: null };
+  const outer = { nodeType: 1, parentElement: null, css: { overflowY: 'auto' }, scrollHeight: 2000, clientHeight: 500, scrollTop: 0,
+    scrollTo({ top, behavior }) { assert.equal(behavior, 'instant'); this.scrollTop = top; } };
+  const life = h.client.createTavernMessageFrameLifecycle({ content: '<p>正文</p>', eager: true }, { window: h.window });
+  const stop = life.start(() => {}), doc = life.snapshot().visibleDocument;
+  const node = { isConnected: true, parentElement: outer, contentWindow: { postMessage: message => sent.push(message) } };
+  doc.ref(node);
+  const begin = sequence => h.deliver(node, { type: 'dsh-tavern-frame-touch-start', token: doc.token, sequence });
+  const move = (sequence, sender = node.contentWindow) => h.deliver(node, { type: 'dsh-tavern-frame-scroll', token: doc.token, sequence, dy: 90 }, sender);
+  move(1); assert.equal(outer.scrollTop, 0, 'no movement before a gesture');
+  begin(1); move(1, {}); assert.equal(outer.scrollTop, 0, 'reject foreign windows');
+  move(1); assert.equal(outer.scrollTop, 90);
+  begin(2); move(1); assert.equal(outer.scrollTop, 90, 'discard previous gesture messages');
+  assert.equal(sent.at(-1).sequence, 1, 'late cancellation identifies old gesture');
+  move(2); assert.equal(outer.scrollTop, 180);
+  stop(); move(2); assert.equal(outer.scrollTop, 180);
+  assert.equal(sent.at(-1).type, 'dsh-tavern-frame-touch-stop');
+});

@@ -1521,6 +1521,8 @@ window.__ModuleLoader__.load({
 				.replace(/{{\s*char\s*}}/gi, String(context.characterName || context.character?.name || "角色"));
 		}
 
+		// @include modules/frame-touch-scroll.js
+
 		function buildTavernFrameDocument(input) {
 			const html = rewriteTavernStaticMarkup(String(input && (input.content !== undefined ? input.content : input.html) || ""));
 			const token = JSON.stringify(String(input && input.token || "")).replace(/</g, "\\u003c");
@@ -1539,7 +1541,7 @@ window.__ModuleLoader__.load({
 			const layoutNormalizer = '<script data-dsh-tavern-layout>(function(){if(!document.body)return;Array.prototype.slice.call(document.body.childNodes).forEach(function(node){var value=String(node.nodeValue||"");if(node.nodeType===3&&!/\\S/.test(value)&&/[\\r\\n]/.test(value))node.nodeValue="";});})();<\/script>';
 			const fontRuntime = '<script data-dsh-tavern-font-runtime>(' + installTavernFrameFonts.toString() + ')(' + token + ',' + restoreTavernFrameFontStyles.toString() + ');<\/script>';
             const textColorRuntime = '<script data-dsh-tavern-text-colors>(function(){const colors=(' + installTavernTextColors.toString() + ')(document.body,{enabled:false},' + findTavernQuoteRanges.toString() + ');addEventListener("message",function(event){const data=event.data;if(event.source===parent&&data&&data.token===' + token + '&&(data.type==="dsh-tavern-text-colors"||data.type==="dsh-tavern-font-size")){colors.setColors(data.textColorOverrides);colors.setEnabled(data.type==="dsh-tavern-font-size"?data.textColorsEnabled:data.enabled);}});addEventListener("pagehide",()=>colors.dispose(),{once:true});})();<\/script>';
-			const cleanRuntimeReporter = runtimeReporter.replace('dom=copy.innerHTML;', '(' + restoreTavernFrameFontStyles.toString() + ')(copy);Array.from(copy.querySelectorAll("script[data-dsh-tavern-font-runtime],script[data-dsh-tavern-text-colors]")).forEach(function(node){node.remove();});dom=copy.innerHTML;');
+			const cleanRuntimeReporter = runtimeReporter.replace('dom=copy.innerHTML;', '(' + restoreTavernFrameFontStyles.toString() + ')(copy);Array.from(copy.querySelectorAll("script[data-dsh-tavern-font-runtime],script[data-dsh-tavern-text-colors],script[data-dsh-tavern-touch]")).forEach(function(node){node.remove();});dom=copy.innerHTML;');
 			return '<!doctype html><html><head><meta charset="utf-8">'
 				+ '<meta name="viewport" content="width=device-width,initial-scale=1">'
 				+ '<meta name="referrer" content="no-referrer">'
@@ -1550,7 +1552,7 @@ window.__ModuleLoader__.load({
 				+ (input && input.helperContext && input.persistent === true && input.preserveInstance !== true ? '<script data-dsh-tavern-status-refresh>(' + installTavernStatusRefresh.toString() + ')(' + token + ');<\/script>' : '')
 				+ (input && input.openingPreview ? '<script data-dsh-tavern-opening-preview>(function(){const install=()=>(' + installOpeningPreviewBridge.toString() + ')(' + token + ',' + JSON.stringify(input.openingPreview).replace(/</g, '\\u003c') + ');if(window.__dshTavernHelperReady)window.__dshTavernHelperReady.then(install);else install();})();<\/script>' : '')
 				+ (preparationRuntime && input.trustedCardMode === true ? '<script data-dsh-tavern-opening-host>(function(){const release=(' + installTavernTrustedHostFacade.toString() + ')(window.parent,window,10);window.addEventListener("pagehide",release,{once:true});window.addEventListener("unload",release,{once:true});})();<\/script>' : '')
-				+ '</head><body class="no-blur">' + (input && input.helperContext ? '<script data-dsh-tavern-legacy-composer>(' + installLegacyTavernComposer.toString() + ')();<\/script>' : '') + (preparationRuntime ? preparationRuntime.body : '') + html + layoutNormalizer + fontRuntime + (input && input.persistent ? "" : textColorRuntime) + reporter + readyReporter + '</body></html>';
+				+ '</head><body class="no-blur">' + (input && input.helperContext ? '<script data-dsh-tavern-legacy-composer>(' + installLegacyTavernComposer.toString() + ')();<\/script>' : '') + (preparationRuntime ? preparationRuntime.body : '') + html + layoutNormalizer + fontRuntime + (input && input.persistent ? "" : textColorRuntime) + reporter + '<script data-dsh-tavern-touch>(' + installTavernFrameTouch.toString() + ')(' + token + ',' + scrollTavernTouchChain.toString() + ');<\/script>' + readyReporter + '</body></html>';
 		}
 
 		function encodeTavernScriptSource(value) {
@@ -4346,6 +4348,7 @@ window.__ModuleLoader__.load({
 			const configuredSlashExecutor = options && options.executeSlash;
 			const invalidate = options && options.invalidate || function (sessionId) { liveTavernView.invalidate(sessionId); };
 			const channels = new Map();
+            const touchRelay = createTavernTouchRelay(hostWindow);
 			const frameSizeObservers = new Map();
 			let props = initial;
 			let frozenHelperContext = initial.helperContext;
@@ -4384,7 +4387,8 @@ window.__ModuleLoader__.load({
 				document.ref = function (node) {
                     const previous = frameSizeObservers.get(document.token);
                     if (previous) { previous.disconnect(); frameSizeObservers.delete(document.token); }
-					channel.attach(node);
+					touchRelay.stop();
+                    channel.attach(node);
                     // Trusted cards may replace their document and lose our reporter,
                     // then resize frameElement directly. Observe outside that document.
                     if (node && document.trustedCardMode && typeof hostWindow.MutationObserver === "function") {
@@ -4494,9 +4498,12 @@ window.__ModuleLoader__.load({
 					sendContext(sourceDocument, "ready");
 					if (sourceDocument === pending && pending.key === desired.key) {
 						rememberHeight(pending, pending.height || restoredTavernFrameHeight(pending.heightKey, pending.content));
+						touchRelay.stop();
 						visible = pending; pending = null;
 						publish();
 					}
+				} else if (data.type === "dsh-tavern-frame-touch-start" || data.type === "dsh-tavern-frame-scroll") {
+                    if (sourceDocument === visible && channel.element()) touchRelay.receive(channel.element(), data.token, data);
 				} else if (data.type === "dsh-tavern-frame-height") {
 					sourceDocument.height = clampTavernFrameHeight(data.height);
 					if (sourceDocument === visible) { rememberHeight(visible, sourceDocument.height); publish(); }
@@ -4636,6 +4643,7 @@ window.__ModuleLoader__.load({
 						[hostWindow.document.documentElement, hostWindow.document.body].filter(Boolean).forEach(function (node) { fontObserver.observe(node, { attributes: true, attributeFilter: ["style", "class"] }); });
 					}
 					return function () {
+                        touchRelay.stop();
 						releaseComposer();
 						if (openingArtifacts) {
 							for (const channel of channels.values()) {

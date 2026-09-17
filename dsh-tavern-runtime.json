@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "09059adc6f5fcff77c2864102930463068bcb0d0",
-  "releaseSequence": 258,
+  "revision": "138ff77a4a097c21c0c9f438dc154b1c422b38c3",
+  "releaseSequence": 259,
   "version": "1.9.0",
   "files": [
     {
@@ -441,8 +441,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/conversation-fork.js",
-      "sha256": "bacba4add8d2d165df2881879e4833ec52f88271d7a81f0a63bcd592902d0590",
-      "size": 4006
+      "sha256": "6a398c9c895e07d649dce34038eeed6eef072c2d40fbd2e063616ae9cc2cebe2",
+      "size": 4034
     },
     {
       "path": "tavern-plugin/lib/domain/conversation-initialization.js",
@@ -710,6 +710,11 @@
       "size": 3895
     },
     {
+      "path": "tavern-plugin/lib/domain/regeneration-recovery.js",
+      "sha256": "47e89cf49a5b21473cf12822f80e07d4b3d6fdb5ea668e12a3194c8d699217f7",
+      "size": 4803
+    },
+    {
       "path": "tavern-plugin/lib/domain/release-capabilities.js",
       "sha256": "049c193af87d5bcad5541f2f3247ad2ddd78c4b1c9b776657c1fa676bb5e33ff",
       "size": 82
@@ -756,8 +761,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/round-history.js",
-      "sha256": "6a6908fcf4f500e3b401af570c3a69094b97b175c6626180e7bca665d98d5122",
-      "size": 34335
+      "sha256": "427332eadcc4326020055dc1c46bb3238a116e10216b995ce3918da42962d53d",
+      "size": 34866
     },
     {
       "path": "tavern-plugin/lib/domain/runtime-content-projection.js",
@@ -1216,8 +1221,8 @@
     },
     {
       "path": "tavern-plugin/lib/index.js",
-      "sha256": "2c8cb0df96042447f539f7ac7cac894647936a6e4c6575889bbb7d7617a501eb",
-      "size": 282053
+      "sha256": "4a31e931113b372b05c1d42918ae78c4bcd082330d43af70f149a3c44f956e44",
+      "size": 282248
     },
     {
       "path": "tavern-plugin/lib/profile-data-store.js",

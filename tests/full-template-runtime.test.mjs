@@ -76,9 +76,10 @@ test('任务与回执落盘，回执丢失后跨进程重建仍可确认，不�
     await new Promise(r => setTimeout(r, 2))
   }
   assert.ok(work.event)
-  const file = 'template-work/' + (await readdir(join(root, 'template-work')))[0]
-  assert.equal((await store.readJson(file)).phase, 'queued')
+  assert.equal((await runtime.inspect('s')).task.phase, 'queued')
+  assert.equal((await readdir(join(root, 'template-work')).catch(error => { if (error.code === 'ENOENT') return []; throw error })).length, 0)
   assert.equal((await runtime.start('s', work.event.id, work.leaseToken, 'page')).started, true)
+  const file = 'template-work/' + (await readdir(join(root, 'template-work')))[0]
   assert.equal((await store.readJson(file)).phase, 'executing')
   assert.equal(await runtime.complete('s', work.event.id, ['saved'], 'page', work.leaseToken), true)
   assert.equal(await output, 'saved')
@@ -137,7 +138,7 @@ test('大输入只用于派发，所有持久化阶段仅记录体积且支持�
   await runtime.complete('s', work.event.id, [{ ok: true, text: '结果' }], 'page', work.leaseToken)
   assert.deepEqual(await output, { ok: true, text: '结果' })
   runtime.dispose()
-  assert.deepEqual(writes.map(job => job.phase), ['queued', 'executing', 'completed'])
+  assert.deepEqual(writes.map(job => job.phase), ['executing', 'completed'])
   for (const job of writes) {
     assert.equal(job.input, undefined)
     assert.equal(job.inputBytes, Buffer.byteLength(JSON.stringify({ template, context: {} })))
@@ -146,4 +147,41 @@ test('大输入只用于派发，所有持久化阶段仅记录体积且支持�
   const restarted = createFullTemplateRuntime({ store, publishSignal() { throw new Error('must not replay') } })
   assert.equal(await restarted.complete('s', work.event.id, [], 'page', work.leaseToken), true)
   restarted.dispose()
+})
+
+test('执行意图持久化完成前不允许执行，排队状态只在内存可见', async () => {
+  let release, entered
+  const blocked = new Promise(resolve => { release = resolve })
+  const writing = new Promise(resolve => { entered = resolve })
+  const records = []
+  const runtime = createFullTemplateRuntime({ publishSignal() {}, store: {
+    readJson: async () => records.at(-1),
+    writeJson: async (_path, value) => { if (value.phase === 'executing') { entered(); await blocked } records.push(structuredClone(value)) }
+  } })
+  runtime.heartbeat('s', 'page', 'ready')
+  const result = runtime.forSession('s').render('test')
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal((await runtime.inspect('s')).task.phase, 'queued')
+  assert.equal(records.length, 0)
+  const work = runtime.dispatch.claim('s', 'page', true)
+  const start = runtime.start('s', work.event.id, work.leaseToken, 'page')
+  await writing
+  assert.notEqual(runtime.dispatch.status('s').phase, 'executing')
+  release()
+  assert.equal((await start).started, true)
+  await runtime.complete('s', work.event.id, ['done'], 'page', work.leaseToken)
+  assert.equal(await result, 'done')
+  assert.deepEqual(records.map(record => record.phase), ['executing', 'completed'])
+  runtime.dispose()
+})
+
+test('未就绪的排队任务失败仍保留取消诊断', async () => {
+  let record
+  const runtime = createFullTemplateRuntime({ readyTimeoutMs: 5, publishSignal() {}, store: {
+    readJson: async () => record, writeJson: async (_path, value) => { record = structuredClone(value) }
+  } })
+  await assert.rejects(runtime.forSession('s').render('test'), /未响应/)
+  assert.equal(record.phase, 'cancelled')
+  assert.match(record.error, /未响应/)
+  runtime.dispose()
 })

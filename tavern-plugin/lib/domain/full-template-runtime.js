@@ -48,7 +48,8 @@ export function createFullTemplateRuntime({ publishSignal, claimTimeoutMs = 3000
       // the payload in the dispatch closure, not in every journal phase.
       const job = { id: randomUUID(), operation, inputBytes: Buffer.byteLength(JSON.stringify(input)), phase: 'queued', createdAt: Date.now(),
         previous: prior ? { id: prior.id, operation: prior.operation, phase: prior.phase, createdAt: prior.createdAt } : null }
-      await saveJob(sessionId, job)
+      // Queued work has no side effects and is never replayed after restart.
+      // Persist the execution intent before start, and the receipt before ack.
       jobs.set(sessionId, job)
       try {
       for (let attempt = 0; attempt < 2; attempt++) {

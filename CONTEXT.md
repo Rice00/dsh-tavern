@@ -88,7 +88,7 @@ Host 向 Tavern 浏览器消费者发布的带类型唤醒通知。所有活跃�
 
 ## Tavern Script Dispatch
 
-Host 中管理酒馆脚本工作的排队、offer、显式 start、执行租约、分段超时和结果回执的 Module。它通过 Session Signal 唤醒浏览器执行器，但工作记录仍由自身持有；浏览器沙箱只能领取、确认开始并回执，不能凭 Signal 决定工作是否存在或完成。重复 claim 返回同一 offer，只有 start 确认后才开始计算执行超时。
+Host 中管理酒馆脚本工作的排队、offer、显式 start、可续租执行状态和幂等结果回执的 Module。它通过 Session Signal 唤醒浏览器执行器，但 Signal 不代表工作存在或完成。重复 claim/start 确认同一工作；浏览器通过携带 eventId、runtimeId、leaseToken 的状态查询，在沙箱仍响应时续租，执行没有固定总时限。失联释放执行租约并延期持久 MVU 工作，不伪造脚本失败。完成回执丢失时查询或补发同一结果，不能重新执行回调。沙箱同一事件只执行一次，结果在父页 ACK 前保留，ACK 后保留去重身份。Host 的有界内存回执只确认执行交接；重启后的恢复事实仍是 MVU Delivery 的 pendingSubmission/effect 和 Story Timeline 的 Settlement Receipt，不能将执行 ACK 当成变量提交成功。
 
 ## Tavern MVU Core
 

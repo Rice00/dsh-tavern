@@ -2677,7 +2677,7 @@ window.__ModuleLoader__.load({
 				const data = event && event.data;
 				if (event.source !== parent || !data || data.token !== token) return;
 				if (data.type === "dsh-tavern-helper-context") { onContext({ context: data.context || {} }); return; }
-				if (data.type === "dsh-tavern-helper-event") { onEvent(data); return; }
+				if (data.type === "dsh-tavern-helper-event" || data.type === "dsh-tavern-helper-event-ack" || data.type === "dsh-tavern-helper-event-query") { onEvent(data); return; }
 				if (data.type !== "dsh-tavern-helper-response") return;
 				const task = pending[data.requestId];
 				if (!task) return;
@@ -3329,6 +3329,7 @@ window.__ModuleLoader__.load({
 			let activeHostEventId = "";
 			let synchronousScriptId = "";
 			let hostEventTail = Promise.resolve();
+            const hostEvents = new Map();
 			let facade;
 			const transport = modules.createTransport({ parent: parent, token: token, copy: copy,
 				identity: function () { return { eventId: activeHostEventId, scriptId: currentScript().id, lifecycleRevision: Number(state.lifecycleRevision) || 0 }; },
@@ -3352,10 +3353,35 @@ window.__ModuleLoader__.load({
 					if (incoming && facade && method !== "saveTavernChatData") facade.sync(state);
 				},
 				onEvent: function (data) {
+                    const eventId = String(data.eventId || "");
+                    const known = hostEvents.get(eventId);
+                    if (data.type === "dsh-tavern-helper-event-ack") {
+                        if (known && known.receipt) { known.receipt = null; known.phase = "acknowledged"; }
+                        return;
+                    }
+                    function status() { parent.postMessage({ type: "dsh-tavern-helper-event-state", token: token, eventId: eventId, phase: hostEvents.get(eventId).phase }, "*"); }
+                    if (known) {
+                        status();
+                        if (known.receipt) parent.postMessage(known.receipt, "*");
+                        return;
+                    }
+                    if (data.type === "dsh-tavern-helper-event-query") {
+                        parent.postMessage({ type: "dsh-tavern-helper-event-state", token: token, eventId: eventId, phase: "unknown" }, "*");
+                        return;
+                    }
+                    const entry = { phase: "queued", receipt: null };
+                    hostEvents.set(eventId, entry);
+                    status();
+                    function complete(receipt) {
+                        entry.phase = "completed";
+                        entry.receipt = Object.assign({ type: "dsh-tavern-helper-event-complete", token: token, eventId: eventId }, receipt);
+                        parent.postMessage(entry.receipt, "*");
+                    }
 					diagnosticCount = 0;
 					const suppliedArgs = copy(data.args || []);
 					const task = hostEventTail.catch(function () {}).then(async function () {
-						const previousEventId = activeHostEventId;
+						entry.phase = "executing";
+                        const previousEventId = activeHostEventId;
 						activeHostEventId = String(data.eventId || "");
 						try {
 							if (data.name === "mag_variable_update_ended" && suppliedArgs.length === 0) {
@@ -3375,10 +3401,10 @@ window.__ModuleLoader__.load({
 					});
 					hostEventTail = task;
 					task.then(function (args) {
-						if (data.eventId) parent.postMessage({ type: "dsh-tavern-helper-event-complete", token: token, eventId: data.eventId, args: copy(args || []) }, "*");
+						if (data.eventId) complete({ args: copy(args || []) });
 					}).catch(function (error) {
 						console.error(error);
-						if (data.eventId) parent.postMessage({ type: "dsh-tavern-helper-event-complete", token: token, eventId: data.eventId, scriptId: String(error && error.dshTavernScriptId || ""), error: String(error && error.message || error), errorCode: String(error && error.code || ""), args: suppliedArgs }, "*");
+						if (data.eventId) complete({ scriptId: String(error && error.dshTavernScriptId || ""), error: String(error && error.message || error), errorCode: String(error && error.code || ""), args: suppliedArgs });
 					});
 				}
 			});
@@ -4430,7 +4456,6 @@ window.__ModuleLoader__.load({
 			const pendingEvents = new Map();
 			const closedEventIds = new Set();
 			const closedEventOrder = [];
-			const reportedEventTimeouts = new Set();
 			const allowedMethods = new Set(["getTavernHelperContext", "generateTavernHelperRaw", "updateTavernHelperPrompts", "updateTavernHelperVariables", "updateTavernHelperMessages", "createTavernHelperMessages", "getTavernHelperWorldbook", "replaceTavernHelperWorldbook", "saveTavernExtensionSettings", "loadTavernWorldInfo", "saveTavernWorldInfo", "saveTavernChatData"]);
 			let activeSessionId = "";
 			let root = null;
@@ -4651,35 +4676,31 @@ window.__ModuleLoader__.load({
 				const eventId = String(hostEventId || "") || "host-event-" + (++eventSequence);
 				const startedAt = now();
 				return new Promise(function (resolve, reject) {
-					const timer = hostWindow.setTimeout(function check() {
-						const pending = pendingEvents.get(eventId);
-						if (!pending) return;
-						// Only acknowledged host work extends the idle deadline; total time stays bounded.
-						const remaining = Math.min(eventTimeoutMs - (now() - pending.progressAt), eventTimeoutMs * 4 - (now() - startedAt));
-						if (remaining > 0) { pending.timer = hostWindow.setTimeout(check, remaining); return; }
-						pendingEvents.delete(eventId);
-						closeEventId(eventId);
-						const script = pending && record.scripts.get(String(pending.activeScriptId || ""));
-						const source = script ? "人物卡脚本「" + script.name + "」" : "人物卡脚本「" + record.name + "」";
-						const error = new Error((script ? "人物卡脚本「" + script.name + "」" : "共享脚本沙箱") + "处理事件「" + String(name) + "」超时（" + String(now() - startedAt) + "ms）");
-						error.code = "TAVERN_SCRIPT_EVENT_TIMEOUT";
-						// A card may catch a rejected RPC and keep waiting. Preserve the
-						// first failure instead of masking it with a generic idle timeout.
-						if (pending.writeError) {
-							error.cause = pending.writeError;
-							error.message += "；此前宿主调用失败" + (pending.writeError.code ? " [" + pending.writeError.code + "]" : "") + "：" + String(pending.writeError.message || pending.writeError);
-						}
-						if (diagnostics && diagnostics.length < 50) diagnostics.push({ kind: "timeout", name: String(name), scriptId: String(pending.activeScriptId || ""),
-							errorCode: error.code, causeCode: String(pending.writeError?.code || ""), pendingCalls: pending.writes?.size || 0, elapsedMs: now() - startedAt });
-						const timeoutKey = record.id + "\n" + String(name);
-						if (!reportedEventTimeouts.has(timeoutKey)) {
-							reportedEventTimeouts.add(timeoutKey);
-							reportError(source, error);
-						}
-						reject(error);
-					}, eventTimeoutMs);
-					pendingEvents.set(eventId, { record: record, resolve: resolve, reject: reject, timer: timer, progressAt: startedAt, name: String(name), activeScriptId: "", diagnostics: diagnostics });
-					post(record, { type: "dsh-tavern-helper-event", eventId: eventId, name: name, args: clone(args) });
+                    const envelope = { type: "dsh-tavern-helper-event", eventId: eventId, name: name, args: clone(args) };
+                    const probeIntervalMs = Math.min(1000, eventTimeoutMs / 3);
+                    const timer = hostWindow.setTimeout(function check() {
+                        const pending = pendingEvents.get(eventId);
+                        if (!pending) return;
+                        // A responsive sandbox may execute indefinitely. Probe the same
+                        // identity: a lost completion replays its receipt, never its handler.
+                        if (now() - pending.contactAt >= eventTimeoutMs) {
+                            pendingEvents.delete(eventId);
+                            closeEventId(eventId);
+                            const script = record.scripts.get(String(pending.activeScriptId || ""));
+                            const source = script ? "人物卡脚本「" + script.name + "」" : "共享脚本沙箱";
+                            const error = new Error(source + "处理事件「" + String(name) + "」时沙箱失联，状态尚未确认");
+                            error.code = "TAVERN_SCRIPT_RUNTIME_UNREACHABLE";
+                            if (pending.writeError) { error.cause = pending.writeError; error.message += "；此前宿主调用失败：" + pending.writeError.message; }
+                            if (diagnostics && diagnostics.length < 50) diagnostics.push({ kind: "runtime-unreachable", name: String(name), causeCode: String(pending.writeError?.code || ""), elapsedMs: now() - startedAt });
+                            reportError(script ? source : "人物卡共享脚本沙箱", error);
+                            reject(error);
+                            return;
+                        }
+                        post(record, { type: "dsh-tavern-helper-event-query", eventId: eventId });
+                        pending.timer = hostWindow.setTimeout(check, probeIntervalMs);
+                    }, probeIntervalMs);
+                    pendingEvents.set(eventId, { record: record, resolve: resolve, reject: reject, timer: timer, envelope: envelope, contactAt: startedAt, name: String(name), activeScriptId: "", diagnostics: diagnostics });
+                    post(record, envelope);
 				});
 			}
 			async function emit(name, args, context, diagnostics, hostEventId) {
@@ -4876,15 +4897,27 @@ window.__ModuleLoader__.load({
 					syncMvuDataReadiness(record);
 					return;
 				}
+                if (data.type === "dsh-tavern-helper-event-state") {
+                    const pending = pendingEvents.get(String(data.eventId || ""));
+                    if (pending && pending.record === record) {
+                        pending.contactAt = now();
+                        if (data.phase === "unknown") post(record, pending.envelope);
+                    }
+                    return;
+                }
 				if (data.type === "dsh-tavern-helper-event-progress") {
 					const pending = pendingEvents.get(String(data.eventId || ""));
-					if (pending) pending.activeScriptId = data.phase === "completed" ? "" : String(data.scriptId || "");
+					if (pending && pending.record === record) { pending.contactAt = now(); pending.activeScriptId = data.phase === "completed" ? "" : String(data.scriptId || ""); }
 					return;
 				}
 				if (data.type === "dsh-tavern-helper-event-complete") {
 					const eventId = String(data.eventId || "");
 					const pending = pendingEvents.get(eventId);
-					if (!pending || pending.record !== record || pending.finishing) return;
+					if (!pending || pending.record !== record || pending.finishing) {
+                        if (closedEventIds.has(eventId)) post(record, { type: "dsh-tavern-helper-event-ack", eventId: eventId });
+                        return;
+                    }
+                    pending.contactAt = now();
 					// Close admission now, but keep accepted RPCs and the deadline alive
 					// until persistence finishes. A callback reply is not a write receipt.
 					pending.finishing = true;
@@ -4893,6 +4926,7 @@ window.__ModuleLoader__.load({
 						pendingEvents.delete(eventId);
 						closeEventId(eventId);
 						hostWindow.clearTimeout(pending.timer);
+                        post(record, { type: "dsh-tavern-helper-event-ack", eventId: eventId });
 						if (data.error) {
 							const script = record.scripts.get(String(data.scriptId || pending.activeScriptId || ""));
 							const prefix = script ? "人物卡脚本「" + script.name + "」" : "共享脚本沙箱";
@@ -4987,7 +5021,7 @@ window.__ModuleLoader__.load({
 					if (records.get(record.id) === record && result && !result.stale) {
 						const pending = pendingEvents.get(String(data.eventId || ""));
 						if (pending && pending.record === record) {
-							pending.progressAt = now();
+							pending.contactAt = now();
 							if (record.mvuDataTimer) record.mvuProgressAt = now();
 						}
 					}
@@ -5023,6 +5057,7 @@ window.__ModuleLoader__.load({
 					if (!record || !record.scripts.has(String(scriptId))) return Promise.reject(new Error("人物卡脚本尚未运行"));
 					return emitToRecord(record, buttonEvent(scriptId, name), [], record.context);
 				},
+                eventResponsive: function (eventId) { const pending = pendingEvents.get(eventId); return Boolean(pending && now() - pending.contactAt < eventTimeoutMs); },
 				dispose: function () { hostWindow.removeEventListener("message", receive); clear(); releaseHostStylesheetBridge(); },
 				inspect: function () {
 					const record = records.get("shared");
@@ -5053,6 +5088,7 @@ window.__ModuleLoader__.load({
 			let releaseBarrier = Promise.resolve();
 			let releasesPending = 0;
 			let claimBusy = null;
+            let delivery = null;
 			let claimRequested = false;
 			let claimRetryCount = 0;
 			let active = false;
@@ -5079,6 +5115,7 @@ window.__ModuleLoader__.load({
 			function dispose() {
 				const previousLease = lease;
 				lease = null;
+                delivery = null;
 				input = null;
 				active = false;
 					claimRequested = false;
@@ -5137,17 +5174,68 @@ window.__ModuleLoader__.load({
 				});
 				}
 				function scheduleClaimRetry(currentLease) {
-					if (lease !== currentLease || claimRetryTimer !== null || claimRetryCount >= 6) return;
-					const delay = Math.min(2000, 250 * Math.pow(2, claimRetryCount++));
+					if (lease !== currentLease || claimRetryTimer !== null) return;
+					const delay = Math.min(2000, 250 * Math.pow(2, Math.min(3, claimRetryCount++)));
 					claimRetryTimer = hostWindow.setTimeout(function () {
 						claimRetryTimer = null;
 						if (lease === currentLease) void claimWork();
 					}, delay);
 				}
+            function recoverExecution(work) {
+                if (delivery !== work || lease !== work.lease) return;
+                const next = input;
+                dispose();
+                if (next) sync(next.sessionId, next.view);
+            }
+            async function deliverWork(work) {
+                if (delivery !== work || lease !== work.lease || work.busy) return;
+                work.busy = true;
+                const identity = { eventId: work.event.id, leaseToken: work.token };
+                try {
+                    if (work.query || (work.phase === "executing" && !work.receipt)) {
+                        const state = await invokeWithDeadline("getTavernScriptWorkState", work.lease, work.runtime.inspect(), Object.assign({}, identity, {
+                            keepAlive: Boolean(work.receipt || (work.runtime.eventResponsive && work.runtime.eventResponsive(work.event.id)))
+                        }));
+                        if (delivery !== work) return;
+                        work.query = false;
+                        if (state && state.phase === "completed") { delivery = null; scheduleClaimRetry(work.lease); return; }
+                        if (!state || state.phase === "unknown") { recoverExecution(work); return; }
+                    }
+                    if (work.phase === "starting") {
+                        const started = await invokeWithDeadline("startTavernScriptWork", work.lease, work.runtime.inspect(), identity);
+                        if (delivery !== work) return;
+                        if (!started || !started.started) { recoverExecution(work); return; }
+                        work.phase = "executing";
+                        Promise.resolve().then(function () {
+                            return work.runtime.emit(work.event.name, work.event.args, work.event.context, work.diagnostics, work.event.id);
+                        }).then(function (args) {
+                            work.receipt = Object.assign({}, identity, { args: args, diagnostics: work.diagnostics });
+                        }, function (error) {
+                            if (error && error.code === "TAVERN_SCRIPT_RUNTIME_UNREACHABLE") { recoverExecution(work); return; }
+                            work.receipt = Object.assign({}, identity, { args: work.event.args, error: String(error && error.message || error), diagnostics: work.diagnostics });
+                        }).then(function () { if (delivery === work) void deliverWork(work); });
+                    }
+                    if (work.receipt && delivery === work) {
+                        work.phase = "receipt";
+                        // Retry this exact outcome. A lost HTTP response is not a script failure.
+                        work.query = true;
+                        const result = await invokeWithDeadline("completeTavernHelperEvent", work.lease, work.runtime.inspect(), work.receipt);
+                        if (delivery !== work) return;
+                        if (result && result.completed === true) { delivery = null; scheduleClaimRetry(work.lease); }
+                        else if (result && result.completed === false) recoverExecution(work);
+                    }
+                } catch (error) {
+                    if (delivery === work) console.warn("Tavern Script 回执待确认，将查询同一任务", error);
+                } finally {
+                    work.busy = false;
+                    if (delivery === work) scheduleClaimRetry(work.lease);
+                }
+            }
 				async function claimWork() {
 				if (!lease || !runtime || !input || !input.sessionId || !hasScriptRuntime(input.view)) return;
 				const currentLease = lease;
 				const currentRuntime = runtime;
+                if (delivery && delivery.lease === currentLease) { void deliverWork(delivery); return; }
 				if (claimBusy === currentLease) { claimRequested = true; return; }
 				claimBusy = currentLease;
 					let currentEvent = null;
@@ -5169,21 +5257,14 @@ window.__ModuleLoader__.load({
 					}
 						currentEvent = result && result.event;
 						leaseToken = String(result && result.leaseToken || "");
-						if (active && currentEvent) {
-							const started = await invokeWithDeadline("startTavernScriptWork", currentLease, currentRuntime.inspect(), { eventId: currentEvent.id, leaseToken: leaseToken });
-							if (!started || started.started !== true) throw new Error("Tavern Script 工作租约已失效");
-							const args = await currentRuntime.emit(currentEvent.name, currentEvent.args, currentEvent.context, diagnostics, currentEvent.id);
-							if (lease !== currentLease) return;
-							await invokeWithDeadline("completeTavernHelperEvent", currentLease, currentRuntime.inspect(), { eventId: currentEvent.id, leaseToken: leaseToken, args: args, diagnostics: diagnostics });
-						}
+                        if (active && currentEvent) {
+                            delivery = { lease: currentLease, runtime: currentRuntime, event: currentEvent, token: leaseToken, diagnostics: diagnostics, phase: "starting", busy: false };
+                            void deliverWork(delivery);
+                        }
 				} catch (error) {
 					if (lease !== currentLease) return;
 					console.warn("Tavern Helper 生命周期同步失败", error);
-					if (currentEvent) {
-						try {
-								await invokeWithDeadline("completeTavernHelperEvent", currentLease, currentRuntime.inspect(), { eventId: currentEvent.id, leaseToken: leaseToken, args: currentEvent.args, error: String(error && error.message || error), diagnostics: diagnostics });
-							} catch (completeError) { console.warn("Tavern Helper 失败回执同步失败", completeError); }
-						}
+
 						scheduleClaimRetry(currentLease);
 				} finally {
 					if (claimBusy === currentLease) claimBusy = null;

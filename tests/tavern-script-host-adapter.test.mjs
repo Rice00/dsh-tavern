@@ -432,17 +432,17 @@ test('服务重启后结算立即挂起，由上层在浏览器重新登记后�
   assert.equal(run.writes.length, 0)
 })
 
-test('MVU 执行回执超时释放事务，不写入草稿并明确提示重试', async () => {
+test('MVU 执行失联释放事务，不写入草稿并保留待恢复状态', async () => {
   const gate = createTavernScriptDispatch({ timeoutMs: 100 })
   gate.touch('session-1', 'browser', true)
   const run = harness(chat(), { scriptDispatch: gate })
   const input = { operationId: 'timeout-settlement-1', sessionId: 'session-1', messageId: 0, swipeId: 0, expectedLifecycleRevision: 2,
     storyText: '旧正文', command: '<UpdateVariable></UpdateVariable>' }
-  const rejected = assert.rejects(run.adapter.settleMvuUpdate(input), /回执超时.*重试/)
+  const deferred = run.adapter.settleMvuUpdate(input)
   await new Promise(resolve => setImmediate(resolve))
   const offer = gate.claim('session-1', 'browser', true)
   gate.start('session-1', offer.event.id, offer.leaseToken, 'browser')
-  await rejected
+  assert.equal((await deferred).deferred, true)
   assert.equal(run.writes.length, 0)
   assert.equal(gate.status('session-1').busy, false)
   gate.dispose('session-1')

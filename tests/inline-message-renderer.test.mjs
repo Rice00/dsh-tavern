@@ -1182,7 +1182,7 @@ test('Helper Host 生命周期事件保留官方 MVU 识别角色回复所需的
   runtime.dispose()
 })
 
-test('Helper Host 超时会指出正在执行的脚本、拒绝事件并屏蔽迟到写入', async () => {
+test('Helper Host 失联会指出正在执行的脚本、关闭事件并屏蔽迟到写入', async () => {
   const windowListeners = new Map()
   const frames = []
   const errors = []
@@ -1239,7 +1239,7 @@ test('Helper Host 超时会指出正在执行的脚本、拒绝事件并屏蔽�
     data: { type: 'dsh-tavern-helper-event-progress', token: 'timeout-runtime-token', eventId: request.eventId, scriptId: 'guard', phase: 'started' }
   })
 
-  await assert.rejects(emitted, /变量守卫.*MESSAGE_RECEIVED.*超时/)
+  await assert.rejects(emitted, /变量守卫.*MESSAGE_RECEIVED.*失联/)
   assert.deepEqual(errors.map(item => item.source), ['人物卡脚本「变量守卫」'])
 
   receive({
@@ -1832,7 +1832,7 @@ test('frame slash requests reject promptly when generation is unavailable instea
   }
 })
 
-test('Host acknowledgements extend idle waits but cannot extend the total event deadline', async () => {
+test('Host acknowledgements confirm liveness without imposing a total event deadline', async () => {
   const windowListeners = new Map()
   const frames = []
   const errors = []
@@ -1901,8 +1901,9 @@ test('Host acknowledgements extend idle waits but cannot extend the total event 
     data: { type: 'dsh-tavern-helper-event-progress', token: 'timeout-runtime-token', eventId: request.eventId, scriptId: 'guard', phase: 'started' }
   })
 
-  const rejected = assert.rejects(emitted, /MESSAGE_RECEIVED.*超时/)
-  for (const at of [20, 40, 60, 80]) {
+  let finished = false
+  const done = emitted.then(args => { finished = true; return args })
+  for (const at of [20, 40, 60, 80, 100, 120]) {
     advance(at)
     receive({ source: frames[0].contentWindow, data: {
       type: 'dsh-tavern-helper-call', token: 'timeout-runtime-token', eventId: request.eventId,
@@ -1911,12 +1912,15 @@ test('Host acknowledgements extend idle waits but cannot extend the total event 
     await new Promise(resolve => setImmediate(resolve))
     assert.equal(errors.length, 0)
   }
-  advance(99)
+  advance(139)
   assert.equal(errors.length, 0)
-  advance(100)
-  await rejected
-  assert.equal(errors.length, 1)
-  assert.equal(rpcCalls.length, 4)
+  assert.equal(finished, false)
+  receive({ source: frames[0].contentWindow, data: {
+    type: 'dsh-tavern-helper-event-complete', token: 'timeout-runtime-token', eventId: request.eventId, args: [2]
+  } })
+  assert.deepEqual(Array.from(await done), [2])
+  assert.equal(errors.length, 0)
+  assert.equal(rpcCalls.length, 6)
   runtime.dispose()
 })
 

@@ -3,7 +3,7 @@ import { createTavernScriptDispatch } from './tavern-script-dispatch.js'
 
 /** Transport only. All template semantics are executed by the upstream browser plugin. */
 export function createFullTemplateRuntime({ publishSignal, claimTimeoutMs = 30000, readyTimeoutMs = 60000, executionTimeoutMs = 60000, store }) {
-  const dispatch = createTavernScriptDispatch({ publishSignal, presenceTtlMs: 60000, claimTimeoutMs, executionTimeoutMs })
+  const dispatch = createTavernScriptDispatch({ renewableExecution: false, publishSignal, presenceTtlMs: 60000, claimTimeoutMs, executionTimeoutMs })
   let disposed = false
   const jobs = new Map()
   // Projection receipts are useful only while their caller is alive. Retain

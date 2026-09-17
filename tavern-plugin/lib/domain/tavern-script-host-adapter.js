@@ -629,7 +629,7 @@ export function createTavernScriptHostAdapter(options = {}) {
         return { updated: false, deferred: true, context: projectTavernHelperContext(current) }
       }
       const dispatched = await options.scriptDispatch.dispatch(sessionId, 'MESSAGE_RECEIVED', [messageId], eventContext, { eventId: transaction.eventId, signal: input.signal })
-      await record('runtime-completed', { handled: dispatched.handled === true, timedOut: dispatched.timedOut === true, claimTimedOut: dispatched.claimTimedOut === true, phase: dispatched.phase, disposed: dispatched.disposed === true, error: dispatched.error, diagnostics: dispatched.diagnostics || [] })
+      await record('runtime-completed', { handled: dispatched.handled === true, timedOut: dispatched.timedOut === true, executionLost: dispatched.executionLost === true, claimTimedOut: dispatched.claimTimedOut === true, phase: dispatched.phase, disposed: dispatched.disposed === true, error: dispatched.error, diagnostics: dispatched.diagnostics || [] })
       if (dispatched.handled !== true) {
         if (dispatched.initializationFailed === true) return await initializationRejected(str(dispatched.error))
         if (dispatched.unavailable === true || (input.durable === true && (dispatched.disposed === true || dispatched.timedOut === true || /超时|timed?\s*out|timeout/i.test(str(dispatched.error))))) {
@@ -725,6 +725,7 @@ export function createTavernScriptHostAdapter(options = {}) {
     saveWorldInfo,
     claimWork: function (sessionId, runtimeId, ready, initializationError) { return options.scriptDispatch.claim(sessionId, runtimeId, ready, initializationError) },
     startWork: function (sessionId, eventId, leaseToken, runtimeId) { return options.scriptDispatch.start(sessionId, eventId, leaseToken, runtimeId) },
+    workState: function (sessionId, eventId, leaseToken, runtimeId, keepAlive) { return options.scriptDispatch.workState(sessionId, eventId, leaseToken, runtimeId, keepAlive) },
     heartbeatRuntime: function (sessionId, runtimeId, ready, initializationError) { return { active: options.scriptDispatch.touch(sessionId, runtimeId, ready, initializationError) } },
     completeEvent: function (sessionId, eventId, args, runtimeId, leaseToken, error, diagnostics) { return options.scriptDispatch.complete(sessionId, eventId, args, runtimeId, leaseToken, error, diagnostics) },
     releaseRuntime: function (sessionId, runtimeId) { return options.scriptDispatch.dispose(sessionId, runtimeId) }

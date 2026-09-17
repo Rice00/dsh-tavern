@@ -1,3 +1,4 @@
+import { helperHostHarness } from './fixtures/helper-host-harness.mjs'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
@@ -82,6 +83,7 @@ function execution(options = {}) {
     rpc(method, args, sessionId, requestOptions) {
       calls.push({ method, args: copy(args), sessionId, requestOptions })
       return Promise.resolve(handle(method, args, sessionId)).then(function (result) {
+        if (method === 'completeTavernHelperEvent' && result?.completed === undefined) return { completed: true }
         return method === 'startTavernScriptWork' && (!result || result.started === undefined) ? { started: true } : result
       })
     },
@@ -911,7 +913,7 @@ for (const fail of [false, true]) test(`事件收尾等待已接收的排队写�
   h.runtime.dispose()
 })
 
-test('收尾等待仍受事件超时约束，超时后排队写入不能落地', async () => {
+test('沙箱失联后关闭事件，排队写入不能落地', async () => {
   let now = 0
   const h = sandbox({ now: () => now, eventTimeoutMs: 10 }), blocked = deferred()
   h.runtime.sync('A', view())
@@ -920,11 +922,11 @@ test('收尾等待仍受事件超时约束，超时后排队写入不能落地',
   h.message(frame, 'dsh-tavern-helper-call', { requestId: 'read', method: 'getTavernHelperWorldbook', args: {} })
   await tick()
   const event = h.runtime.emit('UPDATE', [1], context(), [], 'timeout-event')
-  const rejected = assert.rejects(event, /超时/)
+  const rejected = assert.rejects(event, /失联/)
   h.message(frame, 'dsh-tavern-helper-call', { eventId: 'timeout-event', requestId: 'write', method: 'updateTavernHelperPrompts', args: {} })
   h.message(frame, 'dsh-tavern-helper-event-complete', { eventId: 'timeout-event', args: [1] })
   now = 100
-  for (const timer of Array.from(h.timers.values())) if (timer.delay === 10) timer.run()
+  for (const timer of Array.from(h.timers.values())) if (timer.delay < 10) timer.run()
   await rejected
   blocked.resolve({})
   await tick()
@@ -933,22 +935,24 @@ test('收尾等待仍受事件超时约束，超时后排队写入不能落地',
   h.runtime.dispose()
 })
 
-test('完成回执永久无响应也会释放领取通道，后续通知能继续领取', async t => {
+for (const accepted of [false, true]) test(`完成回执丢失后${accepted ? '查询已完成' : '重发原回执'}，不重跑或改报失败`, async t => {
   const h = execution()
   t.after(() => h.module.dispose())
-  let claims = 0
+  let claims = 0, receipts = 0
   h.respond(method => {
     if (method === 'claimTavernScriptWork') return { active: true, ...(claims++ === 0 ? { event: { id: 'work', name: 'MESSAGE_RECEIVED', args: [1] }, leaseToken: 'lease' } : {}) }
-    if (method === 'completeTavernHelperEvent') return new Promise(() => {})
+    if (method === 'completeTavernHelperEvent') return ++receipts === 1 ? new Promise(() => {}) : { completed: true }
+    if (method === 'getTavernScriptWorkState') return { phase: accepted ? 'completed' : 'executing' }
     return { started: true }
   })
   h.module.sync('A', view()); await h.settle()
   assert.equal(h.runtimes[0].emissions.length, 1)
-  h.runTimer(); await h.settle() // Success receipt timeout.
-  h.runTimer(); await h.settle() // Failure receipt also lost.
+  for (let i = 0; i < 4 && h.timers.size; i++) { h.runTimer(); await h.settle() }
   h.wake(); await h.settle()
-  assert.equal(claims, 2)
+  assert.ok(claims >= 2)
+  assert.equal(receipts, accepted ? 1 : 2)
   assert.equal(h.runtimes[0].emissions.length, 1)
+  assert.ok(h.calls.filter(x => x.method === 'completeTavernHelperEvent').every(x => !x.args.error))
 })
 
 
@@ -982,7 +986,7 @@ for (const completes of [false, true]) test(`写入拒绝的错误码到达脚�
   if (completes) h.message(frame, 'dsh-tavern-helper-event-complete', { eventId: 'rejected-event', scriptId: 'script', error: reply.error, errorCode: reply.errorCode })
   else {
     now = 20
-    for (const timer of [...h.timers.values()]) if (timer.delay === 10) timer.run()
+    for (const timer of [...h.timers.values()]) if (timer.delay < 10) timer.run()
   }
   await done
   h.runtime.dispose()
@@ -990,4 +994,97 @@ for (const completes of [false, true]) test(`写入拒绝的错误码到达脚�
   assert.match(failure.message, /不属于当前 MVU 结算事件/)
   assert.equal(completes ? failure.code : failure.cause?.code, 'MVU_SETTLEMENT_EVENT_MISMATCH')
   if (!completes) assert.equal(diagnostics.at(-1).causeCode, 'MVU_SETTLEMENT_EVENT_MISMATCH')
+})
+
+test('持续确认状态的慢脚本跨越原总时限，完成后立即返回并确认回执', async () => {
+  let now = 0
+  const h = sandbox({ now: () => now, eventTimeoutMs: 10 })
+  h.runtime.sync('A', view())
+  const frame = h.ready()
+  let settled = false
+  const done = h.runtime.emit('UPDATE', [1], context(), [], 'slow').then(args => { settled = true; return args })
+  for (let i = 0; i < 30; i++) {
+    now += 3
+    h.runTimer()
+    const envelope = frame.contentWindow.messages.at(-1)
+    assert.equal(envelope.eventId, 'slow')
+    h.message(frame, 'dsh-tavern-helper-event-state', { eventId: 'slow', phase: 'executing' })
+    await tick()
+    assert.equal(settled, false)
+  }
+  assert.equal(h.errors.length, 0)
+  h.message(frame, 'dsh-tavern-helper-event-complete', { eventId: 'slow', args: [2] })
+  assert.deepEqual(copy(await done), [2])
+  assert.equal(frame.contentWindow.messages.at(-1).type, 'dsh-tavern-helper-event-ack')
+  h.runtime.dispose()
+})
+
+test('start 已接收但响应丢失时重试同一 start，不先执行脚本或报告失败', async t => {
+  const h = execution()
+  t.after(() => h.module.dispose())
+  let starts = 0, claims = 0
+  h.respond(method => {
+    if (method === 'claimTavernScriptWork') return { active: true, ...(claims++ === 0 ? { event: { id: 'start-lost', name: 'UPDATE', args: [1] }, leaseToken: 'token' } : {}) }
+    if (method === 'startTavernScriptWork') return ++starts === 1 ? new Promise(() => {}) : { started: true, alreadyStarted: true }
+    return { completed: true }
+  })
+  h.module.sync('A', view()); await h.settle()
+  assert.equal(h.runtimes[0].emissions.length, 0)
+  for (let i = 0; i < 4 && h.timers.size; i++) { h.runTimer(); await h.settle() }
+  assert.equal(starts, 2)
+  assert.equal(h.runtimes[0].emissions.length, 1)
+  assert.equal(h.calls.filter(x => x.method === 'completeTavernHelperEvent').length, 1)
+  assert.ok(h.calls.filter(x => x.method === 'completeTavernHelperEvent').every(x => !x.args.error))
+})
+
+test('脚本尚未完成时独立查询并续租，不重复 emit；宿主取消后销毁旧沙箱', async t => {
+  const h = execution(), slow = deferred()
+  t.after(() => h.module.dispose())
+  let cancelled = false, claims = 0
+  h.respond(method => {
+    if (method === 'claimTavernScriptWork') return { active: true, ...(claims++ === 0 ? { event: { id: 'slow', name: 'UPDATE', args: [1] }, leaseToken: 'lease' } : {}) }
+    if (method === 'getTavernScriptWorkState') return { phase: cancelled ? 'unknown' : 'executing' }
+    return { started: true }
+  })
+  h.module.sync('A', view())
+  const runtime = h.runtimes[0]
+  runtime.eventResponsive = () => true
+  runtime.emit = (...args) => { runtime.emissions.push(args); return slow.promise }
+  await h.settle()
+  for (let i = 0; i < 10; i++) { h.runTimer(); await h.settle() }
+  const probes = h.calls.filter(x => x.method === 'getTavernScriptWorkState')
+  assert.ok(probes.length >= 10)
+  assert.ok(probes.every(x => x.args.keepAlive === true))
+  assert.equal(runtime.emissions.length, 1)
+  cancelled = true
+  h.wake(); await h.settle()
+  assert.equal(runtime.disposed, 1)
+  slow.resolve([2]); await h.settle()
+  assert.equal(h.calls.filter(x => x.method === 'completeTavernHelperEvent').length, 0)
+})
+
+test('真实父页和 Helper 沙箱互联：首个事件及完成回执都丢失时仍只执行一次', async () => {
+  let now = 0, droppedEvent = false, droppedReceipt = false, executions = 0
+  const h = sandbox({ now: () => now, eventTimeoutMs: 30 })
+  h.runtime.sync('A', view())
+  const frame = h.ready()
+  const helper = helperHostHarness(context(), { onCall(message) {
+    if (message.type === 'dsh-tavern-helper-event-complete' && !droppedReceipt) { droppedReceipt = true; return }
+    queueMicrotask(() => h.message(frame, message.type, { ...message, token: frame.contentWindow.messages[0].token }))
+  } })
+  helper.window.eventOn('UPDATE', () => { executions++ })
+  frame.contentWindow.postMessage = message => {
+    frame.contentWindow.messages.push(copy(message))
+    if (message.type === 'dsh-tavern-helper-event' && !droppedEvent) { droppedEvent = true; return }
+    queueMicrotask(() => helper.receive({ ...message, token: 'host-test' }))
+  }
+  const pending = h.runtime.emit('UPDATE', [1], context(), [], 'wire-fault')
+  await tick()
+  for (let i = 0; i < 3 && h.timers.size; i++) { now += 10; h.runTimer(); await tick() }
+  assert.deepEqual(copy(await pending), [1])
+  assert.equal(droppedEvent, true)
+  assert.equal(droppedReceipt, true)
+  assert.equal(executions, 1)
+  assert.equal(h.errors.length, 0)
+  h.runtime.dispose()
 })

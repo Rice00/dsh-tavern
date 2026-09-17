@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "138ff77a4a097c21c0c9f438dc154b1c422b38c3",
-  "releaseSequence": 259,
+  "revision": "35fbc2c3e1c11f9dc40464cdb43b6acd3a8a443c",
+  "releaseSequence": 260,
   "version": "1.9.0",
   "files": [
     {
@@ -526,8 +526,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/full-template-runtime.js",
-      "sha256": "3df98a62bf0a7ef45dd8bb3ed86102efbb53812e07dabd4597f14f794ad799cc",
-      "size": 7085
+      "sha256": "0a9438101e94ee2cca6684adf1f0810f2b52518da222301a307ebe23f793b9d3",
+      "size": 7407
     },
     {
       "path": "tavern-plugin/lib/domain/gameplay-settled-turn.js",
@@ -1096,8 +1096,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/tavern-script-host-adapter.js",
-      "sha256": "54c16e94b89254d548363b5df927b5aadf5cc5648e05f8e26e71c30560829fe6",
-      "size": 40340
+      "sha256": "2a1285279815fc0cf0b51529edda9cc679a436ccf8cb9d398abee7111ede971e",
+      "size": 40337
     },
     {
       "path": "tavern-plugin/lib/domain/tavern-script-prompts.js",
@@ -1171,8 +1171,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/worldbook-library.js",
-      "sha256": "5427a19d608c5069c438f0bc729d8d9f50446e775859896461e8782e83409d95",
-      "size": 14891
+      "sha256": "733ad1a54699dc21e148f26fb02c99bbd09d79a8e6304472a806623ab1c5cc0c",
+      "size": 15398
     },
     {
       "path": "tavern-plugin/lib/domain/worldbook-merge.js",
@@ -1201,8 +1201,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/worldbook-recall.js",
-      "sha256": "18e04ef374115c7ea8fe919f13bd0236c2e2cbc249bd27c264a1b2967cb34eb7",
-      "size": 12400
+      "sha256": "4a5f949d5eebd108674cfa7a854d6a761cfc045e83d46f032006d9e7d62e9161",
+      "size": 12612
     },
     {
       "path": "tavern-plugin/lib/domain/worldbook-resource.js",

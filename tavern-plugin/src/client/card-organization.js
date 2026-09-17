@@ -5,6 +5,7 @@ function filterOrganizedCards(cards, filter, query) {
 }
 
 function useCardOrganization(cards, busy, refresh, onError, batch) {
+  const askConfirm = useTavernConfirm();
   const h = React.createElement;
   const [groups, setGroups] = React.useState([]);
   const [query, setQuery] = React.useState('');
@@ -101,8 +102,8 @@ function useCardOrganization(cards, busy, refresh, onError, batch) {
         groups.length ? groups.map(group => h('div', { key: group, className: 'dsh-tavern-group-manager-row' },
           h('span', null, group),
           h('button', { className: 'dsh-tavern-btn', disabled, 'aria-label': '重命名分组：' + group, onClick: () => nameGroup(group) }, '重命名'),
-          h('button', { className: 'dsh-tavern-btn', disabled, 'aria-label': '删除分组：' + group, onClick: () => {
-            if (window.confirm('删除分组“' + group + '”？卡片会回到未分组。')) submit({ action: 'delete', group });
+          h('button', { className: 'dsh-tavern-btn', disabled, 'aria-label': '删除分组：' + group, onClick: async () => {
+            if (await askConfirm('删除分组“' + group + '”？卡片会回到未分组。')) submit({ action: 'delete', group });
           } }, '删除'))) : h('p', { className: 'dsh-tavern-question-sub' }, '还没有自定义分组'),
         h('div', { className: 'dsh-tavern-group-manager-footer' },
           h('button', { className: 'dsh-tavern-btn', disabled, onClick: () => nameGroup() }, '＋ 创建分组'),

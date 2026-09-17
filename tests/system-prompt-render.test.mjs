@@ -12,7 +12,7 @@ for (const file of ['src/client/main.js', 'lib/client.js']) {
         useState: initial => [{ ...initial, loading, prompts: [{ name: 'system-append', label: 'system附加指令', text: '' }] }, () => {}],
         useRef: () => ({ current: null }), useEffect: () => {}
       }
-      const render = new Function('React', component + '; return SystemPromptSidebarTab;')(React)
+      const render = new Function('React', 'useTavernConfirm', component + '; return SystemPromptSidebarTab;')(React, () => async () => false)
       const tree = render()
       assert.match(JSON.stringify(tree), /系统提示词/)
       if (!loading) {

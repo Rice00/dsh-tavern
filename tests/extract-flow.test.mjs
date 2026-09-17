@@ -1107,7 +1107,7 @@ test('世界书条目删除位于展开区底部并要求二次确认', () => {
   const editor = between(clientSource, 'function WorldBookEditor', 'function WorldBookLibraryTab')
   const row = between(editor, 'function entryRow', 'return h("div", { className: "dsh-tavern-library" }')
 
-  assert.match(editor, /window\.confirm\(/)
+  assert.match(editor, /await askConfirm\(/)
   assert.match(editor, /"删除世界书条目“" \+ title/)
   assert.match(editor, /保存世界书后才会正式删除/)
   assert.match(row, /className: "dsh-tavern-worldbook-danger-zone"/)

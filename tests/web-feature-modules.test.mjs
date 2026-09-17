@@ -105,7 +105,7 @@ test('预设库明确建议内置预设，并说明改卡、Guide 与外部预�
     useState: value => [typeof value === 'function' ? value() : value, () => {}],
     useRef: value => ({ current: value }),
     useCallback: callback => callback,
-    useEffect() {},
+    useEffect() {}, useLayoutEffect() {},
     createElement: (type, props, ...children) => typeof type === 'function' ? type(props) : { type, props, children }
   }
   const exports = await clientExports(react)

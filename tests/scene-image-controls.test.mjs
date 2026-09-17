@@ -4,13 +4,14 @@ import vm from 'node:vm'
 import { readFile } from 'node:fs/promises'
 
 const source = await readFile(new URL('../tavern-plugin/lib/client.js', import.meta.url), 'utf8')
-const extract = (name, next) => source.slice(source.indexOf('function ' + name + '('), source.indexOf('function ' + next + '('))
+const extract = (name, next) => source.slice(source.indexOf((name === 'sceneImagePurchaseConfirmation' ? 'async ' : '') + 'function ' + name + '('), source.indexOf('function ' + next + '('))
 
 test('one repaint entry opens optional feedback; blank repaints and feedback adjusts without replacing old images', async () => {
   const slots = [], calls = []
   let cursor = 0, failure = false, requestId = 0
   const record = { key: 'turn-key', status: 'succeeded', enabled: true, versions: [{ id: 'old-picture' }] }
   const context = vm.createContext({
+    useTavernConfirm: () => async () => true,
     recordImageInteraction() {},
     React: {
       Fragment: 'fragment', createElement: (type, props, ...children) => ({ type, props, children }), useEffect() {},
@@ -57,6 +58,7 @@ test('image action is hidden until explicitly enabled, including loading and leg
   const slots = [], calls = []
   let cursor = 0
   const context = vm.createContext({
+    useTavernConfirm: () => async () => true,
     recordImageInteraction() {},
     React: {
       Fragment: 'fragment', createElement: (type, props, ...children) => ({ type, props, children }),
@@ -94,6 +96,7 @@ test('image action is hidden until explicitly enabled, including loading and leg
 
 test('scene request identifiers also work on LAN HTTP without crypto.randomUUID', () => {
   const context = vm.createContext({
+    useTavernConfirm: () => async () => true,
     recordImageInteraction() {}, window: {} })
   const make = vm.runInContext(extract('sceneImageRequestId', 'sceneImageStageLabel') + ';sceneImageRequestId', context)
   const ids = Array.from({ length: 1000 }, make)
@@ -106,6 +109,7 @@ test('main image action preserves request ID on ambiguous transport errors and c
   let cursor = 0, fail = true
   const record = { key: 'target-key', status: 'idle', versions: [] }
   const context = vm.createContext({
+    useTavernConfirm: () => async () => true,
     recordImageInteraction() {},
     React: {
       Fragment: 'fragment', createElement: (type, props, ...children) => ({ type, props, children }),
@@ -150,6 +154,7 @@ test('received image can be saved from the renderer while generation is disabled
   let cursor = 0
   const record = { key: 'frozen-key', requestId: 'original-image', status: 'failed', recovery: 'save', versions: [], enabled: false }
   const context = vm.createContext({
+    useTavernConfirm: () => async () => true,
     recordImageInteraction() {},
     React: { Fragment: 'fragment', createElement: (type, props, ...children) => ({ type, props, children }), useEffect() {},
       useState(initial) { const n = cursor++; if (!(n in slots)) slots[n] = initial; return [slots[n], value => { slots[n] = value }] },
@@ -175,17 +180,18 @@ test('received image can be saved from the renderer while generation is disabled
   assert.equal(calls[1].args.requestId, record.requestId)
 })
 
-test('uncertain purchase requires user confirmation, while original provider task queries do not', () => {
+test('uncertain purchase requires user confirmation, while original provider task queries do not', async () => {
   let accepts = false, prompts = 0
-  const context = vm.createContext({ window: { confirm: text => { assert.match(text, /可能已经计费.*再次产生费用/); prompts++; return accepts } } })
-  const confirm = vm.runInContext(extract('sceneImagePurchaseConfirmation', 'useSceneImageRecord') + ';sceneImagePurchaseConfirmation', context)
-  assert.equal(confirm({ outcome: 'not_requested' }), undefined)
-  assert.equal(confirm({ outcome: 'rejected' }), undefined)
-  assert.equal(confirm({ outcome: 'unconfirmed', providerTask: { promptId: 'existing' } }), undefined)
+  const context = vm.createContext({})
+  const purchase = vm.runInContext(extract('sceneImagePurchaseConfirmation', 'useSceneImageRecord') + ';sceneImagePurchaseConfirmation', context)
+  const confirm = record => purchase(record, async text => { assert.match(text, /可能已经计费.*再次产生费用/); prompts++; return accepts })
+  assert.equal(await confirm({ outcome: 'not_requested' }), undefined)
+  assert.equal(await confirm({ outcome: 'rejected' }), undefined)
+  assert.equal(await confirm({ outcome: 'unconfirmed', providerTask: { promptId: 'existing' } }), undefined)
   assert.equal(prompts, 0)
-  assert.equal(confirm({ outcome: 'unconfirmed', requestId: 'uncertain-original' }), false)
+  assert.equal(await confirm({ outcome: 'unconfirmed', requestId: 'uncertain-original' }), false)
   accepts = true
-  assert.equal(confirm({ outcome: 'unconfirmed', requestId: 'uncertain-original' }), 'uncertain-original')
+  assert.equal(await confirm({ outcome: 'unconfirmed', requestId: 'uncertain-original' }), 'uncertain-original')
   assert.equal(prompts, 2)
 })
 
@@ -193,6 +199,7 @@ test('ComfyUI file chooser stores the parsed graph only on explicit save and has
   const slots = [], calls = []
   let cursor = 0
   const context = vm.createContext({
+    useTavernConfirm: () => async () => true,
     recordImageInteraction() {},
     React: { createElement: (type, props, ...children) => ({ type, props, children }), useEffect() {}, useState(initial) { const n = cursor++; if (!(n in slots)) slots[n] = initial; return [slots[n], value => { slots[n] = typeof value === 'function' ? value(slots[n]) : value }] } },
     window: { dispatchEvent() {} }, CustomEvent: class {},
@@ -221,6 +228,7 @@ test('setup order, read-only draft checks, model selection and stale status clea
   const slots = [], calls = []
   let cursor = 0
   const context = vm.createContext({
+    useTavernConfirm: () => async () => true,
     recordImageInteraction() {},
     React: { createElement: (type, props, ...children) => ({ type, props, children }), useEffect() {}, useState(initial) { const n = cursor++; if (!(n in slots)) slots[n] = initial; return [slots[n], value => { slots[n] = typeof value === 'function' ? value(slots[n]) : value }] } },
     window: { dispatchEvent() {} }, CustomEvent: class {},
@@ -275,6 +283,7 @@ test('reference chooser never preselects a group member, freezes consent and per
     reference: { supported: true, service: 'Gemini local test', gateway: 'gateway-a', bindings: [] },
     versions: [{ id: 'picture', referencePeople: [{ id: 'left-id', name: '同名', description: '左侧黑发' }, { id: 'right-id', name: '同名', description: '右侧红发' }] }] }
   const context = vm.createContext({
+    useTavernConfirm: () => async () => true,
     recordImageInteraction() {},
     React: { Fragment: 'fragment', createElement: (type, props, ...children) => ({ type, props, children }), useEffect() {},
       useState(initial) { const n = cursor++; if (!(n in slots)) slots[n] = initial; return [slots[n], value => { slots[n] = value }] },
@@ -386,12 +395,14 @@ test('delete selected image, handle cancellation/errors, then regenerate the emp
   let cursor = 0, confirmed = false, failure = false, serial = 0
   const record = { key: 'historical-turn', status: 'succeeded', enabled: false, versions: [{ id: 'first' }, { id: 'second' }] }
   const context = vm.createContext({
+    useTavernConfirm: () => async () => true,
     recordImageInteraction() {}, URLSearchParams, sceneImageStageLabel: () => '生成中',
     React: { Fragment: 'fragment', createElement: (type, props, ...children) => ({ type, props, children }), useEffect() {},
       useState(initial) { const i = cursor++; if (!(i in slots)) slots[i] = initial; return [slots[i], value => { slots[i] = value }] },
       useRef(initial) { const i = cursor++; return slots[i] ||= { current: initial } } },
     useSceneImageRecord: () => record, sceneImagePurchaseConfirmation: () => undefined, sceneImageRequestId: () => 'new-request-' + (++serial),
-    window: { confirm: () => confirmed, dispatchEvent() {} }, CustomEvent: class {},
+    useTavernConfirm: () => async () => confirmed,
+    window: { dispatchEvent() {} }, CustomEvent: class {},
     rpc: async (method, args, sessionId) => {
       calls.push({ method, args, sessionId })
       if (failure) throw Error('删除失败')

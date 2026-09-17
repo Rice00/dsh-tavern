@@ -771,6 +771,8 @@ window.__ModuleLoader__.load({
 			} else console.warn("dsh-tavern: 当前环境不支持剪贴板，请手动选择文本。\n" + text);
 		}
 
+		// @include modules/confirm-dialog.js
+
 		/**
 		 * In-app replacement for window.prompt.
 		 *
@@ -5137,6 +5139,7 @@ window.__ModuleLoader__.load({
 				close.focus();
 			}
 			function SceneIllustration(props) {
+            const askConfirm = useTavernConfirm(props.sessionId || props.scope?.sessionId);
 				const state = useSceneImageRecord(props.sessionId, props.turn);
 				const [error, setError] = React.useState("");
 				const [selected, setSelected] = React.useState("");
@@ -5176,7 +5179,7 @@ window.__ModuleLoader__.load({
 				const clickId = reusable && requestRef.current.signature === kind + ":" + (version && version.id) + ":" + instruction ? requestRef.current.id : sceneImageRequestId();
 				recordImageInteraction(props.sessionId, props.turn, clickId, "click");
 					if ((!version && kind !== "generate") || busy || state.status === "running" || state.recovery === "save") { recordImageInteraction(props.sessionId, props.turn, clickId, "blocked", "busy-or-existing"); return; }
-					const confirmNewRequestId = sceneImagePurchaseConfirmation(state);
+					const confirmNewRequestId = await sceneImagePurchaseConfirmation(state, askConfirm);
 					if (confirmNewRequestId === false) { recordImageInteraction(props.sessionId, props.turn, clickId, "cancelled", "confirmation"); return; }
 					if (requestRef.current && requestRef.current.id === state.requestId && ["failed", "cancelled", "idle"].includes(state.status)) requestRef.current = null;
 					setBusy(true); setError("");
@@ -5189,7 +5192,7 @@ window.__ModuleLoader__.load({
 					finally { setBusy(false); notify(); }
 				}
 				async function removeImage() {
-					if (!version || locked || !window.confirm("删除这张图片？删除后可以重新生成。")) return;
+					if (!version || locked || !await askConfirm("删除这张图片？删除后可以重新生成。")) return;
 					setBusy(true); setError("");
 					try {
 						await rpc("removeSceneImage", { turn: props.turn, key: state.key, versionId: version.id }, props.sessionId);
@@ -5372,6 +5375,7 @@ window.__ModuleLoader__.load({
 		// @include card-organization.js
 
 		function useCardBatchDeletion(cards, busy, setBusy, refresh) {
+            const askConfirm = useTavernConfirm();
 			const [managing, setManaging] = React.useState(false);
 			const [paths, setPaths] = React.useState([]);
 			const [notice, setNotice] = React.useState("");
@@ -5383,7 +5387,7 @@ window.__ModuleLoader__.load({
 			async function removeSelected() {
 				if (busy || running.current || !selected.length) return;
 				const names = selected.slice(0, 20).map(card => "• " + card.name + "（" + card.path + "）").join("\n");
-				if (!window.confirm("删除所选的 " + selected.length + " 张人物卡吗？\n\n" + names + (selected.length > 20 ? "\n……共 " + selected.length + " 张" : "") + "\n\n人物卡工作版和原版都会删除，已有对话会保留。此操作不可撤销。")) return;
+				if (!await askConfirm("删除所选的 " + selected.length + " 张人物卡吗？\n\n" + names + (selected.length > 20 ? "\n……共 " + selected.length + " 张" : "") + "\n\n人物卡工作版和原版都会删除，已有对话会保留。此操作不可撤销。")) return;
 				running.current = true; setBusy(true); setNotice("");
 				try {
 					const results = await deleteTavernCards(selected, path => rpc("deleteCard", { path }));
@@ -5438,6 +5442,7 @@ window.__ModuleLoader__.load({
 
 		function createTavernShellFeatureModule() {
 		function TavernSidebar(props) {
+            const askConfirm = useTavernConfirm(props.sessionId || props.scope?.sessionId);
 			function TavernCardListContent(props) {
 				const card = props.card;
 				const image = card && card.hasImage ? React.createElement("img", {
@@ -5499,7 +5504,7 @@ window.__ModuleLoader__.load({
 			}
 			async function deleteSelectedConversations() {
 				const items = visibleHistory.filter(function (item) { return selectedChats.includes(item.chatId); });
-				if (busy || !items.length || !window.confirm("删除这 " + items.length + " 个对话？\n删除后无法恢复，人物卡和世界书会保留。")) return;
+				if (busy || !items.length || !await askConfirm("删除这 " + items.length + " 个对话？\n删除后无法恢复，人物卡和世界书会保留。")) return;
 				setBusy(true); setError(""); setDeleteNotice("");
 				try {
 					const prepared = await call("prepareDeleteChats", { chatIds: items.map(function (item) { return item.chatId; }) });
@@ -6044,7 +6049,7 @@ window.__ModuleLoader__.load({
 			}
 			async function deleteConversation(item, currentTitle) {
 				setMenuSession(null);
-				if (!window.confirm("确定删除对话“" + (currentTitle || item.cardName + "的新对话") + "”吗？\n删除后将从酒馆历史中移除。")) return;
+				if (!await askConfirm("确定删除对话“" + (currentTitle || item.cardName + "的新对话") + "”吗？\n删除后将从酒馆历史中移除。")) return;
 				setBusy(true); setError("");
 				try {
 					const prepared = await call("prepareDeleteChats", { chatIds: [item.chatId] });
@@ -6117,7 +6122,7 @@ window.__ModuleLoader__.load({
 			}
 			async function performUpdate() {
 				if (updateStatus.phase !== "update-available") return;
-				if (!window.confirm("更新期间会短暂断开，人物卡、资料和对话数据不会受到影响。\n确定更新到 GitHub 最新版吗？")) return;
+				if (!await askConfirm("更新期间会短暂断开，人物卡、资料和对话数据不会受到影响。\n确定更新到 GitHub 最新版吗？")) return;
 				updateStartedAtRef.current = Date.now();
 				setUpdateStatus({ ...updateStatus, phase: "running", host: updateStatus.host || "cli", startedAt: updateStartedAtRef.current });
 				try {
@@ -6390,9 +6395,9 @@ window.__ModuleLoader__.load({
 		function sceneImageStageLabel(record) {
 			return record && record.cancelRequestedAt ? "正在取消…" : record && record.stage === "queued" ? "排队等待生图…" : record && record.stage === "saving" ? "保存图片…" : record && record.stage === "generating" ? "生成图片…" : "整理画面…";
 		}
-		function sceneImagePurchaseConfirmation(record) {
+		async function sceneImagePurchaseConfirmation(record, askConfirm) {
 			if (!record || record.outcome !== "unconfirmed" || record.providerTask) return undefined;
-			return window.confirm("上一次生图结果未确认，服务可能已经计费。仍要重新请求一张图片吗？这可能再次产生费用。") ? record.requestId : false;
+			return await askConfirm("上一次生图结果未确认，服务可能已经计费。仍要重新请求一张图片吗？这可能再次产生费用。") ? record.requestId : false;
 		}
 		function useSceneImageRecord(sessionId, turn) {
 			const [state, setState] = React.useState(null);
@@ -6427,6 +6432,7 @@ window.__ModuleLoader__.load({
 			return state;
 		}
 		function SceneImageAction(props) {
+            const askConfirm = useTavernConfirm(props.sessionId || props.scope?.sessionId);
 			const [settings, setSettings] = React.useState(null);
 			const [busy, setBusy] = React.useState(false);
 			const [error, setError] = React.useState("");
@@ -6450,7 +6456,7 @@ window.__ModuleLoader__.load({
 				const clickId = reusable && state && requestRef.current.key === state.key ? requestRef.current.id : sceneImageRequestId();
 				recordImageInteraction(props.sessionId, props.turn, clickId, "click");
 				if (!settings || !settings.enabled || !settings.ready || settings.migrationPending || !state || !state.key || busy || props.running || state.status === "running" || state.recovery === "save" || state.versions && state.versions.length) { recordImageInteraction(props.sessionId, props.turn, clickId, "blocked", "not-ready"); return; }
-				const confirmNewRequestId = sceneImagePurchaseConfirmation(state);
+				const confirmNewRequestId = await sceneImagePurchaseConfirmation(state, askConfirm);
 				if (confirmNewRequestId === false) { recordImageInteraction(props.sessionId, props.turn, clickId, "cancelled", "confirmation"); return; }
 				if (requestRef.current && requestRef.current.id === state.requestId && ["failed", "cancelled", "idle"].includes(state.status)) requestRef.current = null;
 				setBusy(true); setError("");
@@ -6670,6 +6676,7 @@ window.__ModuleLoader__.load({
 		}
 
 		function UserPreferenceProfileTab(props) {
+            const askConfirm = useTavernConfirm(props.sessionId || props.scope?.sessionId);
 			const h = React.createElement;
 			const sessionId = props.scope && props.scope.sessionId || "";
 			const [record, setRecord] = React.useState(null);
@@ -6745,7 +6752,7 @@ window.__ModuleLoader__.load({
 			}
 			async function saveEdit() {
 				if (!injectionText.trim() || busy) return;
-				if (!window.confirm("保存画像修改？已开始的游戏会保留原来的内容，直到你主动更新。")) return;
+				if (!await askConfirm("保存画像修改？已开始的游戏会保留原来的内容，直到你主动更新。")) return;
 				setBusy(true); setError(""); setSaveNotice("");
 				if (refreshRef.current) refreshRef.current.invalidate();
 				try {
@@ -6843,6 +6850,7 @@ window.__ModuleLoader__.load({
 		const userPreferenceProfileFeature = createUserPreferenceProfileFeatureModule();
 
 		function SystemPromptSidebarTab() {
+            const askConfirm = useTavernConfirm();
 			const h = React.createElement;
 			const [state, setState] = React.useState({ loading: true, busy: false, prompts: [], systemAppendEnabled: false, drafts: {}, error: "", notice: "" });
 			const importInput = React.useRef(null);
@@ -6872,19 +6880,19 @@ window.__ModuleLoader__.load({
 			}
 			async function restore(item) {
 				if (!item.customized) { edit(item.name, String(item.text || "")); return; }
-				if (!window.confirm("恢复“" + item.label + "”的系统默认内容？")) return;
+				if (!await askConfirm("恢复“" + item.label + "”的系统默认内容？")) return;
 				setState(function (current) { return Object.assign({}, current, { busy: true, error: "", notice: "" }); });
 				try { accept(await rpc("updateSystemPrompt", { name: item.name, text: null }), "已恢复该项默认内容。"); }
 				catch (error) { setState(function (current) { return Object.assign({}, current, { busy: false, error: String(error && error.message || error) }); }); }
 			}
 			async function restoreAll() {
-				if (!window.confirm("恢复全部系统提示词为当前版本默认内容？此操作会清除全部自定义修改。")) return;
+				if (!await askConfirm("恢复全部系统提示词为当前版本默认内容？此操作会清除全部自定义修改。")) return;
 				setState(function (current) { return Object.assign({}, current, { busy: true, error: "", notice: "" }); });
 				try { accept(await rpc("resetSystemPrompts"), "全部系统提示词已恢复默认。"); }
 				catch (error) { setState(function (current) { return Object.assign({}, current, { busy: false, error: String(error && error.message || error) }); }); }
 			}
 			async function importFile(file) {
-				if (!file || !window.confirm("导入将覆盖当前整套系统提示词，是否继续？")) return;
+				if (!file || !await askConfirm("导入将覆盖当前整套系统提示词，是否继续？")) return;
 				setState(function (current) { return Object.assign({}, current, { busy: true, error: "", notice: "" }); });
 				try { accept(await rpc("importSystemPrompts", { payload: await parseTextResourceFile(file) }), "整套系统提示词已导入，附加指令按开关状态生效。"); }
 				catch (error) { setState(function (current) { return Object.assign({}, current, { busy: false, error: String(error && error.message || error) }); }); }
@@ -6921,6 +6929,7 @@ window.__ModuleLoader__.load({
 
 		function createResourcesLibraryFeatureModule() {
 			function TavernResourcesTab(props) {
+            const askConfirm = useTavernConfirm(props.sessionId || props.scope?.sessionId);
 				const [resources, setResources] = React.useState({ resources: [] });
 				const [cards, setCards] = React.useState([]);
 				const [selectedCardPaths, setSelectedCardPaths] = React.useState({});
@@ -6974,7 +6983,7 @@ window.__ModuleLoader__.load({
 				finally { setBusy(false); }
 			}
 				async function deleteResource(item) {
-					if (!window.confirm("删除剧本或素材“" + item.title + "”吗？\n工作版和原版都会删除。")) return;
+					if (!await askConfirm("删除剧本或素材“" + item.title + "”吗？\n工作版和原版都会删除。")) return;
 				setBusy(true); setError("");
 				try { await rpc("deleteResource", { path: item.path }, props.sessionId); await refresh(); notifyTavernDataChanged(["scripts", "cards", "sessions"], "resources"); }
 				catch (err) { setError(String(err && err.message || err)); }
@@ -6989,7 +6998,7 @@ window.__ModuleLoader__.load({
 					finally { setBusy(false); }
 				}
 				async function unbindScriptFromCard(item, boundCard) {
-					if (!window.confirm("解除剧本《" + item.title + "》与人物卡“" + boundCard.name + "”的绑定吗？")) return;
+					if (!await askConfirm("解除剧本《" + item.title + "》与人物卡“" + boundCard.name + "”的绑定吗？")) return;
 					setBusy(true); setError("");
 					try { await rpc("deleteScript", { cardPath: boundCard.path }, props.sessionId); await refresh(); notifyTavernDataChanged(["scripts", "cards"], "resources"); }
 					catch (err) { setError(String(err && err.message || err)); }
@@ -7053,6 +7062,7 @@ window.__ModuleLoader__.load({
 		const resourcesLibraryFeature = createResourcesLibraryFeatureModule();
 
 		function TavernSkillsTab(props) {
+            const askConfirm = useTavernConfirm(props.sessionId || props.scope?.sessionId);
 			const h = React.createElement;
 			const [skills, setSkills] = React.useState([]);
 			const [opened, setOpened] = React.useState(null);
@@ -7084,7 +7094,7 @@ window.__ModuleLoader__.load({
                 const editor = (label, value, onChange) => h("textarea", { className: "dsh-skill-editor", "aria-label": label, value, disabled: busy, spellCheck: false, onChange: e => onChange(e.target.value) });
                 return h("div", { className: "dsh-tavern-resources dsh-tavern-skills" },
                     h("div", { className: "dsh-tavern-status-head dsh-skill-toolbar" },
-                        h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: () => { if (skillDraft && !window.confirm("放弃未保存的修改？")) return; setSkillDraft(null); setOpened(null); } }, "← 返回"),
+                        h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: async () => { if (skillDraft && !await askConfirm("放弃未保存的修改？")) return; setSkillDraft(null); setOpened(null); } }, "← 返回"),
                         h("div", { className: "dsh-tavern-status-title" }, opened.skill.name),
                         h("span", { className: "dsh-tavern-spacer" }),
                         skillDraft ? h(React.Fragment, null,
@@ -7121,7 +7131,7 @@ window.__ModuleLoader__.load({
                         items.length ? items.map(skill => h("section", { key: skill.name, draggable: !busy, className: "dsh-tavern-skill-row" + (dragging?.name === skill.name && dragging.group === group ? " is-dragging" : ""),
                             onDragStart: event => { event.dataTransfer.setData("text/plain", skill.name); event.dataTransfer.effectAllowed = "move"; setDragging({ name: skill.name, group }); },
                             onDragEnd: () => { setDragging(null); setDropGroup(null); } },
-					h("div", { className: "dsh-tavern-resource-group-title" }, h("span", { className: "dsh-tavern-skill-grip", "aria-hidden": true }, "⠿"), h("button", { className: "dsh-tavern-resource-name dsh-tavern-resource-open", disabled: busy, onClick: () => run(async () => setOpened(await rpc("getSkill", { name: skill.name }, props.sessionId))) }, skill.name), h("span", { className: "dsh-tavern-resource-meta" }, skill.source === "builtin" ? "内置" : "自建"), h("button", { className: "dsh-tavern-resource-at", disabled: busy, onClick: () => { if (window.confirm("删除 Skill “" + skill.name + "”及其参考文件？")) run(async () => { await rpc("deleteSkill", { name: skill.name }, props.sessionId); await refresh(); }); } }, "删除")),
+					h("div", { className: "dsh-tavern-resource-group-title" }, h("span", { className: "dsh-tavern-skill-grip", "aria-hidden": true }, "⠿"), h("button", { className: "dsh-tavern-resource-name dsh-tavern-resource-open", disabled: busy, onClick: () => run(async () => setOpened(await rpc("getSkill", { name: skill.name }, props.sessionId))) }, skill.name), h("span", { className: "dsh-tavern-resource-meta" }, skill.source === "builtin" ? "内置" : "自建"), h("button", { className: "dsh-tavern-resource-at", disabled: busy, onClick: async () => { if (await askConfirm("删除 Skill “" + skill.name + "”及其参考文件？")) run(async () => { await rpc("deleteSkill", { name: skill.name }, props.sessionId); await refresh(); }); } }, "删除")),
 					h("button", { type: "button", className: "dsh-tavern-question-sub dsh-tavern-skill-description", disabled: busy, onClick: () => run(async () => setOpened(await rpc("getSkill", { name: skill.name }, props.sessionId))) }, skill.description),
 					h("details", { className: "dsh-tavern-skill-options" }, h("summary", null, "调整用途"), h("div", { className: "dsh-tavern-skill-assignments" }, roles.map(([role, label]) => h("label", { key: role }, h("input", { type: "checkbox", checked: skill.agents.includes(role), disabled: busy || skill.agents.length === 1 && skill.agents.includes(role), onChange: event => { const agents = event.target.checked ? skill.agents.concat(role) : skill.agents.filter(value => value !== role); run(async () => { await rpc("assignSkill", { name: skill.name, agents }, props.sessionId); await refresh(); }); } }), label))))
                     )) : h("div", { className: "dsh-tavern-skill-empty" }, "拖动 Skill 到这里"));
@@ -7162,6 +7172,7 @@ window.__ModuleLoader__.load({
 			}
 
 			function ExternalPresetLibraryTab(props) {
+            const askConfirm = useTavernConfirm(props.sessionId || props.scope?.sessionId);
 				const [error, setError] = usePersistentError("预设库");
 				const [catalog, refresh] = usePresetCatalog(props.scope.sessionId, setError);
 				const [detailPath, setDetailPath] = React.useState("");
@@ -7256,7 +7267,7 @@ window.__ModuleLoader__.load({
 					} catch (err) { setError(String(err && err.message || err)); } finally { setBusy(false); }
 				}
 				async function remove(item) {
-					if (!window.confirm("删除外部预设“" + item.title + "”吗？\n工作版和原版都会删除；已有对话保留。")) return;
+					if (!await askConfirm("删除外部预设“" + item.title + "”吗？\n工作版和原版都会删除；已有对话保留。")) return;
 					setBusy(true); setError("");
 					try {
 						if (item.path === catalog.activePresetPath) await rpc("selectPreset", { path: "" }, props.scope.sessionId);
@@ -7365,6 +7376,7 @@ window.__ModuleLoader__.load({
 
 		function createWorldBookLibraryFeatureModule() {
 		function WorldBookEditor(props) {
+            const askConfirm = useTavernConfirm(props.sessionId || props.scope?.sessionId);
 			const initial = props.record && props.record.view ? props.record.view : { displayName: "", description: "", entries: [], diagnostics: [] };
 			const [draft, setDraft] = React.useState(function () { return JSON.parse(JSON.stringify(initial)); });
 			const [busy, setBusy] = React.useState(false);
@@ -7386,10 +7398,10 @@ window.__ModuleLoader__.load({
 				}]);
 				setDraft(Object.assign({}, draft, { entries: entries }));
 			}
-			function removeEntry(index) {
+			async function removeEntry(index) {
 				const entry = (draft.entries || [])[index];
 				const title = entry && (entry.comment || entry.title) || "未命名条目";
-				if (!window.confirm("删除世界书条目“" + title + "”？\n保存世界书后才会正式删除。")) return;
+				if (!await askConfirm("删除世界书条目“" + title + "”？\n保存世界书后才会正式删除。")) return;
 				setDraft(Object.assign({}, draft, { entries: (draft.entries || []).filter(function (_entry, itemIndex) { return itemIndex !== index; }) }));
 			}
 			function entryPatch(entry) {
@@ -7509,6 +7521,7 @@ window.__ModuleLoader__.load({
 			);
 		}
 		function WorldBookLibraryTab(props) {
+            const askConfirm = useTavernConfirm(props.sessionId || props.scope?.sessionId);
 			const [catalog, setCatalog] = React.useState(null);
 			const [catalogWarning, setCatalogWarning] = React.useState("");
 			const [record, setRecord] = React.useState(null);
@@ -7574,7 +7587,7 @@ window.__ModuleLoader__.load({
 			async function remove(source, name) {
 				if (busy || bindingBusy || !source) return;
 				const detail = source.kind === "card" ? "将移除人物卡内的整本世界书，保留人物卡其他内容，并解除相关绑定。" : "工作版和原版都会删除，并解除相关绑定。";
-				if (!window.confirm("删除世界书“" + name + "”吗？\n" + detail)) return;
+				if (!await askConfirm("删除世界书“" + name + "”吗？\n" + detail)) return;
 				setBusy(true); setError("");
 				try {
 					await rpc("deleteWorldBook", { source: source }, props.scope.sessionId);
@@ -7657,6 +7670,7 @@ window.__ModuleLoader__.load({
 
 		function createCardLibraryFeatureModule() {
 		function CardLibraryTab(props) {
+            const askConfirm = useTavernConfirm(props.sessionId || props.scope?.sessionId);
 			function TavernCardListContent(props) {
 				const card = props.card;
 				const image = card && card.hasImage ? React.createElement("img", {
@@ -7780,7 +7794,7 @@ window.__ModuleLoader__.load({
 				finally { setBusy(false); }
 			}
 			async function deleteCardFile() {
-				if (!card || !window.confirm("从人物卡库删除“" + card.name + "”吗？\n人物卡工作版和原版都会删除，已有对话会保留。")) return;
+				if (!card || !await askConfirm("从人物卡库删除“" + card.name + "”吗？\n人物卡工作版和原版都会删除，已有对话会保留。")) return;
 				setBusy(true); setError("");
 				try { await rpc("deleteCard", { path: card.path }); setSelectedPath(""); setCard(null); await refreshCards(); notifyTavernDataChanged(["cards", "sessions"], "cards"); }
 				catch (err) { setError(String(err && err.message || err)); }
@@ -7815,6 +7829,7 @@ window.__ModuleLoader__.load({
 		}
 
 		function CardFieldsPanel(props) {
+            const askConfirm = useTavernConfirm(props.sessionId || props.scope?.sessionId);
 			const [draft, setDraft] = React.useState({});
 			const [busy, setBusy] = React.useState(false);
 			const [error, setError] = usePersistentError("人物卡详情");
@@ -7962,7 +7977,7 @@ window.__ModuleLoader__.load({
 				finally { setScriptBusy(false); }
 			}
 			async function deleteScript() {
-				if (!script || !window.confirm("解除剧本《" + (script.title || "未命名") + "》绑定？\n已有剧本会话保留，新会话将按自由故事推进。")) return;
+				if (!script || !await askConfirm("解除剧本《" + (script.title || "未命名") + "》绑定？\n已有剧本会话保留，新会话将按自由故事推进。")) return;
 				setScriptBusy(true); setScriptError("");
 				try {
 					await call("deleteScript", { cardPath: cardPath });
@@ -8720,6 +8735,7 @@ window.__ModuleLoader__.load({
 			// @include script-navigation.js
 
 			function TavernStatusPanel(props) {
+            const askConfirm = useTavernConfirm(props.sessionId || props.scope?.sessionId);
 			const [error, setError] = usePersistentError("酒馆状态");
 			const [guideDraft, setGuideDraft] = React.useState("");
 			const guideInputRef = React.useRef(null);
@@ -8768,7 +8784,7 @@ window.__ModuleLoader__.load({
 			}
 			async function applyUpdatedCard() {
 				if (cardUpdateBusy || !view?.cardUpdate) return;
-				if (!window.confirm("应用更新会破坏缓存，大幅增加 Token 费用和等待时间，是否继续？")) return;
+				if (!await askConfirm("应用更新会破坏缓存，大幅增加 Token 费用和等待时间，是否继续？")) return;
 				setCardUpdateBusy(true);
 				try { await rpc("applyUpdatedCard", { digest: view.cardUpdate.digest }, props.sessionId); liveTavernView.invalidate(props.sessionId); }
 				catch (error) { tavernErrorHub.report("应用新版人物卡", error); }

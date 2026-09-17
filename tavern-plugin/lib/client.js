@@ -10651,7 +10651,7 @@ window.__ModuleLoader__.load({
 			}
 			async function applyUpdatedCard() {
 				if (cardUpdateBusy || !view?.cardUpdate) return;
-				if (!window.confirm("将保留全部对话历史和当前进度，后续请求使用新版人物卡设定及当前绑定的世界书。确认应用会使相关 LLM 上下文缓存失效，下一次请求可能增加耗时和费用。\n\n本局世界书将重新载入，本局脚本对世界书的修改会被替换。取消则继续使用旧版。\n\n当前变量不会重置。如果修改了 MVU 变量结构，需要另行迁移变量，本操作不会自动迁移。继续吗？")) return;
+				if (!window.confirm("应用更新会破坏缓存，大幅增加 Token 费用和等待时间，是否继续？")) return;
 				setCardUpdateBusy(true);
 				try { await rpc("applyUpdatedCard", { digest: view.cardUpdate.digest }, props.sessionId); liveTavernView.invalidate(props.sessionId); }
 				catch (error) { tavernErrorHub.report("应用新版人物卡", error); }
@@ -10701,7 +10701,7 @@ window.__ModuleLoader__.load({
 					h("div", { className: "dsh-tavern-status-body" },
 					view.requestMode !== "sillytavern" && view.cardUpdate?.available ? h("section", { className: "dsh-tavern-status-section" },
 						h("div", { className: "dsh-tavern-status-label" }, view.cardUpdate.legacy ? "此存档尚未记录人物卡版本" : "人物卡已有修改"),
-						h("p", { className: "dsh-tavern-settings-desc" }, "保留已有剧情和变量，使用新版人物卡继续游玩。更新可能使提示词缓存失效。"),
+						h("p", { className: "dsh-tavern-settings-desc" }, "应用更新会破坏缓存，大幅增加 Token 费用和等待时间。"),
 						h("button", { className: "dsh-tavern-btn", disabled: running || cardUpdateBusy || view.settleStatus === "running", onClick: applyUpdatedCard }, cardUpdateBusy ? "正在应用…" : "应用新版人物卡")
 					) : null,
 					h(TavernCardAppDock, { sessionId: props.sessionId }),

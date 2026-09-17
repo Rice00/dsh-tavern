@@ -3,8 +3,9 @@ import { canUndoRollback, restoreSurface, preflightSurfaceRestore, unchangedSinc
 import { rewindBackgroundSurface } from './background-surface.js'
 import { sessionEvents, appendSessionEvent } from './session-events.js'
 import { randomUUID } from 'node:crypto'
+import { createRegenerationRecovery } from './regeneration-recovery.js'
 import { isDeepStrictEqual } from 'node:util'
-import { rollbackAvailability, clearFailedTurnSurface, clearRegenerationAttemptSurface, locateRegenerationSurface, planRegenerationSurface, regenerationAttemptTurns } from './rollback-surface.js'
+import { rollbackAvailability, clearFailedTurnSurface, locateRegenerationSurface, planRegenerationSurface } from './rollback-surface.js'
 import { assertRegenerationSourceCurrent, replaceLastRound } from './last-round-replacement.js'
 import { diagnosticIdentity, regenerationTargetDiagnostic } from './regeneration-diagnostics.js'
 
@@ -55,6 +56,19 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
   const storyTimeline = timeline
   const view = present
   const pendingRollbacks = new Set()
+  const pendingRegenerations = new Set()
+  const regenerationRecovery = createRegenerationRecovery({ chats, sessions, timeline, isActive: id => pendingRegenerations.has(id) })
+
+  async function regenerate(chatId, guidance, sessionId) {
+    const chat = str(chatId) === '' ? await chatForSession(sessionId) : await readChat(chatId)
+    if (!chat) throw new Error('聊天不存在: ' + chatId)
+    if (pendingRegenerations.has(chat.id)) throw new Error('正文正在重新生成，请等待完成')
+    await regenerationRecovery.recover(chat.id)
+    if (pendingRegenerations.has(chat.id)) throw new Error('正文正在重新生成，请等待完成')
+    pendingRegenerations.add(chat.id)
+    try { return await regenBody(chat.id, guidance, sessionId) }
+    finally { pendingRegenerations.delete(chat.id) }
+  }
 
   async function stopRollbackGeneration(chat) {
     const agent = sessions.get(chat.sessionId)
@@ -122,20 +136,10 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
       }
     }
     const originalUserText = str(msgs0[oldAssistantIndex - 1].text).trim()
-    const originalChat = structuredClone(chat)
-    let restored = false
+    let originalChat = structuredClone(chat)
+    const operationId = randomUUID()
     async function restoreFailedRegen() {
-      if (restored) return
-      restored = true
-      const abortedTurns = regenerationAttemptTurns({ events: sessionEvents(session), eventStart })
-      await updateChat(chat.id, function (current) {
-        if (!current || typeof current !== 'object') return current
-        if (Number(current.tavernHelperLifecycleRevision || 0) > Number(originalChat.tavernHelperLifecycleRevision || 0) + 1) return current
-        const next = storyTimeline.apply({ chat: current, intent: { kind: 'replacement.abort', restoreChat: originalChat } }).chat
-        next.suppressedDshTurns = Array.from(new Set((Array.isArray(next.suppressedDshTurns) ? next.suppressedDshTurns : []).concat(abortedTurns))).sort(function (left, right) { return left - right })
-        return next
-      }, { source: 'foreground.regen-abort' })
-      clearRegenerationAttemptSurface({ session, eventStart })
+      await regenerationRecovery.abort({ chatId: chat.id, originalChat, session, eventStart, operationId })
     }
     let legacyBefore = null
     if (storyTimeline.inspect({ chat }).checkpointCount === 0) {
@@ -167,17 +171,22 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
     const lifecycleRevision = Math.max(0, Number(originalChat.tavernHelperLifecycleRevision) || 0) + 1
     chat = await updateChat(chat.id, function (current) {
       assertRegenerationSourceCurrent({ originalChat, currentChat: current, assistantIndex: oldAssistantIndex })
+      originalChat = structuredClone(current)
       const next = storyTimeline.apply({ chat: current, intent: rollbackIntent }).chat
+      next.regenRecovery = { id: operationId, beforeRevision: Number(current._storageRevision || 0),
+        ...(Number(current._storageRevision || 0) ? {} : { before: structuredClone(current) }),
+        sessionId: chat.sessionId, eventStart }
       next.tavernHelperLifecycleRevision = lifecycleRevision
       next.regenInProgress = true
       return next
     }, { source: 'rollback.regen' })
-    if (activeRound !== undefined && typeof cancelSettlement === 'function') await cancelSettlement(chat.id)
     const rolledMessageCount = (chat.messages || []).length
     const guide = str(guidance).trim()
     const syntheticText = originalUserText + (guide !== '' ? '\n\n【本轮补充要求】\n' + guide : '')
     const beforeLastTurn = agent.phase !== undefined && agent.phase !== null && Number.isFinite(Number(agent.phase.lastTurn)) ? Number(agent.phase.lastTurn) : 0
+    let committedChat, body, syntheticTurn
     try {
+      if (activeRound !== undefined && typeof cancelSettlement === 'function') await cancelSettlement(chat.id)
       agent.followup({
         id: randomUUID(),
         role: 'user',
@@ -185,55 +194,53 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
         source: { kind: 'plugin', plugin: 'dsh-tavern-regen' }
       })
       await agent.whenIdle()
+      syntheticTurn = agent.phase !== undefined && agent.phase !== null && Number.isFinite(Number(agent.phase.lastTurn)) ? Number(agent.phase.lastTurn) : (beforeLastTurn + 1)
+      const latest = await readChat(chat.id)
+      if (latest === undefined) {
+        throw new Error('聊天不存在: ' + chat.id)
+      }
+      const latestMsgs = latest.messages || []
+      if (latestMsgs.length < rolledMessageCount + 2) {
+        throw new Error('重新生成流程未产生新的用户/助手回合')
+      }
+      const regeneratedUser = latestMsgs[latestMsgs.length - 2]
+      const newAssistant = latestMsgs[latestMsgs.length - 1]
+      if (regeneratedUser === null || typeof regeneratedUser !== 'object' || regeneratedUser.role !== 'user' ||
+          newAssistant === null || typeof newAssistant !== 'object' || newAssistant.role !== 'assistant' || Number(newAssistant.turn) !== syntheticTurn) {
+        throw new Error('重新生成流程未产生正文')
+      }
+      body = str(newAssistant.text).trim()
+      if (body === '') {
+        throw new Error('重新生成失败：模型返回空文本')
+      }
+      committedChat = await updateChat(latest.id, function (current) {
+        if (current?.regenRecovery?.id !== operationId) throw new Error('重新生成操作已失效')
+        const currentMessages = Array.isArray(current && current.messages) ? current.messages : []
+        const currentUser = currentMessages[currentMessages.length - 2]
+        const currentAssistant = currentMessages[currentMessages.length - 1]
+        if (currentMessages.length < rolledMessageCount + 2 || currentUser === null || typeof currentUser !== 'object' || currentUser.role !== 'user' ||
+            currentAssistant === null || typeof currentAssistant !== 'object' || currentAssistant.role !== 'assistant' || Number(currentAssistant.turn) !== syntheticTurn ||
+            str(currentAssistant.text).trim() !== body) throw new Error('重新生成流程的正文已被另一项操作修改')
+        const merged = replaceLastRound({ originalChat, regeneratedChat: current, assistantIndex: oldAssistantIndex })
+        const next = merged.chat
+        if (next.nativeCommits !== null && typeof next.nativeCommits === 'object') delete next.nativeCommits[String(syntheticTurn)]
+        next.nativeCommits = next.nativeCommits && typeof next.nativeCommits === 'object' ? structuredClone(next.nativeCommits) : {}
+        if (originalChat.nativeCommits && originalChat.nativeCommits[String(oldTurn)]) next.nativeCommits[String(oldTurn)] = structuredClone(originalChat.nativeCommits[String(oldTurn)])
+        delete next.regenInProgress
+        delete next.regenRecovery
+        next.settleStatus = 'pending'
+        next.settleError = null
+        next.tavernHelperLifecycleRevision = lifecycleRevision + 1
+        next.suppressedDshTurns = Array.from(new Set((Array.isArray(next.suppressedDshTurns) ? next.suppressedDshTurns : []).concat([syntheticTurn]))).sort(function (left, right) { return left - right })
+        next.regeneratedDshTurns = next.regeneratedDshTurns && typeof next.regeneratedDshTurns === 'object' && !Array.isArray(next.regeneratedDshTurns)
+          ? structuredClone(next.regeneratedDshTurns) : {}
+        next.regeneratedDshTurns[String(oldTurn)] = syntheticTurn
+        return next
+      }, { source: 'foreground.regen-commit' })
     } catch (error) {
       await restoreFailedRegen()
       throw error
     }
-    const syntheticTurn = agent.phase !== undefined && agent.phase !== null && Number.isFinite(Number(agent.phase.lastTurn)) ? Number(agent.phase.lastTurn) : (beforeLastTurn + 1)
-    const latest = await readChat(chat.id)
-    if (latest === undefined) {
-      await restoreFailedRegen()
-      throw new Error('聊天不存在: ' + chat.id)
-    }
-    const latestMsgs = latest.messages || []
-    if (latestMsgs.length < rolledMessageCount + 2) {
-      await restoreFailedRegen()
-      throw new Error('重新生成流程未产生新的用户/助手回合')
-    }
-    const regeneratedUser = latestMsgs[latestMsgs.length - 2]
-    const newAssistant = latestMsgs[latestMsgs.length - 1]
-    if (regeneratedUser === null || typeof regeneratedUser !== 'object' || regeneratedUser.role !== 'user' ||
-        newAssistant === null || typeof newAssistant !== 'object' || newAssistant.role !== 'assistant' || Number(newAssistant.turn) !== syntheticTurn) {
-      await restoreFailedRegen()
-      throw new Error('重新生成流程未产生正文')
-    }
-    const body = str(newAssistant.text).trim()
-    if (body === '') {
-      await restoreFailedRegen()
-      throw new Error('重新生成失败：模型返回空文本')
-    }
-    const committedChat = await updateChat(latest.id, function (current) {
-      const currentMessages = Array.isArray(current && current.messages) ? current.messages : []
-      const currentUser = currentMessages[currentMessages.length - 2]
-      const currentAssistant = currentMessages[currentMessages.length - 1]
-      if (currentMessages.length < rolledMessageCount + 2 || currentUser === null || typeof currentUser !== 'object' || currentUser.role !== 'user' ||
-          currentAssistant === null || typeof currentAssistant !== 'object' || currentAssistant.role !== 'assistant' || Number(currentAssistant.turn) !== syntheticTurn ||
-          str(currentAssistant.text).trim() !== body) throw new Error('重新生成流程的正文已被另一项操作修改')
-      const merged = replaceLastRound({ originalChat, regeneratedChat: current, assistantIndex: oldAssistantIndex })
-      const next = merged.chat
-      if (next.nativeCommits !== null && typeof next.nativeCommits === 'object') delete next.nativeCommits[String(syntheticTurn)]
-      next.nativeCommits = next.nativeCommits && typeof next.nativeCommits === 'object' ? structuredClone(next.nativeCommits) : {}
-      if (originalChat.nativeCommits && originalChat.nativeCommits[String(oldTurn)]) next.nativeCommits[String(oldTurn)] = structuredClone(originalChat.nativeCommits[String(oldTurn)])
-      delete next.regenInProgress
-      next.settleStatus = 'pending'
-      next.settleError = null
-      next.tavernHelperLifecycleRevision = lifecycleRevision + 1
-      next.suppressedDshTurns = Array.from(new Set((Array.isArray(next.suppressedDshTurns) ? next.suppressedDshTurns : []).concat([syntheticTurn]))).sort(function (left, right) { return left - right })
-      next.regeneratedDshTurns = next.regeneratedDshTurns && typeof next.regeneratedDshTurns === 'object' && !Array.isArray(next.regeneratedDshTurns)
-        ? structuredClone(next.regeneratedDshTurns) : {}
-      next.regeneratedDshTurns[String(oldTurn)] = syntheticTurn
-      return next
-    }, { source: 'foreground.regen-commit' })
     // 把旧正文、失败残留、合成输入和新模型节点折叠为唯一的新正文。
     const currentNodes = session.surface !== undefined && Array.isArray(session.surface.nodes) ? session.surface.nodes : []
     const replacement = planRegenerationSurface({
@@ -393,6 +400,7 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
     chat = rolled.chat
     chat.rollbackUndo = undo
     chat.regenInProgress = false
+    delete chat.regenRecovery
     if (rollbackCommitKey !== '') delete chat.nativeCommits[rollbackCommitKey]
     chat.tavernHelperLifecycleRevision = Math.max(0, Number(chat.tavernHelperLifecycleRevision) || 0) + 1
     chat.suppressedDshTurns = Array.from(new Set((Array.isArray(chat.suppressedDshTurns) ? chat.suppressedDshTurns : []).concat(
@@ -551,5 +559,5 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
     }
   }
 
-  return Object.freeze({ regenerate: regenBody, rollback: rollbackTurn, undoRollback })
+  return Object.freeze({ regenerate, recover: regenerationRecovery.recover, rollback: rollbackTurn, undoRollback })
 }

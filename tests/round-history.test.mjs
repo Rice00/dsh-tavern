@@ -840,3 +840,111 @@ for (const mutation of ['resume', 'turn/start', 'surface']) test(`撤销回退�
     assert.deepEqual(h.chat.messages, rolledBack)
   }
 })
+
+for (const legacy of [false, true]) test('中断重生成后重建模块恢复原正文与状态：legacy=' + legacy, async () => {
+  const h = harness({ checkpoint: true, journal: true })
+  const before = structuredClone(h.chat)
+  let entered
+  const started = new Promise(resolve => { entered = resolve })
+  h.beforeGenerate(async () => { entered(); await new Promise(() => {}) })
+  void h.create().regenerate('chat', '', 'session')
+  await started
+  assert.equal(h.chat.regenInProgress, true)
+  assert.deepEqual(h.chat.messages.map(message => message.text), ['开场'])
+  if (legacy) delete h.chat.regenRecovery
+  h.session.append('user/message', { turn: 3, content: [{ type: 'text', text: '推门' }], source: { kind: 'plugin', plugin: 'dsh-tavern-regen' } }, { surfaceOp: 'append' })
+  h.session.append('assistant/message', { turn: 3, message: { role: 'assistant', source: { kind: 'model' }, content: [{ type: 'text', text: '未完成正文' }] } }, { surfaceOp: 'append' })
+  h.session.append('turn/end', { turn: 3, reason: { kind: 'interrupted' } })
+  const restarted = h.create()
+  await restarted.recover('chat')
+  assert.deepEqual(h.chat.messages, before.messages)
+  assert.equal(h.chat.posture, before.posture)
+  assert.ok(!h.chat.regenInProgress)
+  assert.equal(h.chat.regenRecovery, undefined)
+  assert.deepEqual(h.chat.suppressedDshTurns, [3])
+  assert.ok(h.session.surface.nodes.includes(1))
+  assert.ok(!h.session.surface.nodes.includes(2))
+  const recovered = structuredClone(h.chat)
+  await restarted.recover('chat')
+  assert.deepEqual(h.chat, recovered)
+  h.beforeGenerate(() => {})
+  const result = await restarted.regenerate('chat', '', 'session')
+  assert.match(result.messages.at(-1).text, /新正文/)
+})
+
+test('取消旧结算抛错也恢复原正文并解除重生成锁', async () => {
+  const h = harness({ checkpoint: true, journal: true })
+  const body = Object.values(h.chat.timeline.operations).find(operation => operation.kind === 'body')
+  body.status = 'completed'
+  body.background = { phase: 'pending', role: 'settlement' }
+  const original = structuredClone(h.chat.messages)
+  h.options.cancelSettlement = async () => { throw new Error('cancel failed') }
+  await assert.rejects(h.create().regenerate('chat', '', 'session'), /cancel failed/)
+  assert.deepEqual(h.chat.messages, original)
+  assert.ok(!h.chat.regenInProgress)
+  assert.equal(h.chat.regenRecovery, undefined)
+})
+
+test('新正文提交失败恢复原状态且不留下重生成锁', async () => {
+  const h = harness({ checkpoint: true, journal: true })
+  const original = structuredClone(h.chat.messages), update = h.options.chats.update
+  h.options.chats.update = async (id, mutate, metadata) => {
+    if (metadata.source === 'foreground.regen-commit') throw new Error('commit failed')
+    return update(id, mutate, metadata)
+  }
+  await assert.rejects(h.create().regenerate('chat', '', 'session'), /commit failed/)
+  assert.deepEqual(h.chat.messages, original)
+  assert.ok(!h.chat.regenInProgress)
+  assert.equal(h.chat.regenRecovery, undefined)
+  assert.deepEqual(h.chat.suppressedDshTurns, [3])
+})
+
+async function interruptedRegeneration() {
+  const h = harness({ checkpoint: true, journal: true })
+  let entered
+  const started = new Promise(resolve => { entered = resolve })
+  h.beforeGenerate(async () => { entered(); await new Promise(() => {}) })
+  const live = h.create()
+  void live.regenerate('chat', '', 'session')
+  await started
+  return { h, live }
+}
+
+test('恢复不打断当前进程中的重生成或宿主仍在运行的回合', async () => {
+  const { h, live } = await interruptedRegeneration()
+  const before = structuredClone(h.chat)
+  await live.recover('chat')
+  await assert.rejects(live.regenerate('chat', '', 'session'), /正在重新生成/)
+  assert.deepEqual(h.chat, before)
+  h.agent.phase.kind = 'running'
+  await h.create().recover('chat')
+  assert.deepEqual(h.chat, before)
+})
+
+test('恢复时消息面保存失败保留恢复点，下次重试成功且临时会话释放', async () => {
+  const { h } = await interruptedRegeneration()
+  const original = structuredClone(h.revisions.get(h.chat.regenRecovery.beforeRevision).messages)
+  let disposed = 0, fail = true
+  h.options.sessions = {
+    get: () => undefined,
+    resume: async () => ({ agent: h.agent, dispose: async () => { disposed++ } }),
+    flush: async () => { if (fail) throw new Error('flush failed') }
+  }
+  await assert.rejects(h.create().recover('chat'), /flush failed/)
+  assert.equal(h.chat.regenInProgress, true)
+  assert.ok(h.chat.regenRecovery)
+  assert.equal(disposed, 1)
+  fail = false
+  await h.create().recover('chat')
+  assert.deepEqual(h.chat.messages, original)
+  assert.ok(!h.chat.regenInProgress)
+  assert.equal(disposed, 2)
+})
+
+test('历史恢复点丢失时不删除标志或伪造原正文', async () => {
+  const { h } = await interruptedRegeneration()
+  const before = structuredClone(h.chat)
+  h.options.chats.readRevision = async () => undefined
+  await assert.rejects(h.create().recover('chat'), /恢复点/)
+  assert.deepEqual(h.chat, before)
+})

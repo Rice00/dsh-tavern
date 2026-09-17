@@ -1,0 +1,58 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import { spawn } from 'node:child_process'
+import { once } from 'node:events'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { Session } from './fixtures/dsh-session-host.mjs'
+import { createRoundHistory } from '../tavern-plugin/lib/domain/round-history.js'
+import { createStoryTimeline } from '../tavern-plugin/lib/domain/story-timeline.js'
+import { createChatPersistence } from '../tavern-plugin/lib/domain/chat-persistence.js'
+import { createChatJournalStore } from '../tavern-plugin/lib/domain/chat-journal-store.js'
+import { sessionEvents } from '../tavern-plugin/lib/domain/session-events.js'
+
+for (const legacy of [false, true]) test('SIGKILL 后从真实 journal 和 DSH Session 恢复原正文：legacy=' + legacy, { timeout: 15000 }, async t => {
+  const root = await mkdtemp(join(tmpdir(), 'tavern-regen-crash-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const child = spawn(process.execPath, [fileURLToPath(new URL('./fixtures/regeneration-crash.mjs', import.meta.url)), root, String(legacy)], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] })
+  let errors = ''
+  child.stderr.on('data', data => { errors += data })
+  t.after(() => { if (child.exitCode === null) child.kill('SIGKILL') })
+  const [ready] = await Promise.race([once(child, 'message'), once(child, 'exit').then(([code]) => { throw new Error('child exited: ' + code + ' ' + errors) })])
+  assert.equal(ready.ready, true)
+  const stopped = once(child, 'exit')
+  child.kill('SIGKILL')
+  await stopped
+  const persistence = createChatPersistence({ store: createChatJournalStore({ dataRoot: root }) })
+  const interrupted = await persistence.read('chat')
+  assert.equal(interrupted.regenInProgress, true)
+  assert.equal(interrupted.messages.length, 0)
+  const stored = JSON.parse(await readFile(join(root, 'session.json'), 'utf8'))
+  const session = Session.create(stored.id, stored.events, stored.header)
+  let disposed = 0
+  const history = createRoundHistory({
+    chats: persistence, scripts: {}, timeline: createStoryTimeline(),
+    sessions: { get: () => undefined, resume: async () => ({ agent: { session, phase: { kind: 'idle' } }, dispose: async () => { disposed++ } }),
+      flush: async current => writeFile(join(root, 'session.json'), JSON.stringify({ id: current.id, header: current.header, events: sessionEvents(current) })) }
+  })
+  await history.recover('chat')
+  assert.equal(disposed, 1)
+  const reopened = createChatPersistence({ store: createChatJournalStore({ dataRoot: root }) })
+  const restored = await reopened.read('chat')
+  assert.deepEqual(restored.messages.map(message => message.text), ['继续', '原正文'])
+  assert.deepEqual(restored.messages.at(-1).variables, [{ hp: 9 }])
+  assert.equal(restored.posture, '原状态')
+  assert.ok(!restored.regenInProgress)
+  assert.equal(restored.regenRecovery, undefined)
+  assert.deepEqual(restored.suppressedDshTurns, [3])
+  const saved = JSON.parse(await readFile(join(root, 'session.json'), 'utf8'))
+  const native = Session.create(saved.id, saved.events, saved.header)
+  const visible = JSON.stringify(native.deriveMessages())
+  assert.match(visible, /原正文/)
+  assert.doesNotMatch(visible, /未完成的新正文/)
+  assert.deepEqual(saved.events.slice(0, stored.events.length), stored.events)
+  await history.recover('chat')
+  assert.equal((await reopened.read('chat'))._storageRevision, restored._storageRevision)
+})

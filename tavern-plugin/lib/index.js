@@ -2621,6 +2621,8 @@ export async function apply(ctx) {
   async function recoverRuntimeHistory(recoveredIndex) {
     const activeChatIds = []
     for (const row of recoveredIndex.chats || []) {
+      try { await recoverRegeneration(row.id) }
+      catch (error) { console.error('dsh-tavern: 恢复正文重新生成失败', row.id, error?.message || error) }
       const chat = await readChat(row.id)
       if (chat === undefined) continue
       activeChatIds.push(row.id)
@@ -2633,7 +2635,7 @@ export async function apply(ctx) {
     void mvuSettlementReconciler.scan()
   }
   // ---------- 重新生成正文（生成即替换，无确认） ----------
-  const { regenerate: regenBody, rollback: rollbackTurn, undoRollback: undoRollbackTurn } = createRoundHistory({
+  const { regenerate: regenBody, recover: recoverRegeneration, rollback: rollbackTurn, undoRollback: undoRollbackTurn } = createRoundHistory({
     diagnostics: mvuDiagnostics,
     chats: { read: readChat, forSession: chatForSession, readCard: readChatCard,
       readRevision: readChatRevision, write: writeChat, update: updateChat },

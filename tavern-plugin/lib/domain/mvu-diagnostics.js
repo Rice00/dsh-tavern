@@ -90,22 +90,133 @@ function bounded(value) {
   return { stage: value.stage, diagnosticId: value.diagnosticId, at: value.at, truncated: true, preview: text.slice(0, 7000) }
 }
 
+function retainDiagnostics(sessionId, previous, incoming, maxRecords) {
+  const records = (previous?.records || []).concat(incoming)
+  const sizes = records.map(record => Buffer.byteLength(JSON.stringify(record)))
+  let size = 2 + sizes.reduce((sum, length) => sum + length + 1, 0) - (records.length ? 1 : 0)
+  let start = 0
+  while (records.length - start > maxRecords || size > MAX_STORE_BYTES) {
+    size -= sizes[start++] + 1
+  }
+  return { version: 1, sessionId, dropped: (Number(previous?.dropped) || 0) + start, records: records.slice(start) }
+}
+
+// The first line is a compacted snapshot; subsequent lines are record batches.
+// A crash may leave an uncommitted suffix, which must never hide earlier lines.
+function readDiagnosticJournal(text, sessionId, maxRecords) {
+  const complete = text.slice(0, text.lastIndexOf('\n') + 1).trimEnd()
+  if (!complete) throw new Error('MVU 诊断日志缺少完整快照')
+  const [header, ...lines] = complete.split('\n')
+  const snapshot = JSON.parse(header)
+  if (snapshot.version !== 1 || snapshot.sessionId !== sessionId || !Array.isArray(snapshot.records)) throw new Error('MVU 诊断日志快照无效')
+  const batches = lines.map(line => JSON.parse(line))
+  for (const batch of batches) {
+    if (!Array.isArray(batch.records) || !Number.isSafeInteger(batch.dropped) || batch.dropped < 0) throw new Error('MVU 诊断日志批次无效')
+  }
+  return retainDiagnostics(sessionId, { ...snapshot, dropped: (Number(snapshot.dropped) || 0) + batches.reduce((sum, batch) => sum + batch.dropped, 0) }, batches.flatMap(batch => batch.records), maxRecords)
+}
+
 /** Independent diagnostics: never rewrite chat state or append model-visible messages. */
-export function createMvuDiagnosticStore(storage, { maxRecords = 200 } = {}) {
+export function createMvuDiagnosticStore(storage, { maxRecords = 200, flushDelayMs = 500, onError = () => console.warn('dsh-tavern: 诊断日志暂未写入，保留缓冲并重试') } = {}) {
   maxRecords = Math.max(1, Math.min(200, Number(maxRecords) || 200))
+  flushDelayMs = Math.max(0, Number(flushDelayMs) || 0)
   const path = id => 'diagnostics/mvu-' + createHash('sha256').update(String(id)).digest('hex') + '.json'
+  const journal = typeof storage.appendText === 'function' && typeof storage.readText === 'function'
+  const buffers = new Map()
+  let timer, closed = false
+
+  async function persist(sessionId, batch) {
+    if (journal) {
+      await storage.appendText(path(sessionId) + 'l', JSON.stringify(batch) + '\n', {
+        maxBytes: MAX_STORE_BYTES * 2,
+        async compact(current, frame) {
+          const previous = current === undefined || current === ''
+            ? await storage.readJson(path(sessionId))
+            : readDiagnosticJournal(current, sessionId, maxRecords)
+          const incoming = JSON.parse(frame)
+          return JSON.stringify(retainDiagnostics(sessionId, { ...previous, dropped: (Number(previous?.dropped) || 0) + incoming.dropped }, incoming.records, maxRecords)) + '\n'
+        }
+      })
+    } else await storage.updateJson(path(sessionId), previous => retainDiagnostics(sessionId,
+      { ...previous, dropped: (Number(previous?.dropped) || 0) + batch.dropped }, batch.records, maxRecords))
+  }
+
+  function trim(buffer) {
+    while (buffer.rows.length > maxRecords || buffer.bytes > MAX_STORE_BYTES) {
+      buffer.bytes -= buffer.rows.shift().size
+      buffer.dropped++
+    }
+  }
+  function background(id, buffer) {
+    void flushOne(id).catch(error => {
+      if (!buffer.warned) { buffer.warned = true; onError(error) }
+    })
+  }
+  function schedule() {
+    if (timer || closed || flushDelayMs === 0 || ![...buffers.values()].some(buffer => buffer.rows.length && !buffer.inflight)) return
+    timer = setTimeout(() => {
+      timer = undefined
+      for (const [id, buffer] of buffers) if (!buffer.inflight) background(id, buffer)
+    }, Math.max(1, flushDelayMs))
+    timer.unref?.()
+  }
+  function flushOne(id) {
+    const buffer = buffers.get(id)
+    if (!buffer) return Promise.resolve()
+    if (buffer.inflight) return buffer.inflight.then(() => flushOne(id))
+    if (!buffer.rows.length && !buffer.dropped) { buffers.delete(id); return Promise.resolve() }
+    const rows = buffer.rows, dropped = buffer.dropped
+    buffer.rows = []; buffer.bytes = 2; buffer.dropped = 0
+    buffer.inflight = persist(id, { dropped, records: rows.map(row => row.value) }).then(() => {
+      buffer.warned = false
+    }).catch(error => {
+      // Preserve failed batches ahead of newer records; retention remains bounded.
+      buffer.rows = rows.concat(buffer.rows)
+      buffer.bytes += rows.reduce((sum, row) => sum + row.size, 0)
+      buffer.dropped += dropped
+      trim(buffer)
+      throw error
+    }).finally(() => {
+      buffer.inflight = null
+      if (!buffer.rows.length && !buffer.dropped) buffers.delete(id)
+      schedule()
+    })
+    return buffer.inflight
+  }
+  async function flush() { await Promise.all([...buffers.keys()].map(flushOne)) }
   return {
     async record(sessionId, value) {
-      if (!sessionId) return
-      await storage.updateJson(path(sessionId), previous => {
-        const records = (previous?.records || []).concat(bounded({ ...value, at: Date.now() }))
-        let dropped = Number(previous?.dropped) || 0
-        while (records.length > maxRecords || Buffer.byteLength(JSON.stringify(records)) > MAX_STORE_BYTES) { records.shift(); dropped++ }
-        return { version: 1, sessionId, dropped, records }
-      })
+      if (!sessionId || closed) return
+      // Backpressure only when more than eight chats produce unflushed logs.
+      // Each chat holds at most 2 MiB pending plus one bounded in-flight batch.
+      while (!buffers.has(sessionId) && buffers.size >= 8) await flushOne(buffers.keys().next().value)
+      if (closed) return
+      const record = bounded({ ...value, at: Date.now() })
+      let buffer = buffers.get(sessionId)
+      if (!buffer) { buffer = { rows: [], bytes: 2, dropped: 0, inflight: null, warned: false }; buffers.set(sessionId, buffer) }
+      const size = Buffer.byteLength(JSON.stringify(record)) + 1
+      buffer.rows.push({ value: record, size }); buffer.bytes += size
+      trim(buffer)
+      if (flushDelayMs === 0) return flushOne(sessionId)
+      if (!buffer.inflight && (buffer.rows.length >= 32 || buffer.bytes >= 256 * 1024)) background(sessionId, buffer)
+      schedule()
     },
+    flush,
+    async dispose() { closed = true; clearTimeout(timer); timer = undefined; await flush() },
     async read(sessionId) {
-      return await storage.readJson(path(sessionId)) || { version: 1, sessionId, dropped: 0, records: [] }
+      let pending, saved
+      try { await flushOne(sessionId) } catch {
+        const buffer = buffers.get(sessionId)
+        if (buffer) pending = { records: buffer.rows.map(row => row.value), dropped: buffer.dropped }
+      }
+      if (journal) {
+        const text = await storage.readText(path(sessionId) + 'l')
+        if (text !== undefined) saved = readDiagnosticJournal(text, sessionId, maxRecords)
+      }
+      saved ||= await storage.readJson(path(sessionId)) || { version: 1, sessionId, dropped: 0, records: [] }
+      if (!pending) return saved
+      return { ...retainDiagnostics(sessionId, { ...saved, dropped: (Number(saved.dropped) || 0) + pending.dropped }, pending.records, maxRecords),
+        persistence: 'pending', pendingRecords: pending.records.length }
     }
   }
 }
@@ -148,7 +259,7 @@ export async function createMvuDiagnosticExport({ presetDiagnostics, cardDiagnos
   const notes = ['包含对话文本、附件与变量信息，分享前请检查隐私。凭据已尽力脱敏。MVU 记录有容量限制，旧故障不会被追溯补录。']
   notes.push('mvu/diagnostics.json 中 stage=regeneration-target 是正文重新生成的目标定位证据：记录失败分支、消息结构、轮次和会话绑定摘要，不记录正文或指导意见；只对更新后再次操作生效。')
   notes.push('stage=script-runtime 的 moduleFailure 记录模块加载失败原因、最多 8 个脚本引用及同期浏览器可见的失败资源和 HTTP 状态；引用和同期资源不等于完整失败依赖链。跨域资源可能不提供状态；unknown 不代表断网。URL 不含凭据和查询参数，不记录脚本或响应体。仅更新后再次失败才会记录。')
-  notes.push('stage=mvu-load 记录下载响应类型、状态、有限的错误信息、尝试次数和执行阶段；不记录完整脚本或响应体。mvu/environment.json 的 mvuAsset 是当前服务进程共享的最近文件读取/校验观察，不代表导出会话在故障时的文件状态；导出不会重新加载文件。日志限量、异步写入，关闭页面或写盘失败可能漏记，旧错误不能追溯补录。')
+  notes.push('stage=mvu-load 记录下载响应类型、状态、有限的错误信息、尝试次数和执行阶段；不记录完整脚本或响应体。mvu/environment.json 的 mvuAsset 是当前服务进程共享的最近文件读取/校验观察，不代表导出会话在故障时的文件状态；导出不会重新加载文件。日志限量，宿主约每 500 ms 批量追加，导出时先刷盘；persistence=pending 表示刷盘失败，导出包含尚在内存中的记录；宿主崩溃、强制结束或持续写盘失败可能漏记，旧错误不能追溯补录。')
   if (updateDiagnostics) notes.push('update/diagnostics.json 为本机更新记录，包含检查来源、回退原因和安装结果；限量保留，不补录安装此版本前的故障。')
   notes.push('mvu/diagnostics.json 中 initialization-timing 记录 MVU 初始化的伴随脚本、世界书读取、变量初始化回调、提示词队列及写入耗时。按脚本聚合，约每 5 秒采样，最多记录启动后 3 分钟；pending 表示仍在等待，超时提示不代表任务取消。总耗时可包含并发重叠，不等于页面等待时间；不记录正文和变量值。')
   const ids = new Set([sessionId, ...backgroundSessionIds.filter(Boolean), ...(sceneDiagnostics?.records || []).map(record => record.traceSessionId).filter(Boolean)])

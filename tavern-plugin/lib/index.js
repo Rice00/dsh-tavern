@@ -229,6 +229,7 @@ export async function apply(ctx) {
   }
   const tavernExtensionSettings = createTavernExtensionSettings(profileData)
   const mvuDiagnostics = createMvuDiagnosticStore(profileData)
+  ctx.effect(() => () => mvuDiagnostics.dispose(), 'dsh-tavern: flush diagnostic logs')
   const apiDiagnostics = createTavernApiDiagnostics(profileData)
   const compatibilityDiagnostics = createTavernCompatibilityDiagnosticStore(profileData)
   const tavernRemoteAssets = createTavernRemoteAssetPinStore({

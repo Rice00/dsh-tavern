@@ -79,7 +79,8 @@ function createFullTemplateExecutor({ window: hostWindow, rpc: invoke, executeSl
     if (owner && owner.sessionId === sessionId) { owner.frame.contentWindow?.postMessage({token:owner.token,type:'template-dirty'},'*'); return; }
     dispose();
     const frame = hostWindow.document.createElement('iframe');
-    const token = hostWindow.crypto.randomUUID();
+    const token = hostWindow.crypto && typeof hostWindow.crypto.randomUUID === "function"
+      ? hostWindow.crypto.randomUUID() : String(Date.now()) + ":" + String(Math.random());
     frame.hidden = true;
     frame.title = '完整提示词模板';
     frame.setAttribute('sandbox', 'allow-scripts allow-same-origin');

@@ -5232,7 +5232,8 @@ window.__ModuleLoader__.load({
 		    if (owner && owner.sessionId === sessionId) { owner.frame.contentWindow?.postMessage({token:owner.token,type:'template-dirty'},'*'); return; }
 		    dispose();
 		    const frame = hostWindow.document.createElement('iframe');
-		    const token = hostWindow.crypto.randomUUID();
+		    const token = hostWindow.crypto && typeof hostWindow.crypto.randomUUID === "function"
+		      ? hostWindow.crypto.randomUUID() : String(Date.now()) + ":" + String(Math.random());
 		    frame.hidden = true;
 		    frame.title = '完整提示词模板';
 		    frame.setAttribute('sandbox', 'allow-scripts allow-same-origin');
@@ -7296,7 +7297,7 @@ window.__ModuleLoader__.load({
 					try { attempt = JSON.parse(localStorage.getItem(key) || "null"); } catch (_) {}
 					if (!attempt) {
 						const targetWorkspaceId = await playWorkspaceResolverRef.current();
-						attempt = { operationId: crypto.randomUUID(), sessionId: await props.conversationHost.connectWorkspace(targetWorkspaceId) };
+						attempt = { operationId: window.crypto && typeof window.crypto.randomUUID === "function" ? window.crypto.randomUUID() : String(Date.now()) + ":" + String(Math.random()), sessionId: await props.conversationHost.connectWorkspace(targetWorkspaceId) };
 						localStorage.setItem(key, JSON.stringify(attempt));
 					}
 					await waitForSessionSummary(attempt.sessionId);

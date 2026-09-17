@@ -265,3 +265,40 @@ test('重启丢弃临时回执，普通任务仍保存并恢复回执', async ()
   assert.deepEqual(writes, ['executing', 'completed'])
   restarted.dispose()
 })
+
+test('durable completion stores a small receipt without result bodies and preserves live output', async () => {
+  const files = new Map(), writes = []
+  let fail = false
+  const store = {
+    async readJson(path) { return structuredClone(files.get(path)) },
+    async writeJson(path, value) {
+      if (fail) throw new Error('disk unavailable')
+      writes.push(JSON.stringify(value).length)
+      files.set(path, structuredClone(value))
+    }
+  }
+  const runtime = createFullTemplateRuntime({ store, publishSignal() {} })
+  runtime.heartbeat('s', 'page', 'ready')
+  const pending = runtime.forSession('s').projectRequest({ messages: [] })
+  let work
+  for (let i = 0; i < 100; i++) {
+    work = runtime.dispatch.claim('s', 'page', true)
+    if (work.event) break
+    await new Promise(resolve => setTimeout(resolve, 1))
+  }
+  assert.ok(work.event)
+  await runtime.start('s', work.event.id, work.leaseToken, 'page')
+  const result = { messages: [{ role: 'user', content: [{ type: 'text', text: 'x'.repeat(1000000) }] }], system: 'unchanged' }
+  fail = true
+  await assert.rejects(runtime.complete('s', work.event.id, [result], 'page', work.leaseToken), /disk unavailable/)
+  assert.equal((await runtime.inspect('s')).task.phase, 'executing')
+  fail = false
+  assert.equal(await runtime.complete('s', work.event.id, [result], 'page', work.leaseToken), true)
+  assert.deepEqual(await pending, result)
+  runtime.dispose()
+  const resumed = createFullTemplateRuntime({ store, publishSignal() { assert.fail('must not replay') } })
+  assert.equal(await resumed.complete('s', work.event.id, [result], 'page', work.leaseToken), true)
+  assert.equal(await resumed.complete('s', work.event.id, [result], 'page', 'wrong'), false)
+  resumed.dispose()
+  assert.ok(writes.every(size => size < 2000), 'completion must not persist the megabyte result')
+})

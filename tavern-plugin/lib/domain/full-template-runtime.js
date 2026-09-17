@@ -114,7 +114,9 @@ export function createFullTemplateRuntime({ publishSignal, claimTimeoutMs = 3000
     if (!job || job.id !== eventId || job.runtimeId !== runtimeId || job.leaseToken !== leaseToken) return false
     if (job.phase === 'completed') return true
     if (job.phase !== 'executing' || dispatch.status(sessionId).phase !== 'executing' || !dispatch.available(sessionId, runtimeId)) return false
-    const completed = { ...job, phase: 'completed', receipt: { args, error }, completedAt: Date.now() }
+    // Recovery only acknowledges this identity; no caller survives to consume the
+    // result after restart. Deliver args to the live dispatch, never persist them.
+    const completed = { ...job, phase: 'completed', receipt: { error }, completedAt: Date.now() }
     await saveJob(sessionId, completed)
     Object.assign(job, completed)
     const accepted = dispatch.complete(sessionId, eventId, args, runtimeId, leaseToken, error)

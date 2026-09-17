@@ -65,3 +65,30 @@ test('selected projection fingerprints only changed rows and rejects consumed or
  assert.equal(sync.selected(snapshot,first.cursor,[1],2,1),undefined)
  assert.equal(sync.selected({...snapshot,state:{...snapshot.state,lifecycleRevision:1}},result.cursor,[1],2,2),undefined)
 })
+
+test('不可变环境快照只算一次指纹，发给调用者的内容仍是独立副本', async t => {
+  const { freezeJsonProjection } = await import('../tavern-plugin/lib/domain/immutable-json-projection.js')
+  const sync = createFullPromptTemplateSync()
+  const worldbooks = freezeJsonProjection({ A: { entries: { 0: { content: 'original' } } } })
+  const snapshot = { state: { chatId: 'c', sessionId: 's', stateRevision: 1, chat: [] }, environment: { worldbooks } }
+  const stringify = JSON.stringify; let reads = 0
+  t.mock.method(JSON, 'stringify', (value, ...args) => { if (value === worldbooks) reads++; return stringify(value, ...args) })
+  const first = sync(snapshot)
+  first.environment.worldbooks.A.entries[0].content = 'caller mutation'
+  assert.equal(worldbooks.A.entries[0].content, 'original')
+  const second = sync(snapshot, first.cursor)
+  assert.equal(reads, 1)
+  assert.deepEqual(second.delta.environment.set, {})
+  const changed = freezeJsonProjection({ A: { entries: { 0: { content: 'changed' } } } })
+  snapshot.environment.worldbooks = changed
+  const third = sync(snapshot, second.cursor)
+  third.delta.environment.set.worldbooks.A.entries[0].content = 'another caller mutation'
+  assert.equal(changed.A.entries[0].content, 'changed')
+  // Shallow freezing an arbitrary object is not proof of immutability.
+  const mutable = Object.freeze({ nested: { n: 1 } })
+  snapshot.environment.other = mutable
+  const fourth = sync(snapshot, third.cursor)
+  mutable.nested.n = 2
+  const fifth = sync(snapshot, fourth.cursor)
+  assert.equal(fifth.delta.environment.set.other.nested.n, 2)
+})

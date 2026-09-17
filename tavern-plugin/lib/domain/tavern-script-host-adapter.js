@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { diffJson } from './json-mutation.js'
 import { createFullPromptTemplateSync } from './full-prompt-template-sync.js'
+import { createJsonProjectionCache } from './immutable-json-projection.js'
 import { resourceSaveSummary, observeResourceSave } from './resource-save-summary.js'
 import { projectFullPromptTemplateState, applyFullPromptTemplateState, validateFullPromptTemplateSave, expandFullPromptTemplatePatch } from './full-prompt-template-state.js'
 import { mutateScriptPrompts } from './tavern-script-prompts.js'
@@ -39,6 +40,7 @@ const MVU_RETRY_AFTER_MS = 3100
  */
 export function createTavernScriptHostAdapter(options = {}) {
   const syncTemplateState = createFullPromptTemplateSync()
+  const templateCharacters = createJsonProjectionCache({ capacity: 8, maxBytes: 16 * 1024 * 1024 })
   const mutationTails = new Map()
   const settlementTransactions = new Map()
 
@@ -343,20 +345,29 @@ export function createTavernScriptHostAdapter(options = {}) {
     const chat = reuse ? selected.chat : changed ? changed.chat : await resolveChat(sessionId)
     assertTemplateChat(chat)
     const card = await options.readCard(chat)
-    const record = await options.worldBooks.bound(chat.cardPath, card, chat)
-    const book = record ? await exportBoundWorldbook(record) : null
-    const worldName = str(record?.view?.displayName)
+    let templateBook
+    if (options.worldBooks.templateSnapshot) templateBook = await options.worldBooks.templateSnapshot(chat.cardPath, card, chat)
+    else {
+      const record = await options.worldBooks.bound(chat.cardPath, card, chat)
+      const book = record ? await exportBoundWorldbook(record) : null
+      const worldName = str(record?.view?.displayName)
+      templateBook = { worldName, worldbooks: worldName && book ? { [worldName]: book } : {} }
+    }
+    const { worldName, worldbooks } = templateBook
     const extensionSettings = options.fullExtensionSettings ? await options.fullExtensionSettings.read() : {}
     extensionSettings.variables = { ...extensionSettings.variables, global: options.globalVariables ? await options.globalVariables.read() : {} }
     if (!Array.isArray(extensionSettings.regex)) extensionSettings.regex = []
-    const character = { ...card, data: { ...card, extensions: { ...card.extensions, ...(worldName ? { world: worldName } : {}) } } }
+    const characters = templateCharacters(JSON.stringify([chat.cardPath, worldName]), JSON.stringify(card), text => {
+      const source = JSON.parse(text)
+      return [{ ...source, data: { ...source, extensions: { ...source.extensions, ...(worldName ? { world: worldName } : {}) } } }]
+    })
     const snapshot = {
       capabilities: {statePatch:1},
       state: projectFullPromptTemplateState(chat),
-      environment: { characters: [character], name1: str(chat.macroState?.userName) || '你', name2: str(card.name),
+      environment: { characters, name1: str(chat.macroState?.userName) || '你', name2: str(card.name),
         this_chid: '0', extension_settings: extensionSettings,
         world_names: worldName ? [worldName] : [], selected_world_info: [],
-        worldbooks: worldName && book ? { [worldName]: book } : {},
+        worldbooks,
         dsh: { settling: settlementTransactions.has(str(sessionId)) || ['pending', 'running'].includes(chat.settleStatus), cardPath: chat.cardPath, model: options.modelFor ? await options.modelFor(chat) : chat.model?.model || chat.model || '', regexScripts: card.extensions?.regex_scripts || [] } }
     }
     if (changed) {

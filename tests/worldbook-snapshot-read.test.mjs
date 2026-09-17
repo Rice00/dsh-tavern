@@ -40,3 +40,68 @@ for (const kind of ['standalone', 'embedded', 'multiple', 'opening']) test('模�
     assert.deepEqual(Object.keys(rebound.delta.environment.set.worldbooks), ['B'])
   }
 })
+
+test('模板专用快照按实际内容复用，改名、修改、损坏和删除立即可见', async () => {
+  let text = JSON.stringify({ name: 'A', entries: { 0: { uid: 0, content: 'original' } } })
+  let filename = 'a.json', reads = 0
+  const library = createWorldBookLibrary({ normalizePath: x => x, removeStandalone() {}, cards: { read: async () => ({ name: 'C' }) }, resources: {
+    bindingForCard: async () => ({ kind: 'standalone', path: filename, available: true }),
+    readText: async () => { reads++; return text }
+  } })
+  const a = await library.templateSnapshot('card')
+  const b = await library.templateSnapshot('card')
+  assert.equal(a, b, 'unchanged resources reuse the immutable template snapshot')
+  assert.equal(reads, 2, 'content freshness must still be checked')
+  assert.throws(() => { a.worldbooks.A.entries[0].content = 'poison' }, TypeError)
+  text = text.replace('original', 'modified')
+  const changed = await library.templateSnapshot('card')
+  assert.notEqual(changed, a)
+  assert.equal(changed.worldbooks.A.entries[0].content, 'modified')
+  assert.equal(a.worldbooks.A.entries[0].content, 'original')
+  text = '{"entries":{}}'
+  filename = 'renamed.json'
+  assert.equal((await library.templateSnapshot('card')).worldName, 'renamed')
+  text = '{broken'
+  await assert.rejects(library.templateSnapshot('card'), /JSON/)
+  text = undefined
+  await assert.rejects(library.templateSnapshot('card'), /不存在/)
+})
+
+for (const kind of ['standalone', 'embedded', 'multiple', 'opening']) test('模板只读快照与原导出等价且不冻结权威输入：' + kind, async () => {
+  const { exportSillyTavernWorldBook } = await import('../tavern-plugin/lib/domain/worldbook-resource.js')
+  const embedded = { entries: [{ id: 7, keys: ['word'], content: 'embedded', extensions: { custom: { preserved: true } } }] }
+  const native = { entries: { 7: { uid: 7, content: 'native' } } }
+  const card = { name: 'Card', character_book: embedded }
+  const chat = { id: 'chat' }
+  if (kind === 'opening') chat.openingWorldbookSnapshot = { version: 1, source: { kind: 'standalone', path: 'native.json' }, document: native }
+  const library = createWorldBookLibrary({ normalizePath: x => x, removeStandalone() {}, cards: { read: async () => card }, resources: {
+    readText: async () => JSON.stringify(native),
+    bindingForCard: async () => kind === 'multiple' ? { kind, sources: [{ kind: 'embedded', cardPath: 'card', available: true }, { kind: 'standalone', path: 'native.json', available: true }] }
+      : kind === 'embedded' ? { kind, cardPath: 'card', available: true } : { kind: 'standalone', path: 'native.json', available: true }
+  } })
+  const previous = await library.bound('card', card, chat)
+  const snapshot = await library.templateSnapshot('card', card, chat)
+  assert.equal(snapshot.worldName, previous.view.displayName)
+  assert.deepEqual(snapshot.worldbooks[snapshot.worldName], exportSillyTavernWorldBook(previous.document))
+  assert.equal(Object.isFrozen(card), false)
+  assert.equal(Object.isFrozen(embedded), false)
+  assert.equal(Object.isFrozen(native), false)
+  if (kind === 'opening') assert.equal(Object.isFrozen(chat.openingWorldbookSnapshot.source), false)
+})
+
+test('角色卡内容和世界书绑定变化独立于 Chat revision，返回值修改不污染缓存', async () => {
+  const card = { name: 'C', description: 'before', extensions: {} }
+  let worldName = 'A'
+  const adapter = createTavernScriptHostAdapter({ resolveChat: async () => ({ id: 'c', sessionId: 's', cardPath: 'card', mode: 'story', _storageRevision: 1, messages: [] }),
+    writeChat() {}, readCard: async () => card, worldBooks: { templateSnapshot: async () => ({ worldName, worldbooks: {} }) }, scriptDispatch: {} })
+  const first = await adapter.readFullPromptTemplateState('s')
+  first.environment.characters[0].description = 'caller mutation'
+  const fresh = await adapter.readFullPromptTemplateState('s')
+  assert.equal(fresh.environment.characters[0].description, 'before')
+  card.description = 'after'
+  const second = await adapter.readFullPromptTemplateState('s', first.cursor)
+  assert.equal(second.delta.environment.set.characters[0].description, 'after')
+  worldName = 'B'
+  const third = await adapter.readFullPromptTemplateState('s', second.cursor)
+  assert.equal(third.delta.environment.set.characters[0].data.extensions.world, 'B')
+})

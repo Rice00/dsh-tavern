@@ -93,7 +93,8 @@ async function runCase(browser, name, { large=true, journal=true, mode='normal',
   const readCard=timed('resource.card',async()=>JSON.parse(await readFile(join(root,'card.json'),'utf8')))
   const library=createWorldBookLibrary({normalizePath:path=>path,removeStandalone:async()=>{throw Error('read only benchmark')},
     resources:{readText:timed('resource.readText',()=>readFile(join(root,'book.json'),'utf8')),bindingForCard:async()=>({kind:'standalone',path:'book.json',available:true})},cards:{read:readCard}})
-  const books={bound:timed('resource.bound',library.bound),export:timed('resource.export',library.export)}
+  const books={bound:timed('resource.bound',library.bound),export:timed('resource.export',library.export),
+    ...(library.templateSnapshot ? {templateSnapshot:timed('resource.templateSnapshot',library.templateSnapshot)} : {})}
   const globalVariables=createPromptTemplateGlobalVariables(data),settings=createTavernExtensionSettings(data)
   const adapter=createTavernScriptHostAdapter({resolveChat:timed('chat.read',()=>persistence.read('chat')),resolveChatSlice:timed('chat.slice',(_id,indices)=>persistence.readSlice('chat',indices)),
     resolveChangedChatSlice:(_id,revision)=>persistence.readChangedSlice('chat',revision),writeChat:persistence.write,updateChat:persistence.update,patchChat:persistence.patch,readChatRevision:persistence.readRevision,

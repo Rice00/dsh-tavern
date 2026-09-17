@@ -108,6 +108,11 @@ function diagnosticsOf(book, format, entries) {
   return diagnostics
 }
 
+export function worldBookDisplayName(document, options = {}) {
+  const book = identifyDocument(document).book
+  return str(book.name).trim() || str(options.filename).replace(/\.[^.]+$/, '') || '未命名世界书'
+}
+
 export function inspectWorldBookDocument(document, options = {}) {
   const identified = identifyDocument(document)
   const book = identified.book
@@ -115,10 +120,9 @@ export function inspectWorldBookDocument(document, options = {}) {
     ? Object.entries(book.entries).map(function ([key, entry], index) { return { ref: 'entry:' + key, entry: object(entry) || {}, index } })
     : array(book.entries).map(function (entry, index) { return { ref: 'entry:' + index, entry: object(entry) || {}, index } })
   const entries = records.map(function (record) { return entryProjection(record.entry, record.ref, identified.format, record.index) })
-  const fallbackName = str(options.filename).replace(/\.[^.]+$/, '')
   return {
     format: identified.format,
-    displayName: str(book.name).trim() || fallbackName || '未命名世界书',
+    displayName: worldBookDisplayName(document, options),
     description: str(book.description),
     scanDepth: book.scan_depth ?? 2,
     tokenBudget: book.token_budget ?? 8192,

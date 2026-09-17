@@ -64,3 +64,90 @@ test('逐次保存前后台真实请求，并可按游玩轮次完整读取', as
   assert.deepEqual(['front', 'middle', 'back'].map(function (phase) { return evidence.requests[0].phases[phase][0].content[0].text }), ['前', '中', '后'])
   assert.equal((await log.evidence('chat-1', 3)).requests.length, 0)
 })
+
+function storageFixture() {
+  const files = new Map()
+  const operations = []
+  let stamp = 1000
+  const adapters = {
+    readJson: async path => {
+      operations.push(['read', path])
+      return structuredClone(files.get(path))
+    },
+    writeJson: async (path, value) => {
+      operations.push(['write', path])
+      files.set(path, structuredClone(value))
+    },
+    updateJson: async (path, updater) => {
+      files.set(path, structuredClone(await updater(structuredClone(files.get(path)))))
+    },
+    now: () => stamp,
+    id: () => 'fixture'
+  }
+  return { files, operations, adapters, advance: () => { stamp += 250 } }
+}
+
+test('完成请求不再读写正文，阶段消息不重复存储，重启后完整还原', async () => {
+  const fixture = storageFixture()
+  const log = createModelRequestLog(fixture.adapters)
+  const options = { system: '固定前缀', tools: [{ name: 'test' }], messages: [presetMessage('front', 'x'.repeat(1000000))] }
+  const original = structuredClone(options)
+  const record = await log.record({ chat: { id: 'chat' }, options })
+  const path = 'model-requests/chat/' + record.id + '.json'
+  const stored = structuredClone(fixture.files.get(path))
+  assert.equal(stored.phases, undefined)
+  fixture.operations.length = 0
+  fixture.advance()
+  const restarted = createModelRequestLog(fixture.adapters)
+  await restarted.complete({ chatId: 'chat', id: record.id, text: '结果', finish: { kind: 'stop' } })
+  assert.equal(fixture.operations.some(([, p]) => p === path), false)
+  assert.deepEqual(fixture.files.get(path), stored)
+  assert.deepEqual(options, original)
+  const evidence = await restarted.evidence('chat')
+  assert.deepEqual(evidence.requests[0].request, original)
+  assert.deepEqual(evidence.requests[0].phases.front, original.messages)
+  assert.equal(evidence.requests[0].durationMs, 250)
+  assert.equal(evidence.requests[0].response.text, '结果')
+})
+
+test('兼容旧日志及未完成请求，失败结果可重试保存', async () => {
+  const fixture = storageFixture()
+  const legacy = { version: 1, id: 'old', createdAt: 900, status: 'running', phases: { front: [] }, request: { messages: [] } }
+  fixture.files.set('model-requests/chat/old.json', legacy)
+  fixture.files.set('model-requests/chat/index.json', { requests: [{ id: 'old' }] })
+  const log = createModelRequestLog(fixture.adapters)
+  assert.deepEqual((await log.evidence('chat')).requests[0], legacy)
+  await log.complete({ chatId: 'chat', id: 'old', error: '失败' })
+  const completed = (await log.evidence('chat')).requests[0]
+  assert.equal(completed.status, 'failed')
+  assert.equal(completed.durationMs, 100)
+  assert.equal(completed.response.error, '失败')
+  assert.equal(await log.complete({ chatId: 'chat', id: 'missing' }), null)
+
+  const running = await log.record({ chat: { id: 'chat' }, options: { messages: [] } })
+  assert.equal((await log.evidence('chat')).requests[1].status, 'running')
+  const failing = createModelRequestLog({ ...fixture.adapters, writeJson: async () => { throw new Error('disk failure') } })
+  await assert.rejects(failing.complete({ chatId: 'chat', id: running.id, text: '保留结果' }), /disk failure/)
+  assert.equal((await log.evidence('chat')).requests[1].status, 'running')
+  await log.complete({ chatId: 'chat', id: running.id, text: '保留结果' })
+  assert.equal((await log.evidence('chat')).requests[1].response.text, '保留结果')
+})
+
+test('并发请求的完成结果互不串写，缺少状态文件仍可查看正文', async () => {
+  const fixture = storageFixture()
+  let sequence = 0
+  const log = createModelRequestLog({ ...fixture.adapters, id: () => String(++sequence) })
+  const first = await log.record({ chat: { id: 'chat' }, options: { messages: [presetMessage('back', '一')] } })
+  const second = await log.record({ chat: { id: 'chat' }, options: { messages: [presetMessage('front', '二')] } })
+  await Promise.all([
+    log.complete({ chatId: 'chat', id: second.id, text: '结果二' }),
+    log.complete({ chatId: 'chat', id: first.id, text: '结果一' })
+  ])
+  assert.deepEqual((await log.evidence('chat')).requests.map(item => item.response.text), ['结果一', '结果二'])
+  fixture.files.delete('model-requests/chat/' + first.id + '.result.json')
+  const evidence = await log.evidence('chat')
+  assert.equal(evidence.requests[0].status, 'running')
+  assert.equal(evidence.requests[0].phases.back[0].content[0].text, '一')
+  await log.complete({ chatId: 'chat', id: first.id, text: '恢复结果' })
+  assert.equal((await log.evidence('chat')).requests[0].response.text, '恢复结果')
+})

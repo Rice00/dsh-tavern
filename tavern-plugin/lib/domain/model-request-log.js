@@ -20,6 +20,21 @@ function serializableRequest(options) {
   return JSON.parse(JSON.stringify(result))
 }
 
+// Keep the public evidence shape stable; phases are a projection of the request.
+function evidenceRecord(record, result) {
+  const messages = record.request && record.request.messages
+  return {
+    ...record,
+    ...(result || {}),
+    version: 1,
+    phases: record.phases || {
+      front: phaseEntries(messages, 'front'),
+      middle: phaseEntries(messages, 'middle'),
+      back: phaseEntries(messages, 'back')
+    }
+  }
+}
+
 export function createModelRequestLog(options = {}) {
   const readJson = options.readJson
   const writeJson = options.writeJson
@@ -35,11 +50,10 @@ export function createModelRequestLog(options = {}) {
     const requestOptions = input.options
     const stamp = now()
     const requestId = stamp.toString(36) + '-' + id()
-    const messages = Array.isArray(requestOptions && requestOptions.messages) ? requestOptions.messages : []
     const scope = context && context.scope === 'background' ? 'background' : 'foreground'
     const turn = scope === 'background' ? Math.max(0, Number(context.turn) || 0) : Math.max(0, Number(coordinates && coordinates.turn) || 0)
     const record = {
-      version: 1,
+      version: 2,
       id: requestId,
       chatId: chat.id,
       scope,
@@ -60,15 +74,12 @@ export function createModelRequestLog(options = {}) {
         name: str(chat.runtimePresetSnapshot && chat.runtimePresetSnapshot.planName),
         digest: str(chat.runtimePresetSnapshot && chat.runtimePresetSnapshot.digest)
       },
-      phases: {
-        front: phaseEntries(messages, 'front'),
-        middle: phaseEntries(messages, 'middle'),
-        back: phaseEntries(messages, 'back')
-      },
       request: serializableRequest(requestOptions)
     }
     const base = 'model-requests/' + chat.id + '/'
     await writeJson(base + requestId + '.json', record)
+    // Persist timing separately so completion after a restart never loads the body.
+    await writeJson(base + requestId + '.result.json', { createdAt: stamp, status: 'running' })
     await updateJson(base + 'index.json', function (value) {
       const current = value && typeof value === 'object' && !Array.isArray(value) ? value : {}
       const requests = Array.isArray(current.requests) ? current.requests : []
@@ -82,24 +93,32 @@ export function createModelRequestLog(options = {}) {
         }])
       }
     })
-    return record
+    return evidenceRecord(record)
   }
 
   async function complete(input = {}) {
     const base = 'model-requests/' + str(input.chatId) + '/'
     const path = base + str(input.id) + '.json'
-    const record = await readJson(path)
-    if (!record) return null
-    record.status = str(input.error) !== '' ? 'failed' : 'completed'
-    record.completedAt = now()
-    record.durationMs = Math.max(0, record.completedAt - Number(record.createdAt || record.completedAt))
-    record.response = {
-      text: str(input.text),
-      finish: input.finish === undefined ? null : JSON.parse(JSON.stringify(input.finish)),
-      error: str(input.error) || null
+    const resultPath = base + str(input.id) + '.result.json'
+    // Old records have no sidecar. Read them once when completing, without rewriting.
+    const previous = await readJson(resultPath) || await readJson(path)
+    if (!previous) return null
+    const completedAt = now()
+    const createdAt = Number.isFinite(previous.createdAt) ? previous.createdAt : completedAt
+    const result = {
+      createdAt,
+      status: str(input.error) !== '' ? 'failed' : 'completed',
+      completedAt,
+      durationMs: Math.max(0, completedAt - createdAt),
+      response: {
+        text: str(input.text),
+        finish: input.finish === undefined ? null : JSON.parse(JSON.stringify(input.finish)),
+        error: str(input.error) || null
+      }
     }
-    await writeJson(path, record)
-    return record
+    await writeJson(resultPath, result)
+    // Callers needing the full request use evidence(); completion returns only state.
+    return result
   }
 
   async function evidence(chatId, turn) {
@@ -111,7 +130,7 @@ export function createModelRequestLog(options = {}) {
     const requests = []
     for (const entry of entries) {
       const record = await readJson(base + entry.id + '.json')
-      if (record) requests.push(record)
+      if (record) requests.push(evidenceRecord(record, await readJson(base + entry.id + '.result.json')))
     }
     return { loaded: true, chatId, requests }
   }

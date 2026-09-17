@@ -1,3 +1,4 @@
+import { measureForegroundPressure } from './domain/foreground-context-pressure.js'
 import { replaceSessionSurface } from './domain/session-surface-mutations.js'
 import { installWorkspaceInstructionPresentation } from './domain/workspace-instruction-presentation.js'
 import { createPresetDiagnostics } from './domain/preset-diagnostics.js'
@@ -1812,20 +1813,10 @@ export async function apply(ctx) {
     activity: chat => backgroundTasks.activity(chat),
     exclusive: backgroundTasks.exclusive,
     settle: chat => queueSettlement(chat.id),
-    async pressure(agent, signal, pendingMessages = []) {
-      if (!agent) return null
-      let selected
-      try { const state = ctx.get('sessionProjections')?.stateOf(agent.session, 'modelSelection'); selected = state?.pending || state?.lastUsed } catch {}
-      const target = selected || agent.session.requestHeader()?.config
-      if (!target?.provider || !target?.model) return null
-      const info = await ctx.llm.resolveModelInfo(target.provider, target.model, signal)
-      const capacity = info?.context?.contextWindow
-      if (!Number.isFinite(capacity) || capacity <= 0) return null
-      const meter = ctx.get('tokenMeter'), previous = agent.session.requestHeader()
-      const envelope = previous ? { ...previous, config: { ...previous.config, ...target } } : undefined
-      const pendingTokens = pendingMessages.reduce((sum, message) => sum + meter.estimateMessage(message), 0)
-      return { percent: 100 * (meter.measure(agent.session, envelope).totalTokens + pendingTokens) / capacity }
-    },
+    pressure: (agent, signal, pendingMessages = []) => measureForegroundPressure({
+      agent, signal, pendingMessages, projections: ctx.get('sessionProjections'),
+      defaultModel: agentDefaultModel, llm: ctx.llm, meter: ctx.get('tokenMeter')
+    }),
     checkpoint: id => withCompactionSession(id, agent => agent.session.seq),
     recover: (id, before) => withCompactionSession(id, agent => {
       const events = sessionEvents(agent.session).filter(event => event.seq >= before)

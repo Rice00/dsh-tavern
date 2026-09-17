@@ -2,6 +2,8 @@ import { compactionFailureMessage } from './compaction-failure.js'
 import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 
+const CAPACITY_WARNING = '无法取得当前模型上下文容量，自动压缩暂停；请配置模型窗口或改用轮数模式。'
+
 export function compactionPolicy(value = {}) {
   const mode = value.mode ?? 'manual'
   const rounds = value.rounds ?? 20, percent = value.percent ?? 80
@@ -58,8 +60,14 @@ export function createAutoCompaction(deps) {
       if (policy.mode === 'percent') {
         const pressure = await deps.pressure(options.agent, signal, options.pendingMessages)
         if (!pressure || !Number.isFinite(pressure.percent)) {
-          if (state.warning !== '无法取得当前模型上下文容量，自动压缩暂停；请配置模型窗口或改用轮数模式。') await save(chat.id, old => ({ ...old, warning: '无法取得当前模型上下文容量，自动压缩暂停；请配置模型窗口或改用轮数模式。' }))
+          if (state.warning !== CAPACITY_WARNING) await save(chat.id, old => ({ ...old, warning: CAPACITY_WARNING }))
           return null
+        }
+        // A valid measurement restores automatic checks even below the threshold.
+        // Do not erase unrelated operation failures or rewrite healthy state each tick.
+        if (state.warning === CAPACITY_WARNING) {
+          chat = await save(chat.id, old => ({ ...old, warning: old.warning === CAPACITY_WARNING ? '' : old.warning }))
+          state = chat.contextCompaction
         }
         if (pressure.percent < policy.percent) return null
         // No useful progress since the last successful compression: do not compress in a loop.

@@ -78,8 +78,8 @@ export const installation = `
 
 | 方式 | 适合谁 | 支持平台 |
 | --- | --- | --- |
-| Windows 一键在线安装 | 不想手动安装 Node.js 或 Desktop 的新用户 | Windows x64 |
-| DSH Desktop 桌面版 | 希望由桌面程序管理运行环境、启停和端口 | Windows x64、macOS |
+| 纯小白一键安装 | 下载后直接运行，无需手动准备运行环境 | 仅 Windows x64 |
+| DSH Desktop 安装 | 先安装 Desktop，再通过 DSH 终端安装酒馆 | Windows x64、macOS |
 | 命令行版 | 希望通过浏览器访问、自己管理服务 | Windows、macOS、Linux / WSL2 |
 | Android 实验版 | 愿意自行排错的手机用户 | 通过 DSHA 尝试安装，不保证一定可用 |
 
@@ -87,7 +87,7 @@ export const installation = `
 
 命令行版独立安装固定的 DSH {{dshVersion}}。Desktop / DSHA 复用宿主，要求内置 DSH 版本完全匹配，不匹配时停止安装；请自行下载安装适配版本。
 
-## Windows 新用户：一键在线安装
+## 纯小白一键安装（仅 Windows x64）
 
 [下载 Windows 一键在线安装 EXE](https://github.com/flizzywine/dsh-tavern/releases/download/v1.9/DSH-Tavern-Desktop-2.0.5-x64-Portable.exe)
 
@@ -97,17 +97,21 @@ export const installation = `
 
 已有安装和数据会保留，之后可在酒馆界面检查更新。这是在线安装程序，不是无需网络的离线整包。
 
-## 已有 Desktop 或 macOS：安装酒馆
+## DSH Desktop 安装（Windows / macOS）
 
 1. 安装适配版本 **DSH Desktop 2.0.5**（内置 DSH {{dshVersion}}）。打开 [历史版本下载页面](https://github.com/anywhere-labs/dsh-desktop/releases)，找到 **v2.0.5**，展开 **Assets**，下载适合自己系统的安装包；不要下载 Source code。内置 DSH 版本不匹配时会停止安装，请使用适配版本。
 2. 启动后，打开 **设置 → 通用设置**，点击窗口顶部的 **打开 DSH 终端**。
 3. 在这个终端里，运行你所用平台的命令。
+
+截图：打开终端
 
 ### Windows
 ` + code('powershell', installCommands.desktopWindows) + `
 ### macOS
 ` + code('bash', installCommands.desktopMac) + `
 安装完成后，重启 DSH Desktop，进入 **设置 → 桌面设置**，在右侧 **Profile** 列表点击 **tavern**；旁边显示 **当前** 即为选中。看到酒馆界面后，继续下方的“配置模型并开始第一局”。桌面版由 DSH Desktop 管理启停，不需要另外启动命令行服务。
+
+截图：选择配置
 
 ## 方式二：命令行版
 

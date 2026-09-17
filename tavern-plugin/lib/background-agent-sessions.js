@@ -257,6 +257,8 @@ export function createBackgroundAgentSessions(options, task) {
     requestContexts.set(traceSessionId, {
       scope: 'background',
       parentSessionId: str(input.sessionId),
+      selection: { ...input.selection },
+      maxTokens,
       task: str(input.task) || 'background',
       turn: Math.max(0, Number(input.turn) || 0)
     })

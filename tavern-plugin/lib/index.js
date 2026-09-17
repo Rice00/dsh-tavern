@@ -25,6 +25,7 @@ import { marked } from 'marked'
 import { presentModelError } from './domain/model-error-presentation.js'
 import { validateCardFile } from './domain/card-validation.js'
 import { resolveAgentCompaction } from './agent-compaction.js'
+import { compactBackgroundIfNeeded, measureBackgroundBudget } from './domain/background-compaction.js'
 import { createAutoCompaction, installCompactionPolicy } from './domain/auto-compaction.js'
 import { observeHttpRequests } from './domain/http-performance-diagnostics.js'
 import { createPerformanceDiagnostics } from './domain/performance-diagnostics.js'
@@ -1853,7 +1854,26 @@ export async function apply(ctx) {
     configuredCompactionEngines.add(engine)
     const dispose = installCompactionPolicy(engine, async (target, trigger, signal, fallback, forced) => {
       const background = backgroundAgentRunner.requestContext(target.session.id)
-      if (background && !['image', 'phone'].includes(background.task)) return null
+      if (background && !['image', 'phone'].includes(background.task)) {
+        return compactBackgroundIfNeeded({
+          trigger, forced,
+          pressure: () => measureBackgroundBudget({
+            agent: target, background, signal, llm: ctx.llm, meter: ctx.get('tokenMeter'),
+            pending: pendingCompactionMessages.get(target) || []
+          }),
+          mark: async () => {
+            const chat = await chatForSession(background.parentSessionId)
+            if (!chat) throw new Error('后台压缩找不到所属对话')
+            await updateChat(chat.id, current => {
+              const participant = current.timeline?.participants?.background
+              if (participant?.sessionId !== target.session.id) throw new Error('后台会话已变更，取消旧会话压缩')
+              participant.requiresNewSessionOnRewind = true
+              participant.compactionPlannedAt = Date.now()
+              return current
+            }, { source: 'compaction.background' })
+          }
+        })
+      }
       const chat = await chatForSession(target.session.id)
       if (!chat || !['story', 'script'].includes(chat.mode)) return fallback()
       await autoCompaction.run(target.session.id, { agent: target, signal, openTurnCompact: forced, pendingMessages: pendingCompactionMessages.get(target) || [] })

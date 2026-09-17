@@ -102,3 +102,67 @@ test('real preset: foreground and background resolve their own isolated compacti
     assert.ok(sessionEvents(agent.session).some(e => e.type === 'compaction/summary'), 'explicit manual compression works inside the correct scope')
   }
 })
+
+test('real background loop recovers provider overflow and retains the pending candidate request', native, async t => {
+  const { compactBackgroundIfNeeded } = await import('../tavern-plugin/lib/domain/background-compaction.js')
+  const h = await createInitializationNative(process.env.DSH_BOOT_MODULE)
+  t.after(() => h.dispose())
+  const boot = pathToFileURL(process.env.DSH_BOOT_MODULE)
+  const { BasicCompactionEngine } = await import(new URL('../../dsh-compaction-basic/lib/index.js', boot))
+  const engine = new BasicCompactionEngine(h.ctx, { auto: true })
+  let protectedRewind = false, rejectNext = false, rejected = 0
+  t.after(installCompactionPolicy(engine, (agent, trigger, signal, fallback, forced) => compactBackgroundIfNeeded({
+    trigger, forced, pressure: async () => null, mark: async () => { protectedRewind = true }
+  })))
+  h.ctx.on('llm/stream', (request, next) => {
+    if (request.purpose === 'compaction') assert.equal(protectedRewind, true)
+    if (rejectNext && request.purpose !== 'compaction') {
+      rejectNext = false; rejected++
+      return (async function* () { yield { type: 'finish', reason: { kind: 'error', failure: { message: 'maximum context length 1048576; requested 1089015 (705015 messages, 384000 completion)', code: 'CONTEXT_WINDOW_EXCEEDED' } } } })()
+    }
+    return next()
+  })
+  const agent = h.target.agent
+  agent.followup({ id: 'old-background', role: 'user', content: [{ type: 'text', text: '已有剧情与结算。'.repeat(800) }], source: { kind: 'human' } })
+  await agent.whenIdle()
+  rejectNext = true
+  agent.followup({ id: 'candidate', role: 'user', content: [{ type: 'text', text: '请生成本轮候选项。' }], source: { kind: 'human' } })
+  await agent.whenIdle()
+  const events = sessionEvents(agent.session)
+  assert.equal(rejected, 1)
+  assert.ok(events.some(e => e.type === 'compaction/summary'))
+  assert.equal(events.filter(e => e.type === 'turn/end').at(-1).data.reason.kind, 'completed')
+  const request = h.requests.filter(r => r.purpose !== 'compaction').at(-1)
+  assert.match(JSON.stringify(request.messages), /请生成本轮候选项/)
+})
+
+test('real background loop stops after the native overflow retry budget', native, async t => {
+  const { compactBackgroundIfNeeded } = await import('../tavern-plugin/lib/domain/background-compaction.js')
+  const h = await createInitializationNative(process.env.DSH_BOOT_MODULE)
+  t.after(() => h.dispose())
+  const boot = pathToFileURL(process.env.DSH_BOOT_MODULE)
+  const { BasicCompactionEngine } = await import(new URL('../../dsh-compaction-basic/lib/index.js', boot))
+  const engine = new BasicCompactionEngine(h.ctx, { auto: true })
+  let protectedRewind = false, rejectNext = false, rejected = 0
+  t.after(installCompactionPolicy(engine, (agent, trigger, signal, fallback, forced) => compactBackgroundIfNeeded({
+    trigger, forced, pressure: async () => null, mark: async () => { protectedRewind = true }
+  })))
+  h.ctx.on('llm/stream', (request, next) => {
+    if (request.purpose === 'compaction') assert.equal(protectedRewind, true)
+    if (rejectNext && request.purpose !== 'compaction') {
+      rejected++
+      return (async function* () { yield { type: 'finish', reason: { kind: 'error', failure: { message: 'maximum context length 1048576; requested 1089015 (705015 messages, 384000 completion)', code: 'CONTEXT_WINDOW_EXCEEDED' } } } })()
+    }
+    return next()
+  })
+  const agent = h.target.agent
+  agent.followup({ id: 'old-background', role: 'user', content: [{ type: 'text', text: '已有剧情与结算。'.repeat(800) }], source: { kind: 'human' } })
+  await agent.whenIdle()
+  rejectNext = true
+  agent.followup({ id: 'candidate', role: 'user', content: [{ type: 'text', text: '请生成本轮候选项。' }], source: { kind: 'human' } })
+  await agent.whenIdle()
+  const events = sessionEvents(agent.session)
+  assert.equal(rejected, 2)
+  assert.ok(events.some(e => e.type === 'compaction/summary'))
+  assert.equal(events.filter(e => e.type === 'turn/end').at(-1).data.reason.kind, 'error')
+})

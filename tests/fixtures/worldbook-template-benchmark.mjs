@@ -114,6 +114,11 @@ async function runCase(browser, name, { large=true, journal=true, mode='normal',
         const ms=performance.now()-begin;measuring=false
         assert.equal(result.error,null);assert.equal(result.renderedEntries.length,20);assert.deepEqual(result.log.templateDiagnostics,[]);assert.equal(result.prefixContext,Array.from({length:20},(_,i)=>(i+1)+':'+(large?3800:32)).join('\n\n'))
         assert.equal((await persistence.read('chat')).variables.counter,undefined)
+        // Exercise the production opt-in, not the no-journal benchmark variant.
+        if (journal && typeof runtime.forSession('s').renderProjection === 'function') {
+          assert.equal(metrics.filter(row=>row.name==='journal.write').length,0)
+          assert.equal(metrics.filter(row=>row.name==='journal.read').length,0)
+        }
         res.setHeader('Content-Type','application/json');res.end(JSON.stringify({ms,refs:result.refs,context:result.prefixContext,server:metrics}));return
       }
       if(path.startsWith('/rpc/')){

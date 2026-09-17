@@ -18,9 +18,9 @@ export function createPlayCardSnapshots({ worldBooks, planner, readCard, writeCh
     return ''
   }
 
-  async function build(chat, card, preservePreferences = false) {
-    let worldBook = null
-    try { worldBook = await worldBooks.bound(chat.cardPath, card, chat) }
+  async function build(chat, card, preservePreferences = false, resolvedWorldBook) {
+    let worldBook = resolvedWorldBook ?? null
+    try { if (resolvedWorldBook === undefined) worldBook = await worldBooks.bound(chat.cardPath, card, chat) }
     catch (error) { logger.warn('dsh-tavern: 常驻世界书读取失败，已跳过:', str(error && error.message || error)) }
     const worldBookContext = constantWorldBookContext({ worldBook }).context
     const planned = sanitizeAgentProjectionText((await planner.plan({ purpose: 'play-card-snapshot', card, chat, worldBookContext, worldBookLabel: '常驻世界书' })).text)
@@ -90,8 +90,19 @@ export function createPlayCardSnapshots({ worldBooks, planner, readCard, writeCh
   }
 
   async function replacement(chat, card) {
-    const patch = await build(chat, card, true)
-    return { ...patch, cardContextRevision: (Number(chat.cardContextRevision) || 0) + 1 }
+    // Explicit user consent replaces the live book snapshot as well as the card
+    // prefix. Resolve without the old snapshot, and fail before publishing if
+    // a binding is missing; never mark a partial refresh as successfully applied.
+    const liveChat = { ...chat }
+    delete liveChat.openingWorldbookSnapshot
+    const worldBook = await worldBooks.bound(chat.cardPath, card, liveChat)
+    const openingWorldbookSnapshot = {
+      version: 1,
+      source: structuredClone(worldBook?.source ?? null),
+      document: structuredClone(worldBook?.document ?? null)
+    }
+    const patch = await build({ ...chat, openingWorldbookSnapshot }, card, true, worldBook)
+    return { ...patch, openingWorldbookSnapshot, cardContextRevision: (Number(chat.cardContextRevision) || 0) + 1 }
   }
 
   async function preferenceReplacement(chat, enabled, profileId) {

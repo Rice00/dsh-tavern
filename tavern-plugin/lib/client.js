@@ -10651,7 +10651,7 @@ window.__ModuleLoader__.load({
 			}
 			async function applyUpdatedCard() {
 				if (cardUpdateBusy || !view?.cardUpdate) return;
-				if (!window.confirm("将保留全部对话历史和当前进度，后续请求使用新版人物卡设定。更新可能使提示词缓存失效，增加下一次请求的耗时和费用。\n\n当前变量不会重置。如果修改了 MVU 变量结构，需要另行迁移变量，本操作不会自动迁移。继续吗？")) return;
+				if (!window.confirm("将保留全部对话历史和当前进度，后续请求使用新版人物卡设定及当前绑定的世界书。确认应用会使相关 LLM 上下文缓存失效，下一次请求可能增加耗时和费用。\n\n本局世界书将重新载入，本局脚本对世界书的修改会被替换。取消则继续使用旧版。\n\n当前变量不会重置。如果修改了 MVU 变量结构，需要另行迁移变量，本操作不会自动迁移。继续吗？")) return;
 				setCardUpdateBusy(true);
 				try { await rpc("applyUpdatedCard", { digest: view.cardUpdate.digest }, props.sessionId); liveTavernView.invalidate(props.sessionId); }
 				catch (error) { tavernErrorHub.report("应用新版人物卡", error); }

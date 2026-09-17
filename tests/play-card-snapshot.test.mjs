@@ -288,3 +288,43 @@ test('switching an enabled game to another named profile replaces only its pinne
   assert.equal(patch.messages, undefined)
   assert.equal(patch.variables, undefined)
 })
+
+test('显式应用新版同步刷新常驻背景、MVU 规则和模板世界书，普通读取仍固定', async () => {
+  const { createWorldBookLibrary } = await import('../tavern-plugin/lib/domain/worldbook-library.js')
+  const { mvuUpdateRulesFromWorldBook } = await import('../tavern-plugin/lib/domain/worldbook-recall.js')
+  const card = { name: '测试', character_book: { entries: [
+    { id: 0, comment: '背景', content: '新版背景', constant: true, enabled: true, keys: [] },
+    { id: 1, comment: '[mvu_update]变量更新规则', content: '人际关系.人际网络', constant: true, enabled: true, keys: [] }
+  ] } }
+  let binding = { kind: 'default' }
+  const worldBooks = createWorldBookLibrary({ normalizePath: p => p, removeStandalone: async () => {},
+    cards: { read: async () => card }, resources: { bindingForCard: async () => binding, readText: async () => JSON.stringify({entries:{0:{uid:0,comment:"独立世界书",content:"独立新版",constant:true,disable:false,key:[]}}}) } })
+  const old = structuredClone(card.character_book)
+  old.entries[0].content = '旧版背景'
+  old.entries[1].content = '人际网络'
+  const chat = { id: 'test', mode: 'story', cardPath: 'cards/test.json', cardContextSnapshotVersion: 7,
+    cardContextSnapshot: '旧版背景', messages: [{role:'assistant',text:'历史'}], variables: {hp:12},
+    openingWorldbookSnapshot: {version:1,source:{kind:'card',cardPath:'cards/test.json'},document:old} }
+  const before = structuredClone(chat)
+  const api = createPlayCardSnapshots({worldBooks, planner:createContextPlanner({prompt:()=>''}), writeChat:async()=>{throw Error('must not save')}, readCard:async()=>card})
+  assert.equal(await api.ensure(chat,card),'旧版背景')
+  const patch = await api.replacement(chat,card)
+  assert.deepEqual(chat,before)
+  assert.match(patch.cardContextSnapshot,/新版背景/)
+  const updated = {...chat,...patch}
+  assert.match(mvuUpdateRulesFromWorldBook(await worldBooks.bound(chat.cardPath,card,updated)).join('\n'),/人际关系\.人际网络/)
+  assert.match(JSON.stringify(await worldBooks.templateSnapshot(chat.cardPath,card,updated)),/人际关系\.人际网络/)
+  assert.equal(patch.messages,undefined)
+  assert.equal(patch.variables,undefined)
+  binding = {kind:'standalone',path:'worldbooks/current.json',available:true}
+  const rebound = await api.replacement(chat,card)
+  assert.equal(rebound.openingWorldbookSnapshot.source.path,'worldbooks/current.json')
+  assert.match(rebound.cardContextSnapshot,/独立新版/)
+  binding = {kind:'standalone',path:'worldbooks/missing.json',available:false}
+  await assert.rejects(api.replacement(chat,card),/世界书不存在/)
+  assert.deepEqual(chat,before,'读取失败不应用部分更新')
+  binding = {kind:'none'}
+  const removed = await api.replacement(chat,card)
+  assert.equal(removed.openingWorldbookSnapshot.document,null)
+  assert.equal(await worldBooks.bound(chat.cardPath,card,{...chat,...removed}),null)
+})

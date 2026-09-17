@@ -1,36 +1,42 @@
 import { replaceSessionSurface } from './session-surface-mutations.js'
 import { restoredSurfaceSeqs } from './surface-restoration.js'
-import { sessionEvents, surfaceReplacementRange } from './session-events.js'
+import { sessionEvents, appendSessionEvent, surfaceReplacementRange } from './session-events.js'
 import { randomUUID } from 'node:crypto'
 
 export function rewindBackgroundSurface(session, boundary) {
   if (!Number.isSafeInteger(boundary)) return 0
   const events = sessionEvents(session)
   const nodes = session && session.surface && Array.isArray(session.surface.nodes) ? session.surface.nodes : []
-  const bySeq = new Map(events.map(event => [event.seq, event]))
-  const reset = boundary === -1
-  const groups = []
-  for (const seq of nodes) {
-    const event = bySeq.get(seq)
-    const id = event?.data?.message?.id || event?.data?.id || ''
-    const keep = reset
-      ? event?.type === 'system/message' || String(id).startsWith('tavern-session-prefix:')
-      : seq <= boundary
-    if (keep) { if (groups.at(-1)?.length) groups.push([]); continue }
-    if (!groups.length) groups.push([])
-    groups.at(-1).push(seq)
+  if (boundary === -1) {
+    // Preserve the fixed system-context seed while discarding previous task work.
+    for (const seq of nodes) {
+      const event = events[seq]
+      const id = event?.data?.message?.id || event?.data?.id || ''
+      if (String(id).startsWith('tavern-session-prefix:')) boundary = Math.max(boundary, seq)
+    }
   }
-  let removed = 0
-  for (const targets of groups.filter(group => group.length).reverse()) {
-    // A task may conclude through a tool without any assistant text. Use an
-    // empty plugin snapshot, not a fabricated model reply requiring step/start.
-    replaceSessionSurface(session, 'user/message', {
-      id: 'tavern-background-reset:' + randomUUID(), role: 'user', content: [],
-      source: { kind: 'plugin', plugin: 'dsh-tavern', form: 'snapshot' }
-    }, { start: targets[0], end: targets.at(-1), sourceEventSeqs: targets })
-    removed += targets.length
+  const shadowed = nodes.filter(function (seq) { return Number.isSafeInteger(seq) && seq > boundary })
+  if (shadowed.length === 0) return 0
+  let source = null
+  let turn = 0
+  let step = 1
+  for (let index = nodes.length - 1; index >= 0; index--) {
+    const event = events[nodes[index]]
+    const candidate = event && event.data && event.data.message && event.data.message.source
+    if (event && event.type === 'assistant/message' && candidate && candidate.kind === 'model') {
+      source = candidate
+      turn = Math.max(0, Number(event.data.turn) || 0)
+      step = Math.max(1, Number(event.data.step) || 1)
+      break
+    }
   }
-  return removed
+  if (source === null) throw new Error('后台 Agent checkpoint 之后存在消息，但找不到可用的模型来源')
+  replaceSessionSurface(session, 'assistant/message', {
+    turn,
+    step,
+    message: { id: randomUUID(), role: 'assistant', content: [], source }
+  }, { start: shadowed[0], end: shadowed[shadowed.length - 1], sourceEventSeqs: shadowed })
+  return shadowed.length
 }
 
 // Rebuild display suppression from durable empty surface replacements, including
@@ -41,8 +47,7 @@ export function backgroundSuppressedTurns(events) {
   for (const event of events) {
     if (restored.has(event.seq)) continue
     const op = event.surfaceOp
-    const emptyReset = event.type === 'user/message' && event.data?.id?.startsWith('tavern-background-reset:') && event.data.content?.length === 0
-    if ((!emptyReset && (event.type !== 'assistant/message' || event.data?.message?.content?.length !== 0)) || op?.op !== 'replace') continue
+    if (event.type !== 'assistant/message' || op?.op !== 'replace' || event.data?.message?.content?.length !== 0) continue
     const range = surfaceReplacementRange(op)
     if (Number.isSafeInteger(range.start) && Number.isSafeInteger(range.end) && range.start <= range.end) ranges.push(range)
   }

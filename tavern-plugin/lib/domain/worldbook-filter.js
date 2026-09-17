@@ -17,7 +17,7 @@ export function createWorldbookFilter({ runAgent, selection, beginTask }) {
       run = await runAgent({
         task: 'worldbook-filter', persistent: true, sessionId: chat.sessionId,
         persistentSessionId: taskRun.participantRequest.sessionId,
-        rewindTo: -1, // Each filter request already carries its complete current candidate pool.
+        rewindTo: taskRun.participantRequest.rewindTo,
         onPersistentSessionReady: id => taskRun.bindSession(id),
         turn: Number(chat.messages?.at(-1)?.turn || 0) + 1,
         selection: selection(chat), webSearchEnabled: false,

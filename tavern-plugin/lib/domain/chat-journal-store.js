@@ -60,8 +60,43 @@ export function createChatJournalStore(options = {}) {
   const frameLimit = Math.max(1, Number(options.frameLimit) || 200)
   const byteLimit = Math.max(1, Number(options.byteLimit) || 1024 * 1024)
   const mutationTails = new Map()
-  let cachedRead
-  let recentChanges = []
+  // Approximate retained JS size, bounded independently of the number of games.
+  const limit = (value, fallback) => Number.isSafeInteger(value) && value >= 0 ? value : fallback
+  const cacheMaxBytes = limit(options.cacheMaxBytes, 256 * 1024 * 1024)
+  const maxCachedChats = limit(options.maxCachedChats, 8)
+  const readCache = new Map()
+  const sizes = new WeakMap()
+  let cachedBytes = 0
+  function estimateBytes(value) {
+    if (typeof value === 'string') return 24 + value.length * 2
+    if (!value || typeof value !== 'object') return 8
+    if (sizes.has(value)) return sizes.get(value)
+    let size = 64
+    for (const key of Object.keys(value)) size += 24 + key.length * 2 + estimateBytes(value[key])
+    sizes.set(value, size)
+    return size
+  }
+  function forgetState(chatId) {
+    const entry = readCache.get(chatId)
+    if (entry) cachedBytes -= entry.bytes
+    readCache.delete(chatId)
+  }
+  function rememberState(chatId, stamp, state, recentChanges = []) {
+    forgetState(chatId)
+    if (!stamp || !state || !maxCachedChats || !cacheMaxBytes) return
+    // Internal states are immutable; shared subtrees reuse their size estimate.
+    // Size accounting must not serialize the entire chat on each small patch.
+    let bytes
+    try { bytes = estimateBytes(state) + estimateBytes(recentChanges) + estimateBytes(stamp) } catch { return }
+    if (bytes > cacheMaxBytes) return
+    readCache.set(chatId, { stamp, state, recentChanges, bytes })
+    cachedBytes += bytes
+    while (readCache.size > maxCachedChats || cachedBytes > cacheMaxBytes) forgetState(readCache.keys().next().value)
+  }
+  function knownChanges(chatId, state) {
+    const entry = readCache.get(chatId)
+    return entry?.state === state ? entry.recentChanges : []
+  }
   if (String(options.dataRoot || '') === '') throw new Error('Chat Journal Store 缺少 dataRoot')
 
   function layout(chatId) {
@@ -302,20 +337,22 @@ export function createChatJournalStore(options = {}) {
     return { path: snapshotPath, name: path.basename(snapshotPath), revision: state.revision }
   }
 
-  // Retain only the most recent materialization, verified against disk on every read.
+  // Each cached game remains verified against disk on every read.
   async function cachedState(chatId) {
     const stamp = await version(chatId)
-    if (stamp && cachedRead?.id === chatId && cachedRead.stamp === stamp) return cachedRead.state
-    recentChanges = []
+    const entry = readCache.get(chatId)
+    if (stamp && entry?.stamp === stamp) {
+      readCache.delete(chatId); readCache.set(chatId, entry)
+      return entry.state
+    }
+    forgetState(chatId)
     const state = await materialize(chatId)
-    if (stamp && stamp === await version(chatId)) cachedRead = state && {id:chatId,stamp,state}
-    else if (cachedRead?.id === chatId) cachedRead = undefined
+    if (stamp && stamp === await version(chatId)) rememberState(chatId, stamp, state)
     return state
   }
   async function read(chatId) {
-    const previous=cachedRead?.state
-    const state=await cachedState(chatId)
-    return state ? (state===previous?structuredClone(state.chat):jsonClone(state.chat)) : undefined
+    const state = await cachedState(chatId)
+    return state ? structuredClone(state.chat) : undefined
   }
   function slice(chat, indices) {
     const {messages:rawMessages,...head}=chat
@@ -328,7 +365,7 @@ export function createChatJournalStore(options = {}) {
     const state=await cachedState(chatId)
     return state && !indices.some(i=>i>=(state.chat.messages?.length||0)) ? slice(state.chat,indices) : undefined
   }
-  function rememberChanges(revision, changes) {
+  function rememberChanges(previous, revision, changes) {
     const indices = new Set()
     let tail = Infinity
     for (const change of changes) {
@@ -337,13 +374,12 @@ export function createChatJournalStore(options = {}) {
       if (change.path.length > 1 && Number.isSafeInteger(change.path[1])) indices.add(change.path[1])
       else tail = Math.min(tail, change.op === 'splice' ? change.index : 0)
     }
-    recentChanges.push({revision, indices: [...indices], tail})
-    if (recentChanges.length > 32) recentChanges.shift()
+    return previous.concat({revision, indices: [...indices], tail}).slice(-32)
   }
   async function readChangedSlice(chatId, revision) {
     const state = await cachedState(chatId)
     if (!state || !Number.isSafeInteger(revision) || revision >= state.revision) return undefined
-    const frames = recentChanges.filter(frame => frame.revision > revision)
+    const frames = knownChanges(chatId, state).filter(frame => frame.revision > revision)
     if (frames.length !== state.revision - revision || frames[0]?.revision !== revision + 1) return undefined
     const length = state.chat.messages?.length || 0
     const indices = new Set(frames.flatMap(frame => frame.indices).filter(index => index < length))
@@ -366,12 +402,13 @@ export function createChatJournalStore(options = {}) {
       if(metadata.requestId)frame.requestId=String(metadata.requestId)
       if(metadata.operationId)frame.operationId=String(metadata.operationId)
       metadata.assertCurrent?.()
-      cachedRead=undefined
+      const recentChanges = knownChanges(chatId, state)
+      forgetState(chatId)
       const open=await appendFrame(paths,frame,state.open)
       const rotated=await maybeRotate(paths,{chat:next,revision:frame.revision},open,state.openFrameCount+1)
-      rememberChanges(frame.revision, changes)
-      cachedRead={id:chatId,stamp:await version(chatId),state:{...state,chat:next,revision:frame.revision,legacy:false,
-        snapshot:rotated || state.snapshot,open:rotated ? null : open,openFrameCount:rotated ? 0 : state.openFrameCount+1,openInvalidLine:0}}
+      rememberState(chatId, await version(chatId), {...state,chat:next,revision:frame.revision,legacy:false,
+        snapshot:rotated || state.snapshot,open:rotated ? null : open,openFrameCount:rotated ? 0 : state.openFrameCount+1,openInvalidLine:0},
+        rememberChanges(recentChanges, frame.revision, changes))
       return slice(next,[]).chat
     })
   }
@@ -397,12 +434,9 @@ export function createChatJournalStore(options = {}) {
         await mkdir(paths.journals, { recursive: true })
         const revision = revisionOf(next)
         const snapshotPath = await writeSnapshot(paths, next, revision)
-        cachedRead = {
-          id: chatId, stamp: await version(chatId),
-          state: { chat: next, revision, legacy: false,
-            snapshot: { path: snapshotPath, name: path.basename(snapshotPath), revision },
-            open: null, openFrameCount: 0, openValidBytes: 0, openInvalidLine: 0 }
-        }
+        rememberState(chatId, await version(chatId), { chat: next, revision, legacy: false,
+          snapshot: { path: snapshotPath, name: path.basename(snapshotPath), revision },
+          open: null, openFrameCount: 0, openValidBytes: 0, openInvalidLine: 0 })
         return jsonClone(next)
       }
       const baseRevision = currentState.revision
@@ -425,20 +459,17 @@ export function createChatJournalStore(options = {}) {
       }
       if (metadata.requestId) frame.requestId = String(metadata.requestId)
       if (metadata.operationId) frame.operationId = String(metadata.operationId)
-      cachedRead = undefined
+      const recentChanges = knownChanges(chatId, currentState)
+      forgetState(chatId)
       const open = await appendFrame(paths, frame, currentState.open)
       const rotated = await maybeRotate(paths, { chat: next, revision }, open, currentState.openFrameCount + 1)
-      rememberChanges(revision, changes)
       // Rotation publishes the same materialized state. Keep it cached instead
       // of reading, decoding and replaying a full chat on the very next access.
       // Disk stamps still invalidate it for external writes or corruption.
-      cachedRead = {
-        id: chatId,
-        stamp: await version(chatId),
-        state: { ...currentState, chat: next, revision, legacy: false,
-          snapshot: rotated || currentState.snapshot, open: rotated ? null : open,
-          openFrameCount: rotated ? 0 : currentState.openFrameCount + 1, openInvalidLine: 0 }
-      }
+      rememberState(chatId, await version(chatId), { ...currentState, chat: next, revision, legacy: false,
+        snapshot: rotated || currentState.snapshot, open: rotated ? null : open,
+        openFrameCount: rotated ? 0 : currentState.openFrameCount + 1, openInvalidLine: 0 },
+        rememberChanges(recentChanges, revision, changes))
       return jsonClone(next)
     })
   }
@@ -476,7 +507,7 @@ export function createChatJournalStore(options = {}) {
   async function remove(chatId) {
     await serialize(chatId, async function () {
       const paths = layout(chatId)
-      if (cachedRead?.id === chatId) cachedRead = undefined
+      forgetState(chatId)
       await rm(paths.root, { recursive: true, force: true })
       if (legacyData && typeof legacyData.remove === 'function') await legacyData.remove(paths.legacyRelative)
       else await rm(paths.legacy, { force: true })

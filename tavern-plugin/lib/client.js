@@ -8067,7 +8067,6 @@ window.__ModuleLoader__.load({
 			return React.createElement("div", { className: "dsh-tavern-settings-section" },
 				React.createElement("p", { className: "dsh-tavern-settings-intro" }, "设置通用游戏选项。后台配置请在顶栏“本局设置”中调整。"),
                 React.createElement("p", { className: "dsh-tavern-settings-intro" }, "建议前台和后台先使用 Low 推理强度：等待更短，也可能让续写更自然、任务执行更直接。遇到复杂情节或规则处理不佳时，再尝试提高。"),
-                React.createElement("button", { onClick: function () { const detail = {handled:false}; window.dispatchEvent(new CustomEvent("dsh-template-settings", {detail:detail})); if (!detail.handled) setState(function(current){return Object.assign({},current,{error:"请先打开一局游戏，再进入提示词模板设置。"});}); } }, "提示词模板设置与编辑器"),
                 React.createElement(TavernTextColorSettings),
                 React.createElement(ContextCompactionSettings),
 				state.sceneImages ? React.createElement(SceneImageSettings, null) : null,

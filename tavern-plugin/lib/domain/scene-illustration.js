@@ -440,7 +440,7 @@ export function createSceneIllustrations(deps) {
             record.traceSessionId = sessionId
             await writeJob(path, record)
           },
-          selection: input.selection, system: input.adjustment ? readSceneAdjustmentInstruction() : readScenePlanInstruction(), signal: controller.signal,
+          selection: input.selection, system: deps.prompt ? deps.prompt(input.adjustment ? 'scene-image-adjustment' : 'scene-plan') : (input.adjustment ? readSceneAdjustmentInstruction() : readScenePlanInstruction()), signal: controller.signal,
           messages: [{ role: 'user', content: [{ type: 'text', text: JSON.stringify({ ...input.prepared.input,
             ...(record.planDraft ? { draft: sceneDraftSummary(draft) } : {}) }) }] }],
           turnContext: '', tools: [...(input.adjustment ? [SCENE_ADJUSTMENT_TOOL] : SCENE_DRAFT_TOOLS), CHARACTER_DESIGN_READ_TOOL,

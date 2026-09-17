@@ -1382,11 +1382,12 @@ test('temporary settlement tools conclude only after both submissions, without a
 })
 
 test('生图已有空前缀会话补入开局 system，连续任务保持背景且不混入正文', async () => {
-  let assemble, pending, reads = 0
+  let assemble, pending, reads = 0, personaOverride = readSceneImageSystemInstruction()
   const seen = [], sections = [], personas = []
   const session = { id: 'image-opening-context', header: {}, events: [], append(type, data) { const event = { type, data, seq: this.events.length }; this.events.push(event); return event } }
   const runner = createBackgroundAgentRunner({
     id: () => session.id,
+    imageSystemPrompt: () => personaOverride,
     resolveStablePrefix: async () => { reads++; return '【用户已确认的长期偏好】\n偏好标记\n【故事设定 · 人物卡】\n人物标记\n【常驻世界书】\n常驻标记' },
     resolveCurrentWorldbook: async () => undefined,
     agents: { get: () => ({ session: { header: {} } }), async create(options) {
@@ -1409,6 +1410,10 @@ test('生图已有空前缀会话补入开局 system，连续任务保持背景�
     }
     assert.doesNotMatch(seen[0].system, /当前场景一|历史场景二/)
     assert.equal(session.events.filter(event => event.data?.id === 'tavern-session-prefix:' + session.id).length, 1)
+    personaOverride = '已修改的生图系统指令'
+    await runner.run({ sessionId: 'parent', persistent: true, task: 'image', selection: { provider: 'test', model: 'fake' }, messages: [], tools: [] })
+    assert.match(seen[2].system, /已修改的生图系统指令/)
+    assert.doesNotMatch(seen[2].system, /独立的场景生图 Agent/)
   } finally { await runner.dispose() }
 })
 

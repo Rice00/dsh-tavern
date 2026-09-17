@@ -1133,15 +1133,17 @@ test('repaint bypasses text Agent, retains each version and deduplicates replaye
 test('image-only adjustment uses just old plan plus instruction, persists through provider failure, and does not change canonical plans', async t => {
   let calls = 0, generated = 0
   const outputBudgets = []
+  let promptVersion = 1
   const fx = await fixture(t, {
+    prompt: name => name + ':v' + promptVersion,
     generate: async input => { generated++; if (generated === 2) throw new Error('temporary image error'); return { data: png, mediaType: 'image/png' } },
     runAgent: async input => {
       calls++
+      assert.equal(input.system, (calls === 1 ? 'scene-plan:v1' : 'scene-image-adjustment:v2'))
       outputBudgets.push(input.maxTokens)
       if (input.tools.some(tool => tool.name === 'submit_scene_plan')) await submitPlanCall(input, { arguments: { plan: planFixture() } })
       else {
         assert.equal(input.tools[0].name, 'submit_image_adjustment')
-        assert.equal(input.system, readSceneAdjustmentInstruction())
         const context = JSON.parse(input.messages[0].content[0].text)
         assert.equal(context.instruction, '改成雨夜')
         assert.equal(context.sources, undefined)
@@ -1154,6 +1156,7 @@ test('image-only adjustment uses just old plan plus instruction, persists throug
   const key = sceneTarget(fx.chat(), 2).key
   await fx.service.start('parent', 2, key)
   const first = await until(async () => { const state = await fx.service.status('parent', 2); return state.status === 'succeeded' && state })
+  promptVersion = 2
   const options = { kind: 'adjust', versionId: first.versions[0].id, instruction: '改成雨夜' }
   const originalPlans = await fx.store.readJson(imagePath + 'plans.json')
   await fx.service.start('parent', 2, key, options)

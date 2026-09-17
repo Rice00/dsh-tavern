@@ -157,7 +157,7 @@ export function createBackgroundAgentTask(options) {
         text: () => {
           const fixed = sessionStablePrefixSections(state.session)
           const sections = state.currentWorldbook === undefined ? fixed : withCurrentWorldbook(fixed, state.currentWorldbook)
-          const assembly = { sections: [...sections, { name: 'deployment:persona', text: state.input.task === 'image' ? readSceneImageSystemInstruction() : backgroundPersona }] }
+          const assembly = { sections: [...sections, { name: 'deployment:persona', text: state.input.task === 'image' ? (options.imageSystemPrompt ? options.imageSystemPrompt() : readSceneImageSystemInstruction()) : backgroundPersona }] }
           return prependSystemInstruction(assembly, options.systemAppend?.()).sections.map(section => section.text).join('\n\n')
         }
       })

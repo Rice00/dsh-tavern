@@ -99,6 +99,7 @@ async function main() {
         active.chatId = chat?.id
         active.modelControl = result.model
         active.requiresBrowser = result.requiresBrowser || false
+        active.templateRuntime = result.templateRuntime || 'not-started'
         if (result.error) throw new Error(result.error)
         active.cardSelection = { path: chat.cardPath, imported: false, source: 'production' }
         active.card = { path: chat.cardPath, contextSha256: createHash('sha256').update(JSON.stringify(chat.cardContextSnapshot || null)).digest('hex') }
@@ -269,6 +270,7 @@ async function main() {
     if (report.status !== 'passed') {
       try { await api?.cancel() } catch (error) { report.cleanupErrors.push({ source: 'test-session', error: cleanError(error) }) }
     }
+    try { await api?.close() } catch (error) { report.cleanupErrors.push({ source: 'template-browser', error: cleanError(error) }) }
     await checkpoint(true).catch(error => { report.captureError = cleanError(error) })
     if (report.cleanupErrors.length || report.captureError || report.steps.some(step => step.captureErrors?.length)) { report.status = 'failed'; process.exitCode = 1 }
     for (let index = report.steps.length; index < scenario.steps.length; index++) {

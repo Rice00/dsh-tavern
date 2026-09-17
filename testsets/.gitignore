@@ -5,6 +5,7 @@
 !/lib/
 !/tests/
 !/ui/
+!/ordinary-tavern/
 
 # 公共目录内也不提交本机人物卡与来源记录。
 **/card.json

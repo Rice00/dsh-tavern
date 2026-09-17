@@ -10,7 +10,7 @@ import { loadScenario } from './lib/scenario.mjs'
 
 const root = path.dirname(fileURLToPath(import.meta.url))
 const args = process.argv.slice(2)
-const name = args[0] && !args[0].startsWith('--') ? args.shift() : '001-duan-yingying-continue'
+const name = args[0] && !args[0].startsWith('--') ? args.shift() : 'ordinary-tavern'
 if (!/^[a-zA-Z0-9_-]+$/.test(name)) throw new Error('案例名称只能包含字母、数字、短横线与下划线')
 const checkOnly = args.includes('--check')
 const forwarded = args.filter(arg => arg !== '--check')

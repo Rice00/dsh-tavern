@@ -1,13 +1,17 @@
 import { appendFile, mkdir, open, readFile, readdir, rename, rm, stat, truncate, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
-import { isDeepStrictEqual } from 'node:util'
+import { isDeepStrictEqual, promisify } from 'node:util'
+import { gzip, gunzip } from 'node:zlib'
 import path from 'node:path'
 
 import { applyJsonChanges, applyJsonChangesShared, diffJson } from './json-mutation.js'
 
 const STORAGE_REVISION = '_storageRevision'
-const SNAPSHOT_PATTERN = /^(\d{12})\.json$/
+const SNAPSHOT_PATTERN = /^(\d{12})\.json(?:\.gz)?$/
 const JOURNAL_PATTERN = /^(\d{12})-(open|(\d{12}))\.jsonl$/
+const compress = promisify(gzip)
+const decompress = promisify(gunzip)
+const SNAPSHOT_COMPRESSION_BYTES = 64 * 1024
 
 function revisionOf(value) {
   return Math.max(0, Number(value && value[STORAGE_REVISION]) || 0)
@@ -218,11 +222,12 @@ export function createChatJournalStore(options = {}) {
 
   async function readSnapshot(paths, row) {
     try {
-      const chat = await readJson(row.path)
+      const bytes = await readFile(row.path)
+      const chat = JSON.parse((row.path.endsWith('.gz') ? await decompress(bytes) : bytes).toString('utf8'))
       if (chat && typeof chat === 'object' && !Array.isArray(chat) && chat.id === paths.id &&
         Number.isSafeInteger(chat[STORAGE_REVISION]) && chat[STORAGE_REVISION] === row.revision) return chat
     } catch (error) {
-      if (!(error instanceof SyntaxError)) throw error
+      if (!(error instanceof SyntaxError) && !['Z_DATA_ERROR', 'Z_BUF_ERROR', 'ENOENT'].includes(error?.code)) throw error
     }
     logger?.warn?.('dsh-tavern: Chat snapshot 损坏，尝试历史快照与 journal:', row.path)
     return undefined
@@ -230,13 +235,22 @@ export function createChatJournalStore(options = {}) {
 
   async function writeSnapshot(paths, chat, revision) {
     await mkdir(paths.snapshots, { recursive: true })
-    const target = path.join(paths.snapshots, revisionName(revision) + '.json')
-    if (await exists(target)) {
+    const plainTarget = path.join(paths.snapshots, revisionName(revision) + '.json')
+    for (const target of [plainTarget, plainTarget + '.gz']) {
+      if (!(await exists(target))) continue
       const previous = await readSnapshot(paths, { path: target, revision })
       if (previous !== undefined) {
         if (!isDeepStrictEqual(previous, chat)) throw new Error('Chat snapshot revision 冲突: ' + target)
         return target
       }
+    }
+    // Encode only at the file boundary. Preserve property order for JSON/YAML
+    // variable macros and LLM prefix caching; never reconstruct MVU display deltas.
+    const json = JSON.stringify(chat)
+    const compressed = Buffer.byteLength(json) >= SNAPSHOT_COMPRESSION_BYTES
+    const bytes = compressed ? await compress(json, { level: 1 }) : encodeSnapshot(chat)
+    const target = plainTarget + (compressed ? '.gz' : '')
+    if (await exists(target)) {
       // Preserve the failed old writer's bytes for diagnosis before replacement.
       await rename(target, target + '.corrupt-' + randomUUID())
     }
@@ -244,7 +258,7 @@ export function createChatJournalStore(options = {}) {
     let handle
     try {
       handle = await open(staging, 'wx')
-      await handle.writeFile(encodeSnapshot(chat), 'utf8')
+      await handle.writeFile(bytes)
       await handle.sync()
       await handle.close(); handle = null
       await rename(staging, target)
@@ -282,10 +296,10 @@ export function createChatJournalStore(options = {}) {
   async function maybeRotate(paths, state, open, frameCount) {
     const info = await stat(open.path)
     if (frameCount < frameLimit && info.size < byteLimit) return false
-    await writeSnapshot(paths, state.chat, state.revision)
+    const snapshotPath = await writeSnapshot(paths, state.chat, state.revision)
     const sealed = path.join(paths.journals, revisionName(open.start) + '-' + revisionName(state.revision) + '.jsonl')
     await rename(open.path, sealed)
-    return true
+    return { path: snapshotPath, name: path.basename(snapshotPath), revision: state.revision }
   }
 
   // Retain only the most recent materialization, verified against disk on every read.
@@ -356,7 +370,8 @@ export function createChatJournalStore(options = {}) {
       const open=await appendFrame(paths,frame,state.open)
       const rotated=await maybeRotate(paths,{chat:next,revision:frame.revision},open,state.openFrameCount+1)
       rememberChanges(frame.revision, changes)
-      if(!rotated)cachedRead={id:chatId,stamp:await version(chatId),state:{...state,chat:next,revision:frame.revision,legacy:false,open,openFrameCount:state.openFrameCount+1,openInvalidLine:0}}
+      cachedRead={id:chatId,stamp:await version(chatId),state:{...state,chat:next,revision:frame.revision,legacy:false,
+        snapshot:rotated || state.snapshot,open:rotated ? null : open,openFrameCount:rotated ? 0 : state.openFrameCount+1,openInvalidLine:0}}
       return slice(next,[]).chat
     })
   }
@@ -380,7 +395,14 @@ export function createChatJournalStore(options = {}) {
       if (next === undefined || next === null || typeof next !== 'object' || Array.isArray(next)) throw new Error('Chat Journal 只能保存 JSON object')
       if (currentState == null) {
         await mkdir(paths.journals, { recursive: true })
-        await writeSnapshot(paths, next, revisionOf(next))
+        const revision = revisionOf(next)
+        const snapshotPath = await writeSnapshot(paths, next, revision)
+        cachedRead = {
+          id: chatId, stamp: await version(chatId),
+          state: { chat: next, revision, legacy: false,
+            snapshot: { path: snapshotPath, name: path.basename(snapshotPath), revision },
+            open: null, openFrameCount: 0, openValidBytes: 0, openInvalidLine: 0 }
+        }
         return jsonClone(next)
       }
       const baseRevision = currentState.revision
@@ -407,14 +429,15 @@ export function createChatJournalStore(options = {}) {
       const open = await appendFrame(paths, frame, currentState.open)
       const rotated = await maybeRotate(paths, { chat: next, revision }, open, currentState.openFrameCount + 1)
       rememberChanges(revision, changes)
-      if (!rotated) {
-        // The JSON-normalized result is private; callers only receive detached copies.
-        cachedRead = {
-          id: chatId,
-          stamp: await version(chatId),
-          state: { ...currentState, chat: next, revision, legacy: false, open,
-            openFrameCount: currentState.openFrameCount + 1, openInvalidLine: 0 }
-        }
+      // Rotation publishes the same materialized state. Keep it cached instead
+      // of reading, decoding and replaying a full chat on the very next access.
+      // Disk stamps still invalidate it for external writes or corruption.
+      cachedRead = {
+        id: chatId,
+        stamp: await version(chatId),
+        state: { ...currentState, chat: next, revision, legacy: false,
+          snapshot: rotated || currentState.snapshot, open: rotated ? null : open,
+          openFrameCount: rotated ? 0 : currentState.openFrameCount + 1, openInvalidLine: 0 }
       }
       return jsonClone(next)
     })

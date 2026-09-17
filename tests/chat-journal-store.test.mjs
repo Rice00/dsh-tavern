@@ -5,6 +5,7 @@ import path from 'node:path'
 import test from 'node:test'
 import { spawn } from 'node:child_process'
 import { once } from 'node:events'
+import { gunzipSync } from 'node:zlib'
 
 import { createChatJournalStore } from '../tavern-plugin/lib/domain/chat-journal-store.js'
 
@@ -66,10 +67,11 @@ test('损坏快照缺少完整重放链时拒绝静默退回旧状态', async t 
   await assert.rejects(store.read('chat'), /snapshot|快照|revision/)
 })
 
-for (const phase of ['create', 'migrate', 'rotate']) test(`快照发布前进程中断可恢复：${phase}`, { timeout: 10000 }, async t => {
+for (const compressed of [false, true]) for (const phase of ['create', 'migrate', 'rotate']) test(`快照发布前进程中断可恢复：${phase}, compressed=${compressed}`, { timeout: 10000 }, async t => {
   const root = await temporary()
   t.after(() => rm(root, { recursive: true, force: true }))
   const original = { id: 'chat', _storageRevision: 1, counter: 1 }
+  if (compressed) original.payload = '完整历史变量'.repeat(10000)
   await mkdir(path.join(root, 'chats'), { recursive: true })
   if (phase === 'migrate') await writeFile(path.join(root, 'chats/chat.json'), JSON.stringify(original))
   if (phase === 'rotate') await createChatJournalStore({ dataRoot: root }).update('chat', () => original)
@@ -87,7 +89,8 @@ for (const phase of ['create', 'migrate', 'rotate']) test(`快照发布前进程
     syncBuiltinESMExports();
     const { createChatJournalStore } = await import(${JSON.stringify(new URL('../tavern-plugin/lib/domain/chat-journal-store.js', import.meta.url).href)});
     await createChatJournalStore({ dataRoot: ${JSON.stringify(root)}, frameLimit: 1 }).update('chat', chat => ({
-      id: 'chat', _storageRevision: (chat?._storageRevision || 0) + 1, counter: (chat?.counter || 0) + 1
+      id: 'chat', _storageRevision: (chat?._storageRevision || 0) + 1, counter: (chat?.counter || 0) + 1,
+      ...(${compressed} ? { payload: '完整历史变量'.repeat(10000) } : {})
     }));
   `], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] })
   t.after(() => { if (child.exitCode === null) child.kill('SIGKILL') })
@@ -95,7 +98,8 @@ for (const phase of ['create', 'migrate', 'rotate']) test(`快照发布前进程
     once(child, 'message'),
     once(child, 'exit').then(([code]) => { throw new Error('writer exited before staging: ' + code) })
   ])
-  assert.equal(JSON.parse(await readFile(message.staged, 'utf8')).id, 'chat')
+  const staged = await readFile(message.staged)
+  assert.equal(JSON.parse(compressed ? gunzipSync(staged).toString() : staged.toString()).id, 'chat')
   const stopped = once(child, 'exit')
   child.kill('SIGKILL')
   await stopped

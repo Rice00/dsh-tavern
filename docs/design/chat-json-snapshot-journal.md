@@ -71,13 +71,36 @@ profile-data/tavern/data/chats/
       └─ 000000000201-open.jsonl
 ```
 
-- snapshot 是某个 storage revision 的完整 Chat，写成后不再修改；
+- snapshot 是某个 storage revision 的完整 Chat，写成后不再修改；较大的新快照使用下述无损压缩；
 - sealed journal 是已经轮换的只读历史；
 - `*-open.jsonl` 是当前追加文件；
 - 文件名中的 revision 固定宽度，目录排序就是时间顺序；
 - 旧的 `chats/<chat-id>.json` 只作为迁移来源和只读备份。
 
 不增加 `current.json` 指针。读取时从文件名选择最新 snapshot 和其后的 journal，避免为了维护一个小指针又引入替换时序。
+
+### 大快照无损压缩与内存复用（issue #45）
+
+新快照的紧凑 JSON 达到 64 KiB 时，用 Node 异步 gzip（level 1）写成
+`<revision>.json.gz`；小快照仍写成可读的 `.json`。两种格式共同参与 revision
+选择、缓存失效检测和历史恢复。已有快照不重写、不删除；旧单文件迁移备份仍是完整 JSON。
+
+压缩仅在文件边界进行：完整保留变量、消息、swipe、对象键顺序。上层仍收到普通完整
+Chat，变量宏输出和 LLM 请求不因压缩改变。没有复用 MVU 的展示用 `delta_data`，
+也不重跑历史脚本。journal 格式、前端请求负载和内存中的完整变量表示保持原样。
+
+首次保存和轮换发布后继续缓存刚写入的 Chat；文件版本检测仍在每次读取前执行。
+轮换后将 open journal 状态清空，下次修改创建新的 journal 段，避免重读整个快照。
+
+压缩快照仍使用 staging → fsync → rename 的发布流程。gzip 校验或 JSON 解析失败时，
+尝试旧快照与连续 journal；不能恢复到目标 revision 时明确报错，不返回更旧的数据。
+每份快照独立解压，不增加跨楼层、跨文件的差异链依赖。
+
+旧版程序不能读取 `.json.gz`。如需降级，先停止写入并备份聊天目录，再使用标准 gzip
+解压出同 revision 的 `.json`（保留原压缩文件）；不能直接把扩展名改成 `.json`。
+
+实测脚本：`node bin/benchmark-chat-snapshots.mjs [旧版 store 模块路径]`。它使用临时
+合成数据，强制每次修改轮换，以单独测量快照路径；不代表每次正常变量更新的耗时。
 
 ## Journal 记录格式
 

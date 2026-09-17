@@ -1,4 +1,5 @@
 import { replaceSessionSurface } from './domain/session-surface-mutations.js'
+import { installWorkspaceInstructionPresentation } from './domain/workspace-instruction-presentation.js'
 import { createPresetDiagnostics } from './domain/preset-diagnostics.js'
 import { createIncrementalReplyView } from './domain/incremental-reply-view.js'
 import { createRequestPerformance } from './domain/request-performance.js'
@@ -3794,6 +3795,8 @@ export async function apply(ctx) {
     }
   })
   const fullTemplateRequests = new WeakMap()
+  installWorkspaceInstructionPresentation(ctx, async sessionId => backgroundAgentRunner.owns(sessionId) || Boolean(await chatForSession(sessionId)))
+
   ctx.on('llm/stream', function (options, next) {
     const sessionId = str(options && options.sessionId)
     const coordinates = requestCoordinates.get(sessionId)

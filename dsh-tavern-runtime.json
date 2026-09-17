@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "8dbfc67b7bfd70e7ddf49b9ea2b5f7ae7defb980",
-  "releaseSequence": 271,
+  "revision": "3b1f6d746e2696202d99de7591c61635678261e4",
+  "releaseSequence": 272,
   "version": "1.9.0",
   "files": [
     {
@@ -426,8 +426,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/chat-journal-store.js",
-      "sha256": "a63b009973dbe9d073a90fc4727e19dad5af95965447ec02302d8c82d4459dea",
-      "size": 24134
+      "sha256": "8043b50a706a727bd038377ad6aa366fdf19d08bd91457f26eb397c84df96ead",
+      "size": 25733
     },
     {
       "path": "tavern-plugin/lib/domain/chat-persistence.js",
@@ -551,8 +551,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/full-template-runtime.js",
-      "sha256": "ffa07fa689f17ee94e157fca3fc6cf0402008cbe804239622582dafbdf41b1d0",
-      "size": 8652
+      "sha256": "3ac93cedb949f11bcb5eeca2024d36deba848097cb4511e3bb0676176d43cf4c",
+      "size": 8813
     },
     {
       "path": "tavern-plugin/lib/domain/gameplay-settled-turn.js",
@@ -851,8 +851,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/scene-image-diagnostics.js",
-      "sha256": "61761e3c07778fc43dd25c52788ad724d1c15b34d8bce1232f8ea9f573807a23",
-      "size": 7531
+      "sha256": "d66d07261e9a7866cf185788464790f27c8da17c33d27cf087906eee192d71a6",
+      "size": 10104
     },
     {
       "path": "tavern-plugin/lib/domain/scene-image-module-settings.js",

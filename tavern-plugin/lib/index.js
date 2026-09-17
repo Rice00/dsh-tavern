@@ -83,7 +83,7 @@ import { createForegroundFrameSessionAdapter } from './domain/foreground-frame-s
 import { HISTORY_RECALL_OUTPUT_SCHEMA, HISTORY_RECALL_TOOL, createHistoryRecall, renderHistoryRecall } from './domain/history-recall.js'
 import { dshParameterFields } from './domain/dsh-tool-schema.js'
 import { createModelRequestLog } from './domain/model-request-log.js'
-import { MVU_SUBMIT_UPDATE_TOOL, createMvuSettlementModule } from './domain/mvu-background-settlement.js'
+import { MVU_SUBMIT_UPDATE_TOOL, collectMvuHelperContext, createMvuSettlementModule } from './domain/mvu-background-settlement.js'
 import { applyMvuSettlementEffect } from './domain/mvu-settlement-effect.js'
 import { createMvuSettlementReconciler } from './domain/mvu-settlement-reconciler.js'
 import {
@@ -2175,6 +2175,7 @@ export async function apply(ctx) {
             expectedLifecycleRevision: Math.max(0, Number(snapshot.tavernHelperLifecycleRevision) || 0),
             storyText: projectAgentMessageText(mvuTarget.message, { charName: card && card.name, macroState: snapshot.macroState }),
             currentVariables: mvuTarget.variables,
+            helperContext: collectMvuHelperContext(snapshot.messages, mvuTarget.messageId),
             variableSchema: mvuTarget.variables.schema,
             charName: card && card.name,
             macroState: snapshot.macroState,

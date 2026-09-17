@@ -319,6 +319,17 @@ export function formatMvuUpdateCommand(value) {
   ].join('\n')
 }
 
+// Helper-created messages belong to the next foreground reply. Bound the handoff
+// by that reply, so retries are stable and later turns cannot replay setup rules.
+export function collectMvuHelperContext(messages, messageId) {
+  if (!Array.isArray(messages) || !Number.isInteger(messageId) || messageId < 0 || messageId >= messages.length) return []
+  let start = messageId - 1
+  while (start >= 0 && messages[start]?.role !== 'assistant') start--
+  return messages.slice(start + 1, messageId)
+    .filter(message => message?.role === 'tavern-helper')
+    .map(message => str(message.text).trim()).filter(Boolean)
+}
+
 export function createMvuBackgroundTaskFrame(input = {}) {
   const currentVariables = clone(object(input.currentVariables))
   const variableSchema = clone(object(input.variableSchema || currentVariables.schema))
@@ -344,6 +355,7 @@ export function createMvuBackgroundTaskFrame(input = {}) {
     taskRules: {
       updateRules: Array.isArray(input.updateRules) ? input.updateRules.map(str).filter(Boolean) : [],
       backgroundTasks: normalizeBackgroundTasks(input.backgroundTasks),
+      helperContext: Array.isArray(input.helperContext) ? input.helperContext.map(str).filter(Boolean) : [],
       guidance: str(input.guidance).trim(),
       updateOnlyFromStory: true
     },
@@ -370,6 +382,9 @@ export function projectMvuBackgroundRequest(frame) {
     turnContext: [
       '【当前变量快照】',
       JSON.stringify(promptVariables(state.currentVariables)),
+      ...(rules.helperContext?.length ? ['【本轮人物卡 Helper 交接】',
+        '以下是本轮正文之前人物卡脚本提供的数据与要求。已确认的建角设定和明确的变量初始化要求可用于本轮初始化；其余剧情意图、候选行动仍须以正文已经发生的事实为准。遵守变量只读规则，不重算脚本负责的派生字段。',
+        ...rules.helperContext] : []),
       ...(rules.guidance ? ['【本次重新结算的指导意见（仅本次有效）】', str(rules.guidance)] : []),
       '【变量结构】',
       JSON.stringify(state.variableSchema || {}),

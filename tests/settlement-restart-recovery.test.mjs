@@ -1,4 +1,4 @@
-import { createMvuSettlementModule } from '../tavern-plugin/lib/domain/mvu-background-settlement.js'
+import { collectMvuHelperContext, createMvuSettlementModule } from '../tavern-plugin/lib/domain/mvu-background-settlement.js'
 import { createTavernScriptHostAdapter } from '../tavern-plugin/lib/domain/tavern-script-host-adapter.js'
 import { createTavernScriptDispatch } from '../tavern-plugin/lib/domain/tavern-script-dispatch.js'
 import { normalizeBackgroundTasks } from '../tavern-plugin/lib/domain/tavern-settings.js'
@@ -42,7 +42,7 @@ async function harness({ beginRunning = true, mvu = true } = {}) {
   }).chat
   const running = beginRunning ? await tasks.begin(current, 'settlement') : null
   const sandbox = vm.createContext({
-    normalizeBackgroundTasks, structuredClone, Date, AbortController, console: { log() {}, error() {} },
+    collectMvuHelperContext, normalizeBackgroundTasks, structuredClone, Date, AbortController, console: { log() {}, error() {} },
     str: value => value == null ? '' : String(value),
     backgroundTasks: tasks, storyTimeline: timeline, settlementJobs: new Map(),
     readChat: store.readChat, chatForSession: store.readChat, writeChat: store.writeChat,
@@ -547,4 +547,21 @@ test('等待执行器的任务可从正式停止入口取消，重连不重启',
   run.sandbox.mvuSettlement.resumeVariables = async () => { resumes++ }
   await run.reconciler.wake('session')
   assert.equal(resumes, 0)
+})
+
+test('正式结算入口将当前正文之前的建角 Helper 消息交给 MVU', async () => {
+  const run = await harness({ beginRunning: false })
+  const setup = '第一轮变量更新要求：根据已写入属性初始化生命值。'
+  await run.store.updateChat('chat', chat => {
+    chat.messages.unshift({ role: 'tavern-helper', text: setup })
+    return chat
+  })
+  let received
+  run.sandbox.mvuSettlement.settleVariables = async input => {
+    received = input.helperContext
+    return { receipt: { version: 1, status: 'unchanged', changes: [] } }
+  }
+  await run.sandbox.queueSettlement('chat')
+  assert.deepEqual(received, [setup])
+  assert.equal(run.get().settleStatus, 'done')
 })

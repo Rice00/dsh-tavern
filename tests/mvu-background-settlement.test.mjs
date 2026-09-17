@@ -402,3 +402,21 @@ test('工具使用约定由工具定义承载，本轮提示只安排任务', ()
     }
   }
 })
+
+test('本轮 Helper 建角要求交给结算，后续回合不重放初始化', async () => {
+  const { collectMvuHelperContext } = await import('../tavern-plugin/lib/domain/mvu-background-settlement.js')
+  const setup = '已写入属性；第一轮补齐主角生命值、法力值、体力值。'
+  const messages = [{ role: 'assistant', text: '选择开局' }, { role: 'tavern-helper', text: setup }, { role: 'user', text: '开始' }, { role: 'assistant', text: '你来到旅店。' }]
+  const context = collectMvuHelperContext(messages, 3)
+  assert.deepEqual(context, [setup])
+  const request = projectMvuBackgroundRequest(createMvuBackgroundTaskFrame({ operationId: 'setup-1', chatId: 'chat-setup', branchId: 'main', basedOnRevision: 1, messageId: 3, swipeId: 0, helperContext: context, storyText: messages[3].text }))
+  assert.match(request.turnContext, /第一轮补齐主角生命值/)
+  assert.match(request.turnContext, /初始化/)
+  messages.push({ role: 'user', text: '受伤后休息' }, { role: 'assistant', text: '伤口仍在流血。' })
+  assert.deepEqual(collectMvuHelperContext(messages, 5), [])
+  assert.deepEqual(collectMvuHelperContext(messages, 3), [setup], '重试旧轮仍取旧轮上下文')
+  const next = projectMvuBackgroundRequest(createMvuBackgroundTaskFrame({ operationId: 'setup-1', chatId: 'chat-setup', branchId: 'main', basedOnRevision: 1, messageId: 5, swipeId: 0, helperContext: [], storyText: messages[5].text }))
+  assert.doesNotMatch(next.turnContext, /第一轮补齐/)
+  assert.equal(next.system, request.system, '稳定 system 前缀不随建角上下文变化')
+  assert.deepEqual(collectMvuHelperContext([{role:'user',text:setup},{role:'assistant',text:'正文'}],1),[])
+})

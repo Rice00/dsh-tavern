@@ -279,7 +279,7 @@ export function createTavernScriptHostAdapter(options = {}) {
   }
 
   async function exportBoundWorldbook(record) {
-    return record.localChatId ? exportSillyTavernWorldBook(record.document)
+    return record.document ? exportSillyTavernWorldBook(record.document)
       : (await options.worldBooks.export(record.source)).document
   }
 

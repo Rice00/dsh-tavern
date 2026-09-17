@@ -36,10 +36,10 @@ export function createWorldBookLibrary(options = {}) {
     return { kind: 'standalone', path: normalizePath(source.path, 'worldbook') }
   }
 
-  async function readRecord(locator) {
+  async function readRecord(locator, suppliedCard) {
     const source = sourceOf(locator)
     if (source.kind === 'card') {
-      const card = await cards.read(source.cardPath)
+      const card = suppliedCard ?? await cards.read(source.cardPath)
       if (card === undefined) throw new Error('人物卡不存在: ' + source.cardPath)
       const document = embeddedDocument(card)
       return {
@@ -97,9 +97,9 @@ export function createWorldBookLibrary(options = {}) {
     return { standalone, embedded, diagnostics }
   }
 
-  async function binding(cardPath) {
+  async function binding(cardPath, { card: suppliedCard, read = readRecord } = {}) {
     const normalized = normalizePath(cardPath, 'card')
-    const card = await cards.read(normalized)
+    const card = suppliedCard ?? await cards.read(normalized)
     if (card === undefined) throw new Error('人物卡不存在: ' + normalized)
     const stored = await resources.bindingForCard(normalized)
     if (stored.kind === 'multiple') {
@@ -107,7 +107,7 @@ export function createWorldBookLibrary(options = {}) {
         const source = sourceOf(item.kind === 'embedded' ? { kind: 'card', cardPath: item.cardPath } : item)
         const kind = source.kind === 'card' ? 'embedded' : 'standalone'
         if (!item.available) return { kind, source, name: '', available: false }
-        const record = await readRecord(source)
+        const record = await read(source)
         return { kind, source: record.source, name: record.view.displayName, available: true }
       }))
       if (books.length === 0) return { kind: 'none', source: null, name: '', available: true }
@@ -119,7 +119,7 @@ export function createWorldBookLibrary(options = {}) {
       const source = { kind: 'standalone', path: stored.path }
       if (stored.available !== true) return { kind: 'standalone', source, name: '', available: false }
       try {
-        const record = await readRecord(source)
+        const record = await read(source)
         return { kind: 'standalone', source, name: record.view.displayName, available: true }
       } catch (error) {
         if (/世界书不存在/.test(str(error && error.message))) return { kind: 'standalone', source, name: '', available: false }
@@ -130,7 +130,7 @@ export function createWorldBookLibrary(options = {}) {
       const source = { kind: 'card', cardPath: stored.cardPath }
       if (stored.available !== true) return { kind: 'embedded', source, name: '', available: false }
       try {
-        const record = await readRecord(source)
+        const record = await read(source)
         return { kind: 'embedded', source: record.source, name: record.view.displayName, available: true }
       } catch (error) {
         if (/人物卡不存在/.test(str(error && error.message))) return { kind: 'embedded', source, name: '', available: false }
@@ -138,7 +138,7 @@ export function createWorldBookLibrary(options = {}) {
       }
     }
     if (card.character_book && typeof card.character_book === 'object') {
-      const record = await readRecord({ kind: 'card', cardPath: normalized })
+      const record = await read({ kind: 'card', cardPath: normalized })
       return { kind: 'embedded', source: record.source, name: record.view.displayName, available: true }
     }
     return { kind: 'none', source: null, name: '', available: true }
@@ -181,19 +181,28 @@ export function createWorldBookLibrary(options = {}) {
       return { source: clone(snapshot.source), document: clone(snapshot.document),
         localChatId: chat.id, view: inspectWorldBookDocument(snapshot.document) }
     }
-    const current = await binding(cardPath)
+    // This resolver lives for one bound read only. Binding metadata, the view
+    // and the exported document must describe the same resource observation.
+    const records = new Map()
+    const normalizedCardPath = normalizePath(cardPath, 'card')
+    card ??= await cards.read(normalizedCardPath)
+    if (card === undefined) throw new Error('人物卡不存在: ' + normalizedCardPath)
+    function read(locator) {
+      const source = sourceOf(locator)
+      const key = JSON.stringify(source)
+      if (!records.has(key)) records.set(key, readRecord(source,
+        source.kind === 'card' && source.cardPath === normalizedCardPath ? card : undefined))
+      return records.get(key)
+    }
+    const current = await binding(cardPath, { card, read })
     if (current.kind === 'none') return null
     if (current.available !== true) throw new Error('绑定的世界书不存在，请重新绑定或解绑')
     if (current.kind === 'multiple') {
-      const records = await Promise.all(current.books.map(book => readRecord(book.source)))
-      const merged = mergeWorldBooks(records)
+      const resolved = await Promise.all(current.books.map(book => read(book.source)))
+      const merged = mergeWorldBooks(resolved)
       return { source: current.source, document: merged.document, localChatId: chat?.id, mergedSources: merged.sources, view: inspectWorldBookDocument(merged.document) }
     }
-    if (current.kind === 'embedded' && card && current.source.cardPath === normalizePath(cardPath, 'card')) {
-      const document = embeddedDocument(card)
-      return { source: current.source, view: inspectWorldBookDocument(document, { filename: card.name }) }
-    }
-    return await get(current.source)
+    return await read(current.source)
   }
 
   async function bind(cardPath, locator) {

@@ -134,8 +134,10 @@ export function createAutoCompaction(deps) {
         const after = await deps.pressure(options.agent, signal, options.pendingMessages)
         if (Number.isFinite(after?.percent)) operation.afterPercent = after.percent
       }
+      const failures = ['foreground', 'background'].filter(side => operation[side].status === 'failed')
+        .map(side => `${side === 'foreground' ? '前台' : '后台'}：${operation[side].message}`).join('；')
       chat = await deps.readChat(initial.sessionId)
-      await save(chat.id, old => ({ ...old, operation: structuredClone(operation), ...(operation.status === 'completed' ? { baseline: storyRoundKeys(chat) } : {}), warning: operation.status === 'completed' ? (operation.afterPercent >= policy.percent ? '压缩后上下文仍较高，请检查固定背景长度或选择更大窗口的模型。' : '') : '上下文压缩未全部完成，请在更多 → 压缩上下文中重试。' }))
+      await save(chat.id, old => ({ ...old, operation: structuredClone(operation), ...(operation.status === 'completed' ? { baseline: storyRoundKeys(chat) } : {}), warning: operation.status === 'completed' ? (operation.afterPercent >= policy.percent ? '压缩后上下文仍较高，请检查固定背景长度或选择更大窗口的模型。' : '') : `上下文压缩未全部完成。${failures} 请在更多 → 压缩上下文中重试。` }))
       return operation
     } finally { reserved.delete(chat.id) }
   }

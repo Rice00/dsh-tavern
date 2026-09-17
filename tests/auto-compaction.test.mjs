@@ -93,3 +93,20 @@ test('queued foreground input defers idle compression and retries at pre-step', 
   assert.equal((await preStep).status, 'completed')
   assert.deepEqual(h.calls, ['foreground', 'background'])
 })
+
+test('压缩失败原因进入持久警告，前后台结果保持独立', async () => {
+  const h = fixture()
+  h.deps.compact = async (_id, side) => {
+    if (side === 'foreground') throw new Error('pi-ai stream idle timeout after 300000ms')
+    return { message: '后台已压缩' }
+  }
+  await h.run({ manual: true })
+  const state = h.chat.contextCompaction
+  assert.equal(state.operation.status, 'partial')
+  assert.equal(state.operation.background.status, 'succeeded')
+  assert.match(state.warning, /前台：压缩超时：连续 5 分钟/)
+  assert.match(state.warning, /更多 → 压缩上下文/)
+  assert.doesNotMatch(state.warning, /后台：压缩超时/)
+  h.restart()
+  assert.equal(h.chat.contextCompaction.warning, state.warning)
+})

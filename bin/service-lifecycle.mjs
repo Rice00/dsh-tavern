@@ -1,3 +1,4 @@
+import { startupTimeoutMs, waitForServiceStartup, stopStartupChild } from './service-startup.mjs'
 import { spawn, spawnSync } from 'node:child_process'
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import net from 'node:net'
@@ -255,6 +256,7 @@ export async function stopService() {
 export async function startService() {
   verifyProfile()
   ensureSidebarDefaults()
+  const timeoutMs = startupTimeoutMs(RUNTIME_HOST)
   const state = await serviceState()
   if (state.record && state.ready) {
     console.log(`DSH Tavern 已经在运行：PID ${state.record.pid}。`)
@@ -308,29 +310,31 @@ export async function startService() {
     closeSync(logDescriptor)
   }
   child.unref()
-  writePidRecord(child.pid, state.port, logOffset)
+  try { writePidRecord(child.pid, state.port, logOffset) }
+  catch (error) { await stopStartupChild(child); throw error }
 
-  for (let attempt = 0; attempt < 150; attempt += 1) {
-    if (await isPortOpen(state.port) && await isServiceReady(state.port)) {
-      let webUrl = ''
-      for (let logAttempt = 0; logAttempt < 50 && webUrl === ''; logAttempt += 1) {
-        const logChunk = readFileSync(LOG_FILE).subarray(logOffset).toString('utf8')
-        webUrl = webUrlFromLogChunk(logChunk)
-        if (webUrl === '') await sleep(100)
+  try {
+    await waitForServiceStartup({
+      timeoutMs,
+      alive: () => isProcessAlive(child.pid),
+      ready: async () => await isPortOpen(state.port) && await isServiceReady(state.port),
+      stop: async () => {
+        await stopStartupChild(child)
+        if (readPidRecord()?.pid === child.pid) removePidRecord()
       }
-      webUrl = await currentServiceWebUrl({ port: state.port, record: { logOffset } })
-      console.log(`DSH Tavern 已启动：PID ${child.pid}`)
-      printServiceWebUrl(webUrl)
-      console.log(`日志：${LOG_FILE}`)
-      return { port: state.port, runtimeGeneration: `${child.pid}-${Date.now()}`, webUrl }
-    }
-    if (!isProcessAlive(child.pid)) {
-      removePidRecord()
-      const log = existsSync(LOG_FILE) ? readFileSync(LOG_FILE, 'utf8').trim().split('\n').slice(-30).join('\n') : ''
-      throw new Error(`DSH Tavern 启动失败。${log ? `\n最近日志：\n${log}` : ''}`)
-    }
-    await sleep(200)
+    })
+  } catch (error) {
+    throw new Error(`${error.message}，日志：${LOG_FILE}`, { cause: error })
   }
-
-  throw new Error(`DSH Tavern 启动超时，日志：${LOG_FILE}`)
+  let webUrl = ''
+  for (let logAttempt = 0; logAttempt < 50 && webUrl === ''; logAttempt += 1) {
+    const logChunk = readFileSync(LOG_FILE).subarray(logOffset).toString('utf8')
+    webUrl = webUrlFromLogChunk(logChunk)
+    if (webUrl === '') await sleep(100)
+  }
+  webUrl = await currentServiceWebUrl({ port: state.port, record: { logOffset } })
+  console.log(`DSH Tavern 已启动：PID ${child.pid}`)
+  printServiceWebUrl(webUrl)
+  console.log(`日志：${LOG_FILE}`)
+  return { port: state.port, runtimeGeneration: `${child.pid}-${Date.now()}`, webUrl }
 }

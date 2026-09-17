@@ -85,6 +85,22 @@ replace_source() {
 
 rollback_source() {
   [ "${SOURCE_SWAPPED}" -eq 1 ] || return 0
+  # Never move code out from underneath a still-running service. Keep both
+  # versions for repair if shutdown failed or the PID record cannot be trusted.
+  if ! node - "${DSH_ROOT}/logs/tavern.pid.json" <<'NODE'
+const fs = require('node:fs')
+try {
+  const record = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'))
+  if (!Number.isInteger(record.pid) || record.pid <= 0) process.exit(1)
+  try { process.kill(record.pid, 0); process.exit(1) }
+  catch (error) { if (error.code !== 'ESRCH') process.exit(1) }
+} catch (error) { if (error.code !== 'ENOENT') process.exit(1) }
+NODE
+  then
+    printf '服务可能仍在运行，保留源码和备份：%s\n' "${TEMP_ROOT}" >&2
+    TEMP_ROOT=""
+    return 1
+  fi
   if [ -e "${APP_DIR}" ]; then mv -- "${APP_DIR}" "${TEMP_ROOT}/failed-source"; fi
   if [ -n "${SOURCE_BACKUP}" ] && [ -d "${SOURCE_BACKUP}" ]; then mv -- "${SOURCE_BACKUP}" "${APP_DIR}"; fi
   SOURCE_SWAPPED=0
@@ -185,7 +201,7 @@ fi
 verify_source "${APP_DIR}"
 
 if ! DSH_HOME="${DSH_ROOT}" bash "${APP_DIR}/android/install.sh"; then
-  rollback_source
+  rollback_source || fail "无法确认服务已停止，未回滚源码，请检查进程后重试。"
   fail "依赖或 Profile 安装失败，源码已恢复到更新前版本。"
 fi
 

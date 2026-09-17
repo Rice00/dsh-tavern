@@ -39,7 +39,7 @@ export function replaceSessionSurface(session, type, data, { start, end, sourceE
 }
 
 // Accounting and mutation validation live together; the meter only adapts transport.
-export function isTavernSurfaceEdit(session, event) {
+export function isTavernSurfaceEdit(session, event, priorNodes) {
   if (event?.type !== 'assistant/message') return false
   const message = event.data?.message
   const source = message?.source
@@ -57,22 +57,31 @@ export function isTavernSurfaceEdit(session, event) {
   // Tavern cites replaced surface messages, not provider streaming chunks.
   // Keep genuine malformed provider replies subject to the native validation.
   const range = surfaceReplacementRange(replacement)
+  // Use the meter's surface immediately before this event, not today's final
+  // surface or numeric seq intervals: edits keep their position with newer seqs.
+  if (!Array.isArray(priorNodes)) return false
+  const seqOf = node => typeof node === 'number' ? node : node.seq
+  const startIndex = priorNodes.findIndex(node => seqOf(node) === range.start)
+  const endIndex = priorNodes.findIndex(node => seqOf(node) === range.end)
+  if (startIndex < 0 || endIndex < startIndex) return false
+  const targets = new Set(priorNodes.slice(startIndex, endIndex + 1).map(seqOf))
+  const referenced = new Set(refs)
+  if (![...targets].every(seq => referenced.has(seq))) return false
   // Undo restores exact old event data, including provider usage, while citing
   // both the displaced node and the archived original outside that range.
   // Treat only a verified copy as restoration, never arbitrary provider output.
   const {tavernRestoredSurfaceSeqs: _marker, ...restoredData} = event.data
   const restored = refs.some(seq => {
-    if (!Number.isSafeInteger(seq) || seq < 0 || seq >= event.seq || (seq >= range.start && seq <= range.end)) return false
+    if (!Number.isSafeInteger(seq) || seq < 0 || seq >= event.seq || targets.has(seq)) return false
     const original = session.eventAt(seq)
     if (original?.type !== 'assistant/message') return false
     const {tavernRestoredSurfaceSeqs: _oldMarker, ...originalData} = original.data
     return isDeepStrictEqual(restoredData, originalData)
   })
-  if (restored && refs.some(seq => seq >= range.start && seq <= range.end) && refs.every(seq =>
+  if (restored && refs.every(seq =>
     Number.isSafeInteger(seq) && seq >= 0 && seq < event.seq &&
     ['user/message', 'assistant/message', 'tool/result', 'system/message'].includes(session.eventAt(seq)?.type))) return true
   if (event.data.usage !== undefined) return false
-  return refs.every(seq => Number.isSafeInteger(seq) && seq >= range.start && seq <= range.end && seq < event.seq &&
+  return refs.every(seq => Number.isSafeInteger(seq) && targets.has(seq) && seq < event.seq &&
     ['user/message', 'assistant/message', 'tool/result'].includes(session.eventAt(seq)?.type))
 }
-

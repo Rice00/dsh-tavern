@@ -51,3 +51,15 @@ test('替换范围按 Surface 位置校验，允许事件序号倒序，拒绝�
   assert.throws(() => replaceSessionSurface(session, 'assistant/message', data, {start: 1, end: 2, sourceEventSeqs: [1, 2]}), /目标已变化/)
   assert.doesNotThrow(() => replaceSessionSurface(session, 'assistant/message', data, {start: 2, end: 0, sourceEventSeqs: [2, 0]}))
 })
+
+test('计量归属按压缩回放位置检查，拒绝冒用区间外引用和漏掉中间节点', async () => {
+  const { isTavernSurfaceEdit } = await import('../tavern-plugin/lib/domain/session-surface-mutations.js')
+  const events = Array.from({length:10},(_,seq)=>({seq,type:'assistant/message',data:{message:{id:String(seq),source:{kind:'model'}}}}))
+  const session={events,header:{agentPreset:'tavern'},eventAt:seq=>events[seq]}
+  const event={seq:10,type:'assistant/message',data:{message:{id:'edit',source:{kind:'model'}}},surfaceOp:{op:'replace',start:2,end:6},sourceEventSeqs:[2,9,6]}
+  assert.equal(isTavernSurfaceEdit(session,event,[2,9,6]),true)
+  assert.equal(isTavernSurfaceEdit(session,{...event,sourceEventSeqs:[2,6]},[2,9,6]),false)
+  assert.equal(isTavernSurfaceEdit(session,{...event,sourceEventSeqs:[2,9,6,4]},[2,9,6]),false)
+  assert.equal(isTavernSurfaceEdit(session,event,[6,9,2]),false)
+  assert.equal(isTavernSurfaceEdit(session,event),false)
+})

@@ -197,3 +197,31 @@ test('后续切换预设不改变旧替换的归属，伪造恢复内容仍被�
   appendSessionEvent(session, 'assistant/message', {...original.data, message: {...original.data.message, content: [{type: 'text', text: '不是原文'}]}}, {surfaceOp: {op: 'replace', start: edit.seq, end: edit.seq}, sourceEventSeqs: [edit.seq, original.seq]})
   assert.throws(() => ctx.tokenMeter.measure(session), /no matching step\/start/)
 })
+
+test('多次编辑产生非递增 Surface 序号后，替换历史仍可原生计量', native, async t => {
+  const { ctx, Session } = await harness(t)
+  const { replaceSessionSurface } = await import('../tavern-plugin/lib/domain/session-surface-mutations.js')
+  const session = ctx.sessions.create('edited-order', { meta: { agentPreset: 'tavern' } })
+  const first = completed(session)
+  const tail = session.append('user/message', { id: 'tail', role: 'user', content: [{type:'text',text:'继续'}], source:{kind:'human'} }, {surfaceOp:'append'})
+  const edit = replaceSessionSurface(session, 'assistant/message', {turn:1,step:1,message:{id:'first-edit',role:'assistant',content:[{type:'text',text:'修订正文'}],source}}, {start:first.seq,end:first.seq,sourceEventSeqs:[first.seq]})
+  assert.ok(edit.seq > tail.seq)
+  replaceSessionSurface(session, 'assistant/message', {turn:1,step:1,message:{id:'second-edit',role:'assistant',content:[{type:'text',text:'再次修订'}],source}}, {start:edit.seq,end:tail.seq,sourceEventSeqs:[edit.seq,tail.seq]})
+  t.after(installTavernTokenMeter(ctx.tokenMeter))
+  const before = JSON.stringify(session.snapshotEvents())
+  assert.ok(ctx.tokenMeter.measure(session).totalTokens > 0)
+  assert.equal(JSON.stringify(session.snapshotEvents()), before)
+  session.append('user/message', {id:'history',role:'user',content:[{type:'text',text:'剧情进展。'.repeat(1000)}],source:{kind:'human'}}, {surfaceOp:'append'})
+  session.append('user/message', {id:'latest',role:'user',content:[{type:'text',text:'继续'}],source:{kind:'human'}}, {surfaceOp:'append'})
+  const { BasicCompactionEngine } = await import(new URL('../../dsh-compaction-basic/lib/index.js', pathToFileURL(process.env.DSH_BOOT_MODULE)))
+  let calls=0
+  class FixtureCompaction extends BasicCompactionEngine {
+    async summarize() {calls++;return {summary:[{type:'text',text:'剧情摘要。'}],provider:'fixture',model:'summary',maxTokens:128}}
+  }
+  const engine=new FixtureCompaction(ctx,{auto:false}),signal=new AbortController().signal
+  const original=session.snapshotEvents()
+  assert.ok(await engine.compactNow({session,options:{},runMaintenance:fn=>fn(signal)},signal))
+  assert.equal(calls,1)
+  assert.doesNotThrow(()=>ctx.tokenMeter.measure(session))
+  assert.deepEqual(session.snapshotEvents().slice(0,original.length),original)
+})

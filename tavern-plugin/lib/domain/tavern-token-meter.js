@@ -29,7 +29,7 @@ export function installTavernTokenMeter(meter) {
     }
     function fold(...args) {
       const [session, state, event] = compactSignature ? [activeSession, ...args] : args
-      const accountingEvent = session && isTavernSurfaceEdit(session, event)
+      const accountingEvent = session && isTavernSurfaceEdit(session, event, state.surface)
         ? { ...event, type: 'user/message', data: event.data.message }
         : event
       return compactSignature ? original.call(this, state, accountingEvent) : original.call(this, session, state, accountingEvent)

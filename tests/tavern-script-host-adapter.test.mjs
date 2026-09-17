@@ -538,3 +538,77 @@ test('服务重启后迟到的 MVU 事件不能越过已消失的草稿直接写
   await assert.rejects(h.adapter.updateMessages('session-1', [{ message_id: 0, data: { hp: 0 } }], 2, 'mvu-work:old-attempt'), /结算事件/)
   assert.equal(h.writes.length, 0)
 })
+
+test('已有普通事件执行时，MVU 延后领取事务，不拒绝该事件的合法写入', async t => {
+  const dispatch = createTavernScriptDispatch({ timeoutMs: 5000 })
+  dispatch.touch('session-1', 'browser', true)
+  t.after(() => dispatch.dispose('session-1'))
+  const ordinary = dispatch.dispatch('session-1', 'MESSAGE_RECEIVED', [0], null, { eventId: 'ordinary-event' })
+  const offer = dispatch.claim('session-1', 'browser', true)
+  dispatch.start('session-1', offer.event.id, offer.leaseToken, 'browser')
+  let releaseCard
+  const card = new Promise(resolve => { releaseCard = resolve })
+  const run = harness(chat(), { scriptDispatch: dispatch, readCard: () => card })
+  const settlement = run.adapter.settleMvuUpdate({ operationId: 'overlapping', sessionId: 'session-1',
+    messageId: 0, swipeId: 0, expectedLifecycleRevision: 2, command: '<UpdateVariable/>' })
+  const outcome = settlement.then(value => value, error => error)
+  await new Promise(resolve => setImmediate(resolve))
+  let failure
+  try {
+    await run.adapter.updateMessages('session-1', [{ message_id: 0, data: { hp: 12 } }], 2, offer.event.id)
+  } catch (error) { failure = error }
+  releaseCard({})
+  const result = await outcome
+  dispatch.complete('session-1', offer.event.id, [0], 'browser', offer.leaseToken)
+  await ordinary
+  assert.equal(failure?.code, undefined, failure?.message)
+  assert.equal(run.writes.length, 1)
+  assert.equal(result.deferred, true)
+})
+
+test('同时开始的 MVU 尝试不会在 await 之后互相覆盖事务所有权', async () => {
+  let run
+  run = harness(chat(), { scriptDispatch: { async dispatch(_session, _name, _args, _context, work) {
+    await run.adapter.updateMessages('session-1', [{ message_id: 0, data: { hp: 13 } }], 2, work.eventId)
+    return { handled: true }
+  } } })
+  const input = { sessionId: 'session-1', messageId: 0, swipeId: 0, expectedLifecycleRevision: 2, command: '<UpdateVariable/>' }
+  const results = await Promise.allSettled([
+    run.adapter.settleMvuUpdate({ ...input, operationId: 'first' }),
+    run.adapter.settleMvuUpdate({ ...input, operationId: 'second' })
+  ])
+  assert.equal(results.filter(result => result.status === 'fulfilled' && result.value.updated).length, 1,
+    results.map(result => result.reason?.message || result.status).join('; '))
+  assert.match(results.find(result => result.status === 'rejected').reason.message, /已有.*结算/)
+  assert.equal(run.writes.length, 0, '有效尝试仍只返回草稿 effect，不能提前持久化')
+})
+
+test('MVU 已预约执行器但还在准备上下文时，新生命周期事件返回 busy', async t => {
+  const dispatch = createTavernScriptDispatch({ timeoutMs: 5000 })
+  dispatch.touch('session-1', 'browser', true)
+  t.after(() => dispatch.dispose('session-1'))
+  let releaseCard
+  const card = new Promise(resolve => { releaseCard = resolve })
+  const run = harness(chat(), { scriptDispatch: dispatch, readCard: () => card })
+  const settlement = run.adapter.settleMvuUpdate({ operationId: 'preparing', sessionId: 'session-1',
+    messageId: 0, swipeId: 0, expectedLifecycleRevision: 2, command: '<UpdateVariable/>' })
+  const outcome = settlement.then(value => value, error => error)
+  await new Promise(resolve => setImmediate(resolve))
+  const ordinary = run.adapter.dispatchEvent({ sessionId: 'session-1', name: 'MESSAGE_RECEIVED', args: [0], context: {} })
+  await new Promise(resolve => setImmediate(resolve))
+  const early = dispatch.claim('session-1', 'browser', true)
+  if (early.event) {
+    dispatch.start('session-1', early.event.id, early.leaseToken, 'browser')
+    dispatch.complete('session-1', early.event.id, [0], 'browser', early.leaseToken)
+  }
+  const result = await ordinary
+  releaseCard({})
+  await new Promise(resolve => setImmediate(resolve))
+  const work = dispatch.claim('session-1', 'browser', true)
+  dispatch.start('session-1', work.event.id, work.leaseToken, 'browser')
+  await run.adapter.updateMessages('session-1', [{ message_id: 0, data: { hp: 14 } }], 2, work.event.id)
+  dispatch.complete('session-1', work.event.id, [0], 'browser', work.leaseToken)
+  assert.equal((await outcome).updated, true)
+  assert.equal(early.event, null)
+  assert.equal(result.busy, true)
+})

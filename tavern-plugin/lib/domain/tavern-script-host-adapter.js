@@ -540,6 +540,9 @@ export function createTavernScriptHostAdapter(options = {}) {
 
   async function dispatchEvent(input = {}) {
     const eventContext = input.context || await context(input.sessionId, input.chat, input.transientUserText)
+    // Context preparation can await I/O before MVU has queued its dispatch.
+    // Respect that reservation just as dispatch respects an executing event.
+    if (settlementTransactions.has(str(input.sessionId))) return { handled: false, busy: true, args: structuredClone(input.args || []) }
     return await options.scriptDispatch.dispatch(input.sessionId, input.name, input.args, eventContext)
   }
 
@@ -565,6 +568,17 @@ export function createTavernScriptHostAdapter(options = {}) {
     }
     const command = str(input.command).trim()
     if (command === '') throw new Error('MVU 变量结算命令为空')
+    // resolveChat awaited above: another attempt may have reserved this session
+    // in the meantime. Never overwrite its draft or release its ownership.
+    if (settlementTransactions.has(sessionId)) throw new Error('当前对话已有 MVU 变量结算正在执行')
+    // An earlier lifecycle event still owns the executor. Installing an MVU
+    // transaction now would reject its legitimate writes during context loading,
+    // even though dispatch would eventually return busy and defer this attempt.
+    const beforeDispatch = options.scriptDispatch.status?.(sessionId)
+    if (beforeDispatch?.busy) {
+      await record('runtime-deferred', { availability: beforeDispatch })
+      return { updated: false, deferred: true, context: projectTavernHelperContext(current) }
+    }
     const originalText = str((message.swipes && message.swipes[swipeId]) ?? message.sourceText ?? message.text)
     const transaction = {
       draft: structuredClone(current),

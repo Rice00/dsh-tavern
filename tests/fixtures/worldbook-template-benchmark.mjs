@@ -158,6 +158,6 @@ try{
   for(const [name,config] of [['small', {large:false}],['large',{}],['large-no-job-journal',{journal:false}],['large-pinned-snapshot',{mode:'pinned'}],['large-no-queued-record',{skipQueued:true}]])if(!process.argv[3] || name===process.argv[3])reports.push(await runCase(browser,name,config))
   const large=reports.find(report=>report.name==='large')
   for(const report of reports.filter(report=>report.large))for(const round of report.rounds)assert.equal(round.context,(large||report).rounds[0].context)
-  const result={revision:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),warmupRounds:1,measuredRounds:3,platform:process.platform,arch:process.arch,node:process.version,browser:browser.version(),results:reports.map(({rounds,...report})=>report)}
+  const result={experiment:process.env.DSH_TAVERN_BENCH_EXPERIMENT || null,revision:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),warmupRounds:1,measuredRounds:3,platform:process.platform,arch:process.arch,node:process.version,browser:browser.version(),results:reports.map(({rounds,...report})=>report)}
   await writeFile(join(output,'summary.json'),JSON.stringify(result,null,2));console.log(JSON.stringify(result,null,2))
 }finally{await browser.close();fs.open=nativeOpen;syncBuiltinESMExports()}

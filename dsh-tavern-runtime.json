@@ -1,13 +1,18 @@
 {
   "schemaVersion": 2,
-  "revision": "442eed9bf2989b4fee0821c69b9d24d4447a9e93",
-  "releaseSequence": 262,
+  "revision": "7bcf72d15131016d8b8edc2972858a44381ef88e",
+  "releaseSequence": 263,
   "version": "1.9.0",
   "files": [
     {
       "path": "bin/application-update.mjs",
       "sha256": "9f9dc481d6df8b6320e162bf959f0552a5ead3f61532fd3476e1905fa5dc9bcc",
       "size": 8914
+    },
+    {
+      "path": "bin/benchmark-chat-snapshots.mjs",
+      "sha256": "2a3a0fb9b154ec6f87b5c3a32403b2c460aa40865450180f0e491b6e037f01f9",
+      "size": 4704
     },
     {
       "path": "bin/build-tavern-client.mjs",
@@ -221,8 +226,8 @@
     },
     {
       "path": "tavern-plugin/cordis.patch.yml",
-      "sha256": "33faae85efcdd22bda8c04793dfc33ed3dda6c7c2c0c57e4bfcd69614d63eea9",
-      "size": 1379
+      "sha256": "9835018e5a25decc33a9d714047b9139b5930001728d12746cc5cf3badeb7231",
+      "size": 1925
     },
     {
       "path": "tavern-plugin/lib/agent-compaction.js",
@@ -406,8 +411,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/chat-journal-store.js",
-      "sha256": "ea566c50a24043a92d37374ce74fa2501022f4a03121def4a3787736e48b2bab",
-      "size": 22522
+      "sha256": "a63b009973dbe9d073a90fc4727e19dad5af95965447ec02302d8c82d4459dea",
+      "size": 24134
     },
     {
       "path": "tavern-plugin/lib/domain/chat-persistence.js",
@@ -1160,6 +1165,11 @@
       "size": 11669
     },
     {
+      "path": "tavern-plugin/lib/domain/workspace-instruction-presentation.js",
+      "sha256": "3f9f73e86b992293c127bdc6965e3b6b9b3667c507410ca7460d8ed1265480eb",
+      "size": 5005
+    },
+    {
       "path": "tavern-plugin/lib/domain/workspace-resources.js",
       "sha256": "6f89f3ef618f7ba478b9e4696aac9b1e959f2341602266e1b98716f9052669a1",
       "size": 4501
@@ -1226,8 +1236,8 @@
     },
     {
       "path": "tavern-plugin/lib/index.js",
-      "sha256": "75c63c60d6a1b25542787ea99508a2154ae743595fa59838c8c8b136c480a69a",
-      "size": 282510
+      "sha256": "fe8e4a84c6ee0af2dde0fcd7fb4d6b86b9ab5e6795d92a2b1da173cedae0d973",
+      "size": 282765
     },
     {
       "path": "tavern-plugin/lib/profile-data-store.js",

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import vm from 'node:vm'
+import { createTavernScriptHostAdapter } from '../tavern-plugin/lib/domain/tavern-script-host-adapter.js'
+import { applyMvuSettlementEffect } from '../tavern-plugin/lib/domain/mvu-settlement-effect.js'
 import { createTavernScriptDispatch } from '../tavern-plugin/lib/domain/tavern-script-dispatch.js'
 
 const source = await readFile(new URL('../tavern-plugin/lib/client.js', import.meta.url), 'utf8')
@@ -12,7 +14,7 @@ function store(value) {
     set(next) { value = next; for (const fn of listeners) fn() } }
 }
 const view = revision => ({ tavernHelperScripts: [{ id: 'companion', content: 'void 0' }], tavernHelper: { stateRevision: revision } })
-function harness({ holdReleases = false, dropSignals = false, claimTimeoutMs } = {}) {
+function harness({ holdReleases = false, dropSignals = false, claimTimeoutMs, receiptBarrier } = {}) {
   const timers = new Map(), events = new Map(), runtimes = [], calls = []
   const heartbeats = new Map()
   let sequence = 0, descriptor
@@ -33,13 +35,13 @@ function harness({ holdReleases = false, dropSignals = false, claimTimeoutMs } =
   const sessions = { list, subagentAddress: id => parents[id] ? { parentSessionId: parents[id], childSessionId: id } : undefined }
   const liveView = {
     subscribe(id, fn) { const sub = { id, fn, active: true }; subscriptions.push(sub); fn({ phase: 'ready', view: views.get(id) || view(1) }); return () => { sub.active = false } },
-    invalidate() {},
+    invalidate(id) { queueMicrotask(() => liveView.update(id, views.get(id) || view(1))) },
     update(id, value) { views.set(id, value); for (const sub of subscriptions) if (sub.active && sub.id === id) sub.fn({ phase: 'ready', view: value }) }
   }
-  let runtimeWorkListener = null
-  const gate = createTavernScriptDispatch({ claimTimeoutMs, publishSignal(_sessionId, signal) { if (!dropSignals && signal.kind === 'runtime-work') runtimeWorkListener?.(signal) } })
+  const runtimeWorkListeners = new Map()
+  const gate = createTavernScriptDispatch({ claimTimeoutMs, publishSignal(sessionId, signal) { if (!dropSignals && signal.kind === 'runtime-work') runtimeWorkListeners.get(sessionId)?.(signal) } })
   const options = { window, sessions, liveView, transition,
-    signals: { subscribe(_sessionId, kind, listener) { if (kind === 'runtime-work') runtimeWorkListener = listener; return () => { if (runtimeWorkListener === listener) runtimeWorkListener = null } } },
+    signals: { subscribe(sessionId, kind, listener) { if (kind === 'runtime-work') runtimeWorkListeners.set(sessionId, listener); return () => { if (runtimeWorkListeners.get(sessionId) === listener) runtimeWorkListeners.delete(sessionId) } } },
     createExecution: settings => client.createTavernScriptExecutionModule({ ...settings, window,
       rpc: async (method, args, id) => {
         calls.push({ method, args, id })
@@ -50,7 +52,11 @@ function harness({ holdReleases = false, dropSignals = false, claimTimeoutMs } =
           if (holdReleases) await releaseBarrier
           return gate.dispose(id, args.runtimeId)
         }
-        if (method === 'completeTavernHelperEvent') return gate.complete(id, args.eventId, args.args, args.runtimeId, args.leaseToken)
+        if (method === 'completeTavernHelperEvent') {
+          const completed = gate.complete(id, args.eventId, args.args, args.runtimeId, args.leaseToken, args.error)
+          if (receiptBarrier) await receiptBarrier
+          return { completed }
+        }
         return {}
       }, createRuntime(settings) {
         const runtime = { disposed: 0, syncs: [], emissions: [],
@@ -60,7 +66,7 @@ function harness({ holdReleases = false, dropSignals = false, claimTimeoutMs } =
           retryMvuLoad() { return true }, dispose() { this.disposed++ }, settings }
         runtimes.push(runtime); return runtime
       } }) }
-  return { client, options, list, transition, liveView, subscriptions, gate, runtimes, calls, events, uiStops, heartbeats,
+  return { client, options, list, transition, liveView, subscriptions, gate, runtimes, calls, events, uiStops, heartbeats, views,
     heartbeat() { for (const { fn } of heartbeats.values()) fn() },
     allowReleases() { allowRelease?.() },
     async poll() { await new Promise(resolve => setImmediate(resolve)); await new Promise(resolve => setImmediate(resolve)) } }
@@ -151,11 +157,12 @@ test('viewing a child and returning keeps one game executor; events complete whi
   assert.equal(h.gate.status('A').present, false)
 })
 
-test('other games release the old owner immediately; stale view callbacks cannot cross an A-B-A switch', async () => {
+test('idle games release after refreshing state; stale callbacks cannot cross an A-B-A switch', async () => {
   const h = harness(), owner = h.client.createTavernScriptSessionOwner(h.options)
   owner.start(); await h.poll()
   const stale = h.subscriptions[0]
   h.list.set({ current: 'otherChild' })
+  await h.poll()
   assert.equal(h.gate.status('A').present, false)
   await h.poll()
   assert.equal(h.gate.status('B').ready, true)
@@ -165,12 +172,13 @@ test('other games release the old owner immediately; stale view callbacks cannot
   assert.notEqual(current.syncs.at(-1).view.tavernHelper?.stateRevision, 999)
   await h.poll()
   h.list.set({ current: undefined })
+  await h.poll()
   assert.equal(h.gate.status('A').present, false)
   assert.equal(owner.getSnapshot().sessionId, '')
   owner.dispose()
 })
 
-test('fast A-B-A switch waits for the previous runtime release before reclaiming scripts', async () => {
+test('fast A-B-A switch reuses the retained runtime without releasing its lease', async () => {
   const h = harness({ holdReleases: true }), owner = h.client.createTavernScriptSessionOwner(h.options)
   owner.start(); await h.poll()
   assert.equal(h.gate.status('A').ready, true)
@@ -178,12 +186,13 @@ test('fast A-B-A switch waits for the previous runtime release before reclaiming
   h.list.set({ current: 'otherChild' })
   h.list.set({ current: 'A' })
   await h.poll()
-  assert.equal(h.gate.status('A').ready, true, 'old A still owns the slot until its delayed release completes')
+  assert.equal(h.gate.status('A').ready, true, 'A keeps its lease during rapid navigation')
 
   h.allowReleases()
   await h.poll()
-  assert.equal(h.gate.status('A').ready, true, 'the new A runtime must reclaim the slot without waiting for the heartbeat')
-  assert.equal(h.runtimes.at(-1).syncs.at(-1).view.tavernHelperScripts.length, 1)
+  assert.equal(h.gate.status('A').ready, true, 'returning must not wait for a heartbeat')
+  assert.equal(h.runtimes[0].disposed, 0)
+  assert.equal(h.runtimes.filter(r => r.syncs.some(s => s.id === 'A')).length, 1)
   owner.dispose()
 })
 
@@ -234,4 +243,137 @@ test('production feature owns lifetime independently of header mount/unmount', (
   assert.equal(h.list.listeners.size, 1, 'header cleanup must only unsubscribe its display')
   disposers.reverse().forEach(stop => stop?.())
   assert.equal(h.list.listeners.size, 0)
+})
+
+
+test('MVU settlement survives navigation, writes only its owner and releases after completion', async t => {
+  const h = harness(), owner = h.client.createTavernScriptSessionOwner(h.options)
+  t.after(() => owner.dispose())
+  owner.start(); await h.poll()
+  h.liveView.update('A', { ...view(2), activity: { role: 'settlement', phase: 'running', busy: true } })
+  const original = h.runtimes[0]
+  h.list.set({ current: 'B' }); await h.poll()
+  assert.equal(original.disposed, 0, 'switching must not disconnect an unfinished settlement')
+  const result = await h.gate.dispatch('A', 'MESSAGE_RECEIVED', [7])
+  assert.equal(result.handled, true)
+  assert.deepEqual(original.emissions, ['MESSAGE_RECEIVED'])
+  assert.deepEqual(h.runtimes[1].emissions, [])
+  assert.equal(h.calls.filter(c => c.method === 'completeTavernHelperEvent').at(-1).id, 'A')
+  h.liveView.update('A', { ...view(3), activity: { role: 'settlement', phase: 'idle', busy: false } })
+  await h.poll()
+  assert.equal(original.disposed, 1)
+  assert.equal(h.gate.status('A').present, false)
+  assert.equal(h.gate.status('B').ready, true)
+})
+
+
+test('navigation refresh catches settlement start before its notification arrives', async t => {
+  const h = harness(), owner = h.client.createTavernScriptSessionOwner(h.options)
+  t.after(() => owner.dispose())
+  owner.start(); await h.poll()
+  h.views.set('A', { ...view(2), activity: { role: 'settlement', phase: 'pending' } })
+  h.list.set({ current: 'B' }); await h.poll()
+  assert.equal(h.runtimes[0].disposed, 0)
+  assert.equal((await h.gate.dispatch('A', 'MESSAGE_RECEIVED', [3])).handled, true)
+  h.list.set({ current: 'A' }); await h.poll()
+  assert.equal(h.runtimes[0].disposed, 0)
+  assert.equal(h.runtimes.filter(r => r.syncs.some(s => s.id === 'A')).length, 1)
+})
+
+test('in-flight event survives navigation and idle view until its receipt is confirmed', async t => {
+  const h = harness(), owner = h.client.createTavernScriptSessionOwner(h.options)
+  t.after(() => owner.dispose())
+  owner.start(); await h.poll()
+  let finish
+  h.runtimes[0].emit = async (name, args) => { await new Promise(resolve => { finish = resolve }); return args }
+  const pending = h.gate.dispatch('A', 'MESSAGE_RECEIVED', [9])
+  await h.poll()
+  h.list.set({ current: 'B' }); await h.poll()
+  assert.equal(h.runtimes[0].disposed, 0)
+  finish()
+  assert.equal((await pending).handled, true)
+  await h.poll()
+  assert.equal(h.runtimes[0].disposed, 1)
+  assert.equal(h.gate.status('B').ready, true)
+})
+
+test('pagehide releases all retained owners and their subscriptions', async () => {
+  const h = harness(), owner = h.client.createTavernScriptSessionOwner(h.options)
+  owner.start(); await h.poll()
+  h.liveView.update('A', { ...view(2), settleStatus: 'running' })
+  h.list.set({ current: 'B' }); await h.poll()
+  h.events.get('pagehide')()
+  assert.equal(h.gate.status('A').present, false)
+  assert.equal(h.gate.status('B').present, false)
+  assert.equal(h.subscriptions.some(s => s.active), false)
+  assert.equal(h.heartbeats.size, 0)
+  owner.dispose()
+})
+
+
+test('real MVU transaction commits A variables after switching to B during execution', async t => {
+  const h = harness(), owner = h.client.createTavernScriptSessionOwner(h.options)
+  t.after(() => owner.dispose())
+  const makeChat = sessionId => ({ id: sessionId, sessionId, mode: 'story', cardPath: 'test.json',
+    mvu: { enabled: true, owner: 'official' }, tavernHelperLifecycleRevision: 2, variables: {},
+    messages: [{ role: 'assistant', turn: 1, text: '正文', sourceText: '正文', swipes: ['正文'], swipeId: 0,
+      variables: [{ stat_data: { hp: 10 }, schema: { type: 'object' } }] }] })
+  const chats = { A: makeChat('A'), B: makeChat('B') }
+  const adapter = createTavernScriptHostAdapter({
+    resolveChat: async id => chats[id], readCard: async () => ({ name: '测试' }),
+    worldBooks: { bound: async () => null }, scriptDispatch: h.gate,
+    writeChat: async () => { throw new Error('transaction must not write before commit') }
+  })
+  owner.start(); await h.poll()
+  h.liveView.update('A', { ...view(2), settleStatus: 'running' })
+  let finish
+  h.runtimes[0].emit = async (_name, args, context, _diagnostics, eventId) => {
+    await new Promise(resolve => { finish = resolve })
+    await adapter.updateMessages('A', [{ message_id: 0, message: context.messages[0].message,
+      data: { stat_data: { hp: 7 }, schema: { type: 'object' } } }], 2, eventId)
+    return args
+  }
+  const pending = adapter.settleMvuUpdate({ operationId: 'settlement-A', chatId: 'A', sessionId: 'A',
+    messageId: 0, swipeId: 0, expectedLifecycleRevision: 2, storyText: '正文',
+    command: '<UpdateVariable><JSONPatch>[{"op":"replace","path":"/hp","value":7}]</JSONPatch></UpdateVariable>' })
+  await h.poll()
+  assert.equal(typeof finish, 'function')
+  h.list.set({ current: 'B' }); await h.poll()
+  finish()
+  const result = await pending
+  assert.equal(result.updated, true)
+  applyMvuSettlementEffect(chats.A, result.effect)
+  assert.equal(chats.A.messages[0].variables[0].stat_data.hp, 7)
+  assert.equal(chats.B.messages[0].variables[0].stat_data.hp, 10)
+  assert.equal(chats.A.messages[0].text, '正文')
+  h.liveView.update('A', { ...view(3), settleStatus: 'done' }); await h.poll()
+  assert.equal(h.runtimes[0].disposed, 1)
+})
+
+
+test('completed server work keeps its runtime until the receipt response arrives', async t => {
+  let acknowledge
+  const h = harness({ receiptBarrier: new Promise(resolve => { acknowledge = resolve }) })
+  const owner = h.client.createTavernScriptSessionOwner(h.options)
+  t.after(() => owner.dispose())
+  owner.start(); await h.poll()
+  const pending = h.gate.dispatch('A', 'MESSAGE_RECEIVED', [4])
+  await h.poll()
+  assert.equal((await pending).handled, true)
+  h.list.set({ current: 'B' }); await h.poll()
+  assert.equal(h.runtimes[0].disposed, 0)
+  acknowledge(); await h.poll()
+  assert.equal(h.runtimes[0].disposed, 1)
+})
+
+test('failed background settlement releases its retained executor', async t => {
+  const h = harness(), owner = h.client.createTavernScriptSessionOwner(h.options)
+  t.after(() => owner.dispose())
+  owner.start(); await h.poll()
+  h.liveView.update('A', { ...view(2), activity: { role: 'settlement', phase: 'running', busy: true } })
+  h.list.set({ current: 'B' }); await h.poll()
+  h.liveView.update('A', { ...view(3), activity: { role: 'settlement', phase: 'failed', busy: false }, settleStatus: 'error' })
+  await h.poll()
+  assert.equal(h.runtimes[0].disposed, 1)
+  assert.equal(h.subscriptions.some(s => s.id === 'A' && s.active), false)
 })

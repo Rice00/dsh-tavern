@@ -5447,6 +5447,7 @@ window.__ModuleLoader__.load({
                 } finally {
                     work.busy = false;
                     if (delivery === work) scheduleClaimRetry(work.lease);
+                    else if (options && options.onIdle) options.onIdle();
                 }
             }
 				async function claimWork() {
@@ -5487,6 +5488,7 @@ window.__ModuleLoader__.load({
 				} finally {
 					if (claimBusy === currentLease) claimBusy = null;
 					if (lease === currentLease && claimRequested) { claimRequested = false; void claimWork(); }
+                        else if (options && options.onIdle) options.onIdle();
 				}
 			}
 			function sync(sessionId, view) {
@@ -5507,7 +5509,7 @@ window.__ModuleLoader__.load({
 					if (!runtime || !active) return Promise.reject(new Error("人物卡脚本正在其他窗口运行，或尚未加载完成"));
 					return runtime.triggerButton(scriptId, name);
 				},
-				inspect: function () { return { active: active, input: input, runtime: runtime && runtime.inspect() }; }
+				inspect: function () { return { active: active, busy: Boolean(delivery || claimBusy), input: input, runtime: runtime && runtime.inspect() }; }
 			});
 		}
 
@@ -5521,7 +5523,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// The selected game's executor belongs to the plugin, not its disposable header.
-		// Descendant navigation shares its owner; unrelated games never share a sandbox.
+		// Descendants share their owner; unfinished games retain separate sandboxes until idle.
 		// Back off only empty queue checks; notifications wake the executor immediately.
 		function createTemplateIdleWait({ schedule = setTimeout, cancel = clearTimeout } = {}) {
 		  let delay = 100, pending = false, finish = null;
@@ -5700,21 +5702,13 @@ window.__ModuleLoader__.load({
 			const hostWindow = options.window || window;
 			const sessions = options.sessions;
 			const views = options.liveView || liveTavernView;
-            const template = createFullTemplateExecutor({ window: hostWindow, rpc: options.rpc || rpc, executeSlash: options.executeSlash });
 			const transition = options.transition || tavernSessionTransition;
-			const listeners = new Set();
+			const listeners = new Set(), records = new Map();
 			let snapshot = { sessionId: "", loadState: null };
-			let current = null, stopView = null, stopSessions = null, stopTransition = null;
+			let current = null, stopSessions = null, stopTransition = null;
 			let started = false, observing = false;
-			const execution = (options.createExecution || createTavernScriptExecutionModule)({
-				window: hostWindow, rpc: options.rpc || rpc,
-				signals: options.signals || tavernSessionSignals,
-				invalidate: function (sessionId) { views.invalidate(sessionId); },
-				onMvuLoadState: function (state) { publish(current ? current.sessionId : "", state); }
-			});
-			function publish(sessionId, loadState) {
-				if (snapshot.sessionId === sessionId && snapshot.loadState === loadState) return;
-				snapshot = { sessionId: sessionId, loadState: loadState };
+			function publish() {
+				snapshot = { sessionId: current ? current.sessionId : "", loadState: current ? current.loadState : null };
 				listeners.forEach(function (listener) { listener(); });
 			}
 			function selectedOwner() {
@@ -5730,40 +5724,81 @@ window.__ModuleLoader__.load({
 				}
 				return "";
 			}
-			function release() {
-				current = null;
-				if (stopView) stopView();
-				stopView = null;
-				execution.dispose();
-                template.dispose();
-				publish("", null);
+			function release(record) {
+				if (records.get(record.sessionId) !== record) return;
+				records.delete(record.sessionId);
+				if (record.stopView) record.stopView();
+				record.execution.dispose();
+				record.template.dispose();
 			}
-			function syncView() {
-				if (!current || transition.getSnapshot()) return;
-				const state = current.viewState;
-				if (state && state.phase === "ready") { execution.sync(current.sessionId, state.view || {}); template.sync(current.sessionId, state.view || {}); }
+			function retire(record) {
+				if (current === record || records.get(record.sessionId) !== record || !record.fresh) return;
+				const state = record.viewState;
+				if (!state || state.phase !== "ready") {
+					if (state && state.phase === "unavailable") release(record);
+					return;
+				}
+				const view = state.view || {}, activity = view.activity || {};
+				// The model can still be preparing its MVU submission before a script
+				// event exists. Keep the owner through the whole background operation.
+				if (activity.busy || activity.phase === "pending" || activity.phase === "running" || view.settleStatus === "running") return;
+				if (record.execution.inspect().busy) return;
+				release(record);
+			}
+			function syncView(record) {
+				if (records.get(record.sessionId) !== record) return;
+				if (current === record && transition.getSnapshot()) return;
+				const state = record.viewState;
+				if (state && state.phase === "ready") {
+					record.execution.sync(record.sessionId, state.view || {});
+					record.template.sync(record.sessionId, state.view || {});
+				}
+				retire(record);
+			}
+			function createRecord(sessionId) {
+				const record = { sessionId: sessionId, viewState: null, loadState: null, fresh: false, stopView: null };
+				record.template = createFullTemplateExecutor({ window: hostWindow, rpc: options.rpc || rpc, executeSlash: options.executeSlash });
+				record.execution = (options.createExecution || createTavernScriptExecutionModule)({
+					window: hostWindow, rpc: options.rpc || rpc,
+					signals: options.signals || tavernSessionSignals,
+					invalidate: function (id) { views.invalidate(id); },
+					onIdle: function () { retire(record); },
+					onMvuLoadState: function (state) {
+						record.loadState = state;
+						if (current === record) publish();
+					}
+				});
+				records.set(sessionId, record);
+				return record;
 			}
 			function select() {
 				if (!observing) return;
 				const sessionId = selectedOwner();
 				if ((current ? current.sessionId : "") === sessionId) return;
-				release();
-				if (!sessionId) return;
-				const record = { sessionId: sessionId, viewState: null };
-				current = record;
-				publish(sessionId, null);
-				stopView = views.subscribe(sessionId, function (state) {
-					// Identity, not just the id: an old A response must not enter a new A lifetime.
-					if (current !== record) return;
-					record.viewState = state;
-					syncView();
-				});
+				const previous = current;
+				current = sessionId ? records.get(sessionId) || createRecord(sessionId) : null;
+				if (previous) {
+					// Do not retire from a cached idle view: the settlement-start
+					// notification may still be in flight when navigation happens.
+					previous.fresh = false;
+					views.invalidate(previous.sessionId);
+				}
+				if (current && !current.stopView) {
+					const record = current;
+					record.stopView = views.subscribe(sessionId, function (state) {
+						if (records.get(sessionId) !== record) return;
+						record.viewState = state;
+						record.fresh = true;
+						syncView(record);
+					});
+				}
+				publish();
 			}
 			function resume() {
 				if (!started || observing) return;
 				observing = true;
 				stopSessions = sessions.list.subscribe(select);
-				stopTransition = transition.subscribe(syncView);
+				stopTransition = transition.subscribe(function () { records.forEach(syncView); });
 				select();
 			}
 			function suspend() {
@@ -5771,7 +5806,9 @@ window.__ModuleLoader__.load({
 				if (stopSessions) stopSessions();
 				if (stopTransition) stopTransition();
 				stopSessions = stopTransition = null;
-				release();
+				current = null;
+				records.forEach(release);
+				publish();
 			}
 			return Object.freeze({
 				start: function () {
@@ -5789,7 +5826,7 @@ window.__ModuleLoader__.load({
 				},
 				subscribe: function (listener) { listeners.add(listener); return function () { listeners.delete(listener); }; },
 				getSnapshot: function () { return snapshot; },
-				retryMvuLoad: function () { return execution.retryMvuLoad(); }
+				retryMvuLoad: function () { return Boolean(current && current.execution.retryMvuLoad()); }
 			});
 		}
 

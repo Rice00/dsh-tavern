@@ -141,10 +141,44 @@ export function createTavernScriptHostAdapter(options = {}) {
       })
       return { updated: true, target: { type: 'character' }, characterVariables: structuredClone(saved) }
     }
+    const canPatch = options.patchChat && Number.isSafeInteger(chat._storageRevision) && chat._storageRevision > 0
+      && !settlementTransactions.has(str(sessionId))
+    // Capture references to replaced values, not copies of the entire history.
+    // Message variable arrays are mutated in place by the compatibility API.
+    const before = canPatch ? {
+      variables: chat.variables,
+      scripts: chat.tavernHelperScriptVariables && { ...chat.tavernHelperScriptVariables },
+      messages: option?.type === 'message' ? (chat.messages || []).map(message =>
+        Array.isArray(message?.variables) ? message.variables.slice() : message?.variables) : []
+    } : null
     const updated = replaceTavernHelperVariables(chat, { option, variables })
     const transactional = transactionResult(sessionId, updated, false, eventId)
     if (transactional !== null) return transactional
-    try { await options.writeChat(chat, { source: 'tavern-helper.variables' }) }
+    try {
+      let saved
+      if (canPatch) {
+        const path = updated.type === 'message' ? ['messages', updated.messageId, 'variables']
+          : [updated.type === 'chat' ? 'variables' : 'tavernHelperScriptVariables']
+        const previous = updated.type === 'message' ? before.messages[updated.messageId]
+          : updated.type === 'chat' ? before.variables : before.scripts
+        const current = updated.type === 'message' ? chat.messages[updated.messageId].variables
+          : updated.type === 'chat' ? chat.variables : chat.tavernHelperScriptVariables
+        // Match the existing JSON store's normalization (including sparse swipes).
+        const normalized = JSON.parse(JSON.stringify(current))
+        const changes = diffJson(previous, normalized).map(change => ({ ...change, path: [...path, ...change.path] }))
+        saved = await options.patchChat(chat.id, chat._storageRevision, changes, {
+          source: 'tavern-helper.variables',
+          assertCurrent: () => assertTransactionEvent(settlementTransactions.get(str(sessionId)), eventId)
+        })
+        if (saved) {
+          const { messages: _messages, ...header } = saved
+          Object.assign(chat, header)
+          if (updated.type === 'message') chat.messages[updated.messageId].variables = normalized
+        }
+      }
+      // A competing revision needs the existing three-way merge/conflict checks.
+      if (!saved) await options.writeChat(chat, { source: 'tavern-helper.variables' })
+    }
     catch (error) {
       if (error && error.code === 'DSH_TAVERN_CHAT_CONFLICT') {
         const latest = await options.resolveChat(str(sessionId))

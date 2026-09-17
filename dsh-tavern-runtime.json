@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "7da8c3cbb7623ca0b9680bffd149242bef398f6c",
-  "releaseSequence": 268,
+  "revision": "2a5498476d78191e32d4eeaeb7ab15a6967c5556",
+  "releaseSequence": 269,
   "version": "1.9.0",
   "files": [
     {
@@ -286,8 +286,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/auto-compaction.js",
-      "sha256": "50e9284111ae8eef53554e7955a268f2b1e8cd85430aff77dda82468caee57c1",
-      "size": 10881
+      "sha256": "dfb1ad4505b1d0dca5407bfad517d7aad85e503074c1e3a666b6bfc7eb09b07b",
+      "size": 11223
     },
     {
       "path": "tavern-plugin/lib/domain/background-compaction.js",
@@ -498,6 +498,11 @@
       "path": "tavern-plugin/lib/domain/file-resources.js",
       "sha256": "9d4945a8545e133753ade687430b07e592a485b7ffce35905756390541105d1c",
       "size": 44305
+    },
+    {
+      "path": "tavern-plugin/lib/domain/foreground-context-pressure.js",
+      "sha256": "4f4bdd3903b04f43522edd0a1797277924ea0ab851741dbd6e9573127c977dd0",
+      "size": 1057
     },
     {
       "path": "tavern-plugin/lib/domain/foreground-frame-retirement.js",
@@ -1246,8 +1251,8 @@
     },
     {
       "path": "tavern-plugin/lib/index.js",
-      "sha256": "2f2eb5ddbf7954a763ed259e3e9726faa89b90e4d724f8bcf3e068842c73ef19",
-      "size": 284301
+      "sha256": "cb3e0b378bb9cfa2b5c141987b6c146887bb7aa2389cc15851fe822bb370503f",
+      "size": 283622
     },
     {
       "path": "tavern-plugin/lib/profile-data-store.js",

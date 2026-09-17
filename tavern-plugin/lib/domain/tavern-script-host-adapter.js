@@ -117,11 +117,11 @@ export function createTavernScriptHostAdapter(options = {}) {
     })
   }
 
-  async function updateVariables(sessionId, option, variables, expectedLifecycleRevision, eventId) {
-    return serializeWorldbook('variables:' + sessionId, () => updateVariablesNow(sessionId, option, variables, expectedLifecycleRevision, eventId))
+  async function updateVariables(sessionId, option, variables, expectedLifecycleRevision, eventId, contextBaseline) {
+    return serializeWorldbook('variables:' + sessionId, () => updateVariablesNow(sessionId, option, variables, expectedLifecycleRevision, eventId, contextBaseline))
   }
 
-  async function updateVariablesNow(sessionId, option, variables, expectedLifecycleRevision, eventId) {
+  async function updateVariablesNow(sessionId, option, variables, expectedLifecycleRevision, eventId, contextBaseline) {
     const chat = await mutationChat(sessionId, eventId)
     await assertScriptEnabled(chat)
     if (!mutationIsCurrent(chat, expectedLifecycleRevision)) return staleMutation(chat)
@@ -151,6 +151,12 @@ export function createTavernScriptHostAdapter(options = {}) {
       messages: option?.type === 'message' ? (chat.messages || []).map(message =>
         Array.isArray(message?.variables) ? message.variables.slice() : message?.variables) : []
     } : null
+    const baseRevision = chat._storageRevision
+    const compact = canPatch && contextBaseline?.chatId === chat.id
+      && contextBaseline.stateRevision === baseRevision
+      && contextBaseline.lifecycleRevision === (chat.tavernHelperLifecycleRevision || 0)
+      && (chat.messages || []).every(message => message && typeof message === 'object')
+    let patched = false
     const updated = replaceTavernHelperVariables(chat, { option, variables })
     const transactional = transactionResult(sessionId, updated, false, eventId)
     if (transactional !== null) return transactional
@@ -171,6 +177,7 @@ export function createTavernScriptHostAdapter(options = {}) {
           assertCurrent: () => assertTransactionEvent(settlementTransactions.get(str(sessionId)), eventId)
         })
         if (saved) {
+          patched = true
           const { messages: _messages, ...header } = saved
           Object.assign(chat, header)
           if (updated.type === 'message') chat.messages[updated.messageId].variables = normalized
@@ -185,6 +192,18 @@ export function createTavernScriptHostAdapter(options = {}) {
         if (latest !== undefined && !mutationIsCurrent(latest, expectedLifecycleRevision)) return staleMutation(latest)
       }
       throw error
+    }
+    if (compact && patched) {
+      // Project only the affected floor, never the complete history. Keep the
+      // selected swipe semantics of the full compatibility projection.
+      const changes = updated.type === 'message'
+        ? { messageId: updated.messageId, message: { ...projectTavernHelperContext({ messages: [chat.messages[updated.messageId]] }).messages[0], message_id: updated.messageId } }
+        : updated.type === 'chat' ? { chatVariables: structuredClone(chat.variables || {}) }
+          : { scriptVariables: structuredClone(chat.tavernHelperScriptVariables || {}) }
+      return { updated: true, target: updated, contextDelta: {
+        version: 1, chatId: chat.id, lifecycleRevision: chat.tavernHelperLifecycleRevision || 0,
+        baseRevision, stateRevision: chat._storageRevision, ...changes
+      } }
     }
     return { updated: true, target: updated, context: projectTavernHelperContext(chat) }
   }

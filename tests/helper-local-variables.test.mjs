@@ -7,7 +7,7 @@ async function fixture(t) {
   t.after(host.cleanup)
   const invoke = host.invoke
   host.invoke = (method, args) => method === 'updateTavernHelperVariables'
-    ? host.adapter.updateVariables(args.sessionId, args.option, args.variables, args.expectedLifecycleRevision, args.eventId)
+    ? host.adapter.updateVariables(args.sessionId, args.option, args.variables, args.expectedLifecycleRevision, args.eventId, args.contextBaseline)
     : invoke(method, args)
   return host
 }

@@ -28,7 +28,7 @@ macOS / Node 22.22.0，600 条合成消息，14,455,068 字节 Chat，每层带�
 
 重要边界：磁盘 journal 本来就是增量，本次主要降低全量复制/序列化开销，不宣称减少 journal 提交次数。每次变量操作依然持久化，未用延迟保存换速度。
 
-## 其他已确认的放大来源
+## 初次调查确认的放大来源（进展见下文）
 
 | 路径 | 当前代码行为 | 后续方向 |
 | --- | --- | --- |
@@ -40,7 +40,7 @@ macOS / Node 22.22.0，600 条合成消息，14,455,068 字节 Chat，每层带�
 
 诊断实测：向约 1.45–1.51 MB 的正式诊断 JSON 追加一条约 8 KB 记录，排除一次预热后八次耗时为 27.81 / 25.88 / 26.56 / 24.87 / 25.69 / 24.87 / 26.41 / 25.45 ms。此数字是孤立诊断记录成本，不是实际一轮 MVU 总耗时，也不能把所有阶段简单相加当端到端结果。
 
-本轮没有改变诊断持久化、索引一致性、人物卡文件格式或回执协议。它们需要各自的回归和基准，尤其是变量增量回执的并发/生命周期检查。
+第一阶段没有改变诊断持久化、索引一致性、人物卡文件格式或回执协议。它们需要各自的回归和基准，尤其是变量增量回执的并发/生命周期检查。
 
 ## 验证与重跑
 
@@ -55,3 +55,44 @@ node bin/test-tavern.mjs
 测量原始摘要见同名 JSON；after 标注工作区未提交改动。基准不会调用外部服务，退出后清理临时存档。
 
 全量回归：2526 项，2521 通过、5 跳过、0 失败，约 71.2 秒。本轮仅服务端领域模块修改，无客户端构建变化。
+
+## 后续落地：人物卡名称同步与变量增量回执
+
+人物卡更新现在比较保存前后的投影名称。只更新变量或描述时，不再调用 `syncCardName` 重写索引及读取关联 Chat；实际改名仍保留同步。平面、v2、v3 卡格式的测试均覆盖变量修改、patch 改名和 raw 改名。
+
+普通脚本变量写入现在协商 `contextBaseline`，包含 chatId、storage revision、lifecycle revision。基线完全匹配且精确版本 patch 成功，才返回 `contextDelta`：Chat/Script 返回对应变量映射，Message 只投影被更新的楼层。父窗口和脚本 iframe 均按版本合并，未变化的历史不再复制；同步 ST chat facade 时保留原有对象引用和未保存插件编辑。版本缺口通过只读 `getTavernHelperContext` 恢复，不重试已经提交的写入；迟到回执不能覆盖新会话、新生命周期或更新版本。
+
+未协商的旧客户端、消息展示 iframe、MVU 隔离事务、过期基线、patch 竞争仍走完整回执。不改聊天存档格式，不延迟变量落盘。诊断日志存储和会话摘要索引仍保持原策略，后续改造需要单独验证崩溃恢复与列表即时性。
+
+### 服务端对比（包含摘要索引）
+
+与上一节相同的正式 Adapter/Persistence/Journal/Registry，600 条消息、14.45 MB Chat。相同工作区分别启用/关闭增量回执协商，均一次预热、五次采样、中位数：
+
+| 变量 | 完整回执 | 增量回执 | 回执大小 |
+| --- | ---: | ---: | ---: |
+| Message | 53.3 ms | 29.1 ms | 28,918,615 → 36,365 B |
+| Chat | 56.8 ms | 26.3 ms | 28,924,605 → 6,181 B |
+| Script | 51.9 ms | 25.9 ms | 28,930,658 → 6,216 B |
+
+### 真实 Chromium 脚本沙箱对比
+
+使用真实客户端 bundle、共享脚本 iframe、postMessage、HTTP RPC、正式 Adapter 和临时 journal 文件；600 条同规模消息。计时从脚本调用 `replaceVariables` 到 await 返回并同步读到变量。一次预热、五次采样、中位数；完整回执/增量回执交替各跑两轮。
+
+| 变量 | 完整回执首轮 / 复测 | 增量回执首轮 / 复测 |
+| --- | ---: | ---: |
+| Message | 287.9 / 288.5 ms | 8.1 / 9.2 ms |
+| Chat | 312.7 / 266.7 ms | 6.1 / 7.1 ms |
+| Script | 275.4 / 259.7 ms | 7.1 / 7.5 ms |
+
+这是连续普通变量调用的局部基准，**不含真实宿主摘要索引、通知后的页面刷新、模型生成或 MVU 整轮结算**，不能把这些数字当作实际一轮对话耗时。初次 iframe 调用还会受初始化影响，例如增量首轮首个预热样本为 206.3 ms。按新存储实例重读，三类变量均为 25，历史第一层 hp 仍为 10；ST chat 引用及受影响楼层变量同步正确。原始两轮数据、响应大小和落盘证明见 `variable-receipt-performance-2026-09-17.json`。
+
+```sh
+node tests/fixtures/variable-write-benchmark.mjs output/playwright/variable-writes/full-receipt
+node tests/fixtures/variable-write-benchmark.mjs output/playwright/variable-writes/compact-receipt --compact
+node tests/fixtures/variable-receipt-browser-smoke.mjs
+# 在打印的本地地址访问 /?full 和 /，各运行一次；/proof 返回落盘与回执大小证明。
+node --test tests/helper-variable-receipts.test.mjs tests/helper-local-variables.test.mjs tests/helper-chat-data.test.mjs tests/variable-journal-patch.test.mjs tests/tavern-script-host-adapter.test.mjs
+node bin/build-tavern-client.mjs --check
+```
+
+全量回归 2538 项：2533 通过、5 跳过、0 失败，73.7 秒。随后补充的父窗口恢复、未保存插件编辑、MVU 事务协商兼容测试及相关变量/插件存档测试共 59 项定向验证通过。客户端 bundle 已重建。

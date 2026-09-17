@@ -1589,7 +1589,12 @@ window.__ModuleLoader__.load({
 				const task = pending[data.requestId];
 				if (!task) return;
 				delete pending[data.requestId];
-				if (data.ok) { onContext(data.result || {}, task.method); task.resolve(data.result); }
+				if (data.ok) {
+                    // A variable receipt may need a read-only resync before the
+                    // caller can safely read its synchronous compatibility state.
+                    try { Promise.resolve(onContext(data.result || {}, task.method)).then(function () { task.resolve(data.result); }, task.reject); }
+                    catch (error) { task.reject(error); }
+                }
 				else {
 					const error = new Error(String(data.error || "Helper 调用失败"));
 					error.dshTavernScriptId = task.owner.scriptId;
@@ -1772,7 +1777,7 @@ window.__ModuleLoader__.load({
 			function identity(core) { return [core.message_id, core.role, core.message, core.swipe_id, core.swipes]; }
 			function layoutMatches() { return chat.length === rows.length && rows.every((row, index) => chat[index] === row.view); }
 			function dirty() { return !layoutMatches() || !same(metadata, metadataBase) || rows.some(row => !same(pluginData(row.view), row.base)); }
-			function sync(value, acknowledged) {
+			function sync(value, acknowledged, variableDelta) {
 				if (!value) return;
 				if (saving && !acknowledged) {
 					if (!deferred || keyOf(value) !== keyOf(deferred) || Number(value.stateRevision || 0) >= Number(deferred.stateRevision || 0)) deferred = copy(value);
@@ -1788,7 +1793,14 @@ window.__ModuleLoader__.load({
 				chatId = String(value.chatId || ""); lifecycleRevision = Number(value.lifecycleRevision || 0);
 				// Do not conceal an unsupported local splice/reorder with a host refresh.
 				if (!layoutMatches()) return;
-				const nextRows = (value.messages || []).map(function (message, index) {
+				const variablesOnly = variableDelta && !acknowledged && revision === variableDelta.stateRevision
+                    && lastRevision === variableDelta.baseRevision && rows.length === (value.messages || []).length;
+                const nextRows = (value.messages || []).map(function (message, index) {
+                    if (variablesOnly && index !== variableDelta.messageId) {
+                        const row = rows[index];
+                        if (same(pluginData(row.view), row.base)) row.revision = revision;
+                        return row;
+                    }
 					const core = coreOf(message), remote = copy(message.pluginData || {});
 					let row = rows[index];
 					if (!row || !same(identity(row.core), identity(core))) {
@@ -1883,6 +1895,7 @@ window.__ModuleLoader__.load({
 		}
 
 		// @include local-variables.js
+		// @include variable-receipts.js
 
 		function installTavernHelperFacade(options) {
 			const nativeWorldInfoSnapshots = new WeakMap();
@@ -2039,7 +2052,7 @@ window.__ModuleLoader__.load({
 			window.errorCatched = function (factory) { return function () { try { return factory.apply(this, arguments); } catch (error) { console.error(error); return {}; } }; };
 			window.retrieveDisplayedMessage = function () { return window.jQuery ? window.jQuery() : []; };
 			window.toastr = { success: console.info, info: console.info, warning: console.warn, error: console.error };
-			return { sync: function (value) { chatData.sync(value); localVariables.sync(); }, flushVariables: localVariables.flush };
+			return { sync: function (value, variableDelta) { chatData.sync(value, undefined, variableDelta); localVariables.sync(); }, flushVariables: localVariables.flush };
 		}
 
         // Bounded, value-free timings shared by every card's initialization.
@@ -2131,11 +2144,19 @@ window.__ModuleLoader__.load({
 			const transport = modules.createTransport({ parent: parent, token: token, copy: copy,
 				identity: function () { return { eventId: activeHostEventId, scriptId: currentScript().id, lifecycleRevision: Number(state.lifecycleRevision) || 0 }; },
 				listen: function (receive) { addEventListener("message", receive); },
-				onContext: function (result, method) {
+				onContext: async function (result, method) {
+                    if (result.contextDelta) {
+                        const next = modules.applyVariableReceipt(state, result.contextDelta);
+                        if (next === null) await transport.request("getTavernHelperContext", {});
+                        else if (next !== state) { state = next; if (facade) facade.sync(state, result.contextDelta); }
+                        return;
+                    }
 					const incoming = result.context;
 					// An old RPC reply must not restore a context that the host has left.
 					if (method && incoming && ((incoming.chatId && state.chatId && incoming.chatId !== state.chatId)
-						|| Number(incoming.lifecycleRevision || 0) < Number(state.lifecycleRevision || 0))) return;
+						|| Number(incoming.lifecycleRevision || 0) < Number(state.lifecycleRevision || 0)
+                        || (Number(incoming.lifecycleRevision || 0) === Number(state.lifecycleRevision || 0)
+                            && Number(incoming.stateRevision || 0) < Number(state.stateRevision || 0)))) return;
 					if (incoming) state = Object.assign({}, state, copy(incoming));
 					if (result.worldbook) state.worldbook = copy(result.worldbook);
 					// Chat-data saves acknowledge their own submitted snapshot separately.
@@ -2173,6 +2194,9 @@ window.__ModuleLoader__.load({
 				}
 			});
 			const call = function (method, args) {
+                if (method === "updateTavernHelperVariables") args = Object.assign({}, args, { contextBaseline: {
+                    chatId: state.chatId, stateRevision: state.stateRevision, lifecycleRevision: Number(state.lifecycleRevision) || 0
+                } });
                 const stage = { getTavernHelperWorldbook: "worldbook-read", loadTavernWorldInfo: "worldbook-read", updateTavernHelperPrompts: "prompt-write", updateTavernHelperMessages: "message-write", updateTavernHelperVariables: "variable-write" }[method];
                 const pending = transport.request(method, args);
                 return stage ? initializationTiming.wait(stage, pending, currentScript().id) : pending;
@@ -3157,6 +3181,7 @@ window.__ModuleLoader__.load({
 			const bootstrap = '(' + tavernHelperScriptBootstrap.toString() + ')(' + safeMetadata + ',' + safeContext + ',{'
 				+ 'createInitializationTiming:' + createTavernInitializationTiming.toString() + ','
 				+ 'createTransport:' + createTavernHelperTransport.toString() + ','
+                + 'applyVariableReceipt:' + applyTavernVariableReceipt.toString() + ','
 				+ 'createEvents:' + createTavernHelperEventBus.toString() + ','
 				+ 'createPopup:' + createTavernHelperPopup.toString() + ','
 				+ 'installCompatibility:' + installTavernCompatibilityDiagnostics.toString() + ','
@@ -3217,7 +3242,7 @@ window.__ModuleLoader__.load({
 			const closedEventIds = new Set();
 			const closedEventOrder = [];
 			const reportedEventTimeouts = new Set();
-			const allowedMethods = new Set(["generateTavernHelperRaw", "updateTavernHelperPrompts", "updateTavernHelperVariables", "updateTavernHelperMessages", "createTavernHelperMessages", "getTavernHelperWorldbook", "replaceTavernHelperWorldbook", "saveTavernExtensionSettings", "loadTavernWorldInfo", "saveTavernWorldInfo", "saveTavernChatData"]);
+			const allowedMethods = new Set(["getTavernHelperContext", "generateTavernHelperRaw", "updateTavernHelperPrompts", "updateTavernHelperVariables", "updateTavernHelperMessages", "createTavernHelperMessages", "getTavernHelperWorldbook", "replaceTavernHelperWorldbook", "saveTavernExtensionSettings", "loadTavernWorldInfo", "saveTavernWorldInfo", "saveTavernChatData"]);
 			let activeSessionId = "";
 			let root = null;
 			let previous = null;
@@ -3733,7 +3758,17 @@ window.__ModuleLoader__.load({
 						if (record.queuedPromptBatch === batch) record.queuedPromptBatch = null;
 						if (records.get(record.id) !== record) throw new Error("脚本运行时已失效");
 						if (data.eventId && closedEventIds.has(String(data.eventId))) throw new Error("事件已经结束，已拒绝迟到写入");
-						return invoke(data.method, mutationArgs, record.sessionId);
+						return Promise.resolve(invoke(data.method, mutationArgs, record.sessionId)).then(async function (result) {
+                            if (!result || !result.contextDelta || records.get(record.id) !== record) return result;
+                            const next = applyTavernVariableReceipt(record.context, result.contextDelta);
+                            if (next === null) {
+                                const snapshot = await invoke("getTavernHelperContext", {}, record.sessionId);
+                                return Object.assign({}, result, { contextDelta: undefined, context: snapshot.context });
+                            }
+                            record.context = next;
+                            syncMvuDataReadiness(record);
+                            return result;
+                        });
 					});
 					record.rpcTail = rpcTask;
 					if (batch) { batch.task = rpcTask; record.queuedPromptBatch = batch; }
@@ -3765,7 +3800,7 @@ window.__ModuleLoader__.load({
 						syncMvuDataReadiness(record);
 					}
 					post(record, { type: "dsh-tavern-helper-response", requestId: data.requestId, ok: true, result: result });
-					if ((data.method === "updateTavernHelperPrompts" || data.method === "updateTavernHelperVariables" || data.method === "updateTavernHelperMessages" || data.method === "createTavernHelperMessages" || data.method === "replaceTavernHelperWorldbook" || data.method === "saveTavernExtensionSettings" || data.method === "saveTavernWorldInfo" || data.method === "saveTavernChatData") && result && result.updated !== false && result.stale !== true && records.get(record.id) === record) reportMutation(record.sessionId, data.method, result);
+					if ((data.method === "updateTavernHelperPrompts" || data.method === "updateTavernHelperVariables" || data.method === "updateTavernHelperMessages" || data.method === "createTavernHelperMessages" || data.method === "replaceTavernHelperWorldbook" || data.method === "saveTavernExtensionSettings" || data.method === "saveTavernWorldInfo" || data.method === "saveTavernChatData") && result && result.updated !== false && result.stale !== true && records.get(record.id) === record) reportMutation(record.sessionId, data.method, result.contextDelta ? Object.assign({}, result, { context: record.context }) : result);
 				}, function (error) {
 					post(record, { type: "dsh-tavern-helper-response", requestId: data.requestId, ok: false, error: String(error && error.message || error) });
 				});
@@ -9787,6 +9822,7 @@ window.__ModuleLoader__.load({
 		exports.buildTavernFrameDocument = buildTavernFrameDocument;
 		exports.openingPreviewSelection = openingPreviewSelection;
 		exports.syncTavernSubagentCatalogs = syncTavernSubagentCatalogs;
+		exports.applyTavernVariableReceipt = applyTavernVariableReceipt;
 		exports.createTavernHelperTransport = createTavernHelperTransport;
 		exports.createTavernInitializationTiming = createTavernInitializationTiming;
 		exports.createTavernHelperEventBus = createTavernHelperEventBus;

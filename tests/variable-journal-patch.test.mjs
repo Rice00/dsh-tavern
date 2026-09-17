@@ -55,3 +55,25 @@ test('过期生命周期在写入前拒绝',async t=>{
  assert.equal(result.stale,true);assert.equal(calls.writes,0);assert.equal(calls.patches.length,0)
  assert.deepEqual((await persistence.read('c')).variables,{old:1})
 })
+
+for (const type of ['chat', 'script', 'message']) test('协商变量回执只返回变化：' + type, async t => {
+ const {adapter,persistence}=await harness(t)
+ const before=await persistence.read('c')
+ const result=await adapter.updateVariables('s',{type,message_id:0,swipe_id:0,script_id:'test'},{hp:8},1,undefined,
+  {chatId:'c',stateRevision:before._storageRevision,lifecycleRevision:1})
+ assert.equal(result.context,undefined)
+ assert.equal(result.contextDelta.baseRevision,before._storageRevision)
+ assert.equal(result.contextDelta.stateRevision,(await persistence.read('c'))._storageRevision)
+ assert.ok(JSON.stringify(result).length<1200)
+})
+
+test('变量回执基线过期或保存时竞争仍返回完整上下文',async t=>{
+ const {adapter,persistence}=await harness(t,p=>p.update('c',c=>({...c,title:'concurrent'})))
+ const before=await persistence.read('c')
+ const result=await adapter.updateVariables('s',{type:'chat'},{hp:8},1,undefined,
+  {chatId:'c',stateRevision:before._storageRevision,lifecycleRevision:1})
+ assert.ok(result.context);assert.equal(result.contextDelta,undefined)
+ const stale=await adapter.updateVariables('s',{type:'chat'},{hp:9},1,undefined,
+  {chatId:'c',stateRevision:before._storageRevision,lifecycleRevision:1})
+ assert.ok(stale.context);assert.equal(stale.contextDelta,undefined)
+})

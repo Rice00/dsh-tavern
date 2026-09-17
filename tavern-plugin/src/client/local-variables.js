@@ -30,7 +30,7 @@ function createTavernLocalVariables({ context, request, copy, currentScript, rep
     const task = request('updateTavernHelperVariables', { option: { type: 'chat', localMutation: operation } }).then(result => {
       if (result?.updated !== true || result?.stale) throw new Error('聊天已变化，变量未保存');
       if (owner === captured && binding() === captured) {
-        if (!result.context) apply(base, operation);
+        if (!result.context && !result.contextDelta) apply(base, operation);
       }
     }).catch(error => {
       if (owner === captured && binding() === captured) failures.set(scriptId, error);

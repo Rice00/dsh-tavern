@@ -107,6 +107,7 @@ test('后台 MVU 命令只在隔离草稿执行并原子提交，协议不进入
 
 test('MVU Runtime 只返回确定性 effect；重复应用不会重复 delta', async function () {
   const value = chat()
+  value._storageRevision = 4
   value.mvu.owner = 'official'
   let adapter
   let dispatches = 0
@@ -123,6 +124,11 @@ test('MVU Runtime 只返回确定性 effect；重复应用不会重复 delta', a
       status: function () { return { present: true, ready: true, busy: false } },
       async dispatch(_sessionId, _name, _args, _context, work) {
         dispatches++
+        const receipt = await adapter.updateVariables('session-1', { type: 'chat' }, { marker: true }, 2, work.eventId,
+          { chatId: value.id, stateRevision: 4, lifecycleRevision: 2 })
+        assert.equal(receipt.transactional, true)
+        assert.ok(receipt.context)
+        assert.equal(receipt.contextDelta, undefined)
         const current = value.messages[0].variables[0].stat_data?.hp ?? value.messages[0].variables[0].hp
         await adapter.updateMessages('session-1', [{
           message_id: 0,

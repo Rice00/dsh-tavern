@@ -9,6 +9,7 @@ import { createProfileDataStore } from '../../tavern-plugin/lib/profile-data-sto
 import { createTavernConversationRegistry } from '../../tavern-plugin/lib/domain/tavern-conversation-registry.js'
 import { createTavernScriptHostAdapter } from '../../tavern-plugin/lib/domain/tavern-script-host-adapter.js'
 import { execFileSync } from 'node:child_process'
+const compact = process.argv.includes('--compact')
 const output=resolve(process.argv[2] || 'output/playwright/variable-writes/run')
 await mkdir(output,{recursive:true})
 const root=await mkdtemp(join(tmpdir(),'tavern-variable-bench-'))
@@ -28,9 +29,10 @@ try {
  for(const type of ['message','chat','script']){
   const samples=[]
   for(let i=0;i<6;i++){
+   const before=await persistence.read('c')
    metrics.length=0;measuring=true
    const begin=performance.now()
-   const result=await adapter.updateVariables('s',{type,message_id:-1,script_id:'sample'},{hp:20+i,payload:'变量'.repeat(1000)})
+   const result=await adapter.updateVariables('s',{type,message_id:-1,script_id:'sample'},{hp:20+i,payload:'变量'.repeat(1000)},undefined,undefined,compact ? {chatId:'c',stateRevision:before._storageRevision,lifecycleRevision:0}:undefined)
    const responseBytes=Buffer.byteLength(JSON.stringify(result));const ms=performance.now()-begin;measuring=false
    assert.equal(result.updated,true)
    const saved=await persistence.read('c')
@@ -43,5 +45,5 @@ try {
  }
  const restarted=createChatPersistence({store:createChatJournalStore({dataRoot:root})})
  assert.deepEqual(await restarted.read('c'),await persistence.read('c'))
- await writeFile(join(output,'results.json'),JSON.stringify({revision:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),node:process.version,platform:process.platform,count,chatBytes:Buffer.byteLength(JSON.stringify(seeded)),warmup:1,samples:5,results},null,2)+'\n')
+ await writeFile(join(output,'results.json'),JSON.stringify({compact,revision:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),node:process.version,platform:process.platform,count,chatBytes:Buffer.byteLength(JSON.stringify(seeded)),warmup:1,samples:5,results},null,2)+'\n')
 }finally{await rm(root,{recursive:true,force:true})}

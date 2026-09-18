@@ -1019,3 +1019,8 @@ body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
 .dsh-context-empty { margin: 0; padding: 28px 16px; text-align: center; color: var(--dsw-alias-label-tertiary); }
 .dsh-tavern-full-context [role=alert] { color: var(--dsw-alias-state-error-primary); }
 @media (max-width: 600px) { .dsh-context-toolbar input { flex-basis: 100%; } .dsh-context-list summary { padding: 10px; gap: 6px; } .dsh-context-list pre { padding: 12px; } }
+
+.dsh-context-list .dsh-context-source { margin: 8px 14px 12px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; }
+.dsh-context-list .dsh-context-source > summary { font-size: 12px; color: var(--dsw-alias-label-tertiary); padding: 8px 10px; }
+
+.dsh-context-part-label { padding: 8px 20px; font-size: 12px; color: var(--dsw-alias-label-tertiary); }

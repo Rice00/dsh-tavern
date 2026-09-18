@@ -161,3 +161,23 @@ test('后台轮换写入轻量索引，恢复旧后台后重新成为当前，�
   assert.deepEqual(row.backgroundHistoryIds, ['new'])
   assert.equal(store.snapshot().chatReads, 0)
 })
+
+test('新 Session 查找不读取已关联的历史存档，仍恢复未关联的 Chat', async () => {
+  const seed = { links: {}, index: { chats: [] }, chats: {} }
+  for (let i = 0; i < 100; i++) {
+    seed.links['session-' + i] = 'chat-' + i
+    seed.index.chats.push({ id: 'chat-' + i })
+    seed.chats['chat-' + i] = { id: 'chat-' + i, sessionId: 'session-' + i }
+  }
+  seed.index.chats.push({ id: 'orphan' })
+  seed.chats.orphan = { id: 'orphan', sessionId: 'recover-me' }
+  const store = memoryStore(seed)
+  const registry = createTavernConversationRegistry({ store: store.adapter })
+  assert.equal(await registry.resolve('new-session'), undefined)
+  assert.equal(store.snapshot().chatReads, 1, 'only an unlinked chat needs recovery inspection')
+  assert.deepEqual(await registry.resolve('recover-me'), seed.chats.orphan)
+  assert.equal(store.snapshot().links['recover-me'], 'orphan')
+  const reads = store.snapshot().chatReads
+  assert.equal(await registry.resolve('another-new-session'), undefined)
+  assert.equal(store.snapshot().chatReads, reads, 'fully linked history needs no materialization')
+})

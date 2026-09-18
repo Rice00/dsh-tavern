@@ -68,7 +68,12 @@ export function createTavernConversationRegistry(options = {}) {
         changed = true
       }
       const index = await store.readIndex()
+      // Published links already own these chats (including intentional aliases).
+      // Only unlinked records need recovery; a new Session must not materialize
+      // every historical game while holding the shared links write lock.
+      const linkedChatIds = new Set(Object.values(current).filter(value => typeof value === 'string'))
       for (const item of chatRows(index)) {
+        if (linkedChatIds.has(item.id)) continue
         const chat = await store.readChat(item.id)
         if (chat !== undefined && str(chat.sessionId) === id) {
           current[id] = chat.id

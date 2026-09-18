@@ -7501,7 +7501,7 @@ window.__ModuleLoader__.load({
 			React.useEffect(function () {
 				if (!currentSummary || currentSummary.blank) return;
 				notifyDataChanged(["sessions"]);
-			}, [current, currentSummary]);
+			}, [current, currentSummary && currentSummary.blank]);
 			React.useEffect(function () {
 				if (!current || lastModeSession.current === current) return;
 				const item = history.filter(function (entry) { return entry.sessionId === current; })[0];

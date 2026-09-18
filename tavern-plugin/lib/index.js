@@ -13,7 +13,8 @@ import { createSessionViewSync } from './domain/session-view-sync.js'
 import { setFailedErrorVisibility, setAllFailedErrorVisibility } from './domain/failed-error-visibility.js'
 import { createManualCharacterDesign } from './domain/manual-character-design.js'
 import { prepareTemplateHistory, synchronizeTemplateHistory } from './domain/template-history.js'
-import { createFullTemplateRuntime } from './domain/full-template-runtime.js'
+import { createServerTemplateSync } from './domain/server-template-sync.js'
+import { createServerTemplateRuntime } from './domain/server-template-runtime.js'
 import { estimateWorldBookTokens } from './domain/worldbook-activation.js'
 import { createWorldbookFilter, WORLD_BOOK_FILTER_TOOLS } from './domain/worldbook-filter.js'
 import { adoptConversationFeatures, adoptConversationBackground, patchConversationBackground } from './domain/conversation-background.js'
@@ -34,7 +35,7 @@ import { createPerformanceDiagnostics } from './domain/performance-diagnostics.j
 import { createBackgroundSuppressionReader } from './domain/background-surface.js'
 import { ensureCardWorkspaceMessage } from './domain/card-workspace-message.js'
 import { createPromptTemplateGlobalVariables } from './domain/prompt-template-global-variables.js'
-import { FULL_PROMPT_TEMPLATE_ASSET_PREFIX, readFullPromptTemplateAsset, fullPromptTemplateRuntimeInfo } from './domain/full-prompt-template-assets.js'
+import { FULL_PROMPT_TEMPLATE_ASSET_PREFIX, readFullPromptTemplateAsset } from './domain/full-prompt-template-assets.js'
 import { createTavernApiDiagnostics } from './domain/tavern-api-diagnostics.js'
 import { generateHelperRaw } from './domain/helper-generation.js'
 import { createBodyEditor, synchronizeBodyEdits } from './domain/body-editor.js'
@@ -214,7 +215,15 @@ export async function apply(ctx) {
   const dataRoot = resolveTavernDataRoot()
   const stablePrefixStorage = createSessionStablePrefixStorage(dataRoot + '/session-prefixes')
   const profileData = createProfileDataStore({ dataRoot })
-  const fullTemplateRuntime = createFullTemplateRuntime({ store: profileData, publishSignal: (id, signal) => sessionSignals.publish(id, signal) })
+  const fullTemplateRuntime = createServerTemplateRuntime({ store: profileData, rpc: (method, args) => dispatchMethod(method, args, true) })
+  const templateSync = createServerTemplateSync({
+    run: async sessionId => {
+      const chat = await chatForSession(sessionId)
+      if (chat && groupOfMode(chat.mode || 'story') === 'play') return fullTemplateRuntime.synchronize(sessionId)
+    },
+    onError: error => console.warn('dsh-tavern: 服务端模板显示处理失败:', str(error.message || error))
+  })
+  ctx.effect(() => () => templateSync.dispose())
   ctx.effect(() => () => fullTemplateRuntime.dispose())
   const cardOrganization = createCardOrganization(profileData)
   const worldbookRecallLog = createWorldbookRecallLog({ store: profileData })
@@ -680,6 +689,7 @@ export async function apply(ctx) {
     const saved = await rawWriteChat(chat, metadata)
     await syncChatSummary(saved)
     void coordinationEvents?.publish(saved.sessionId)
+    templateSync.schedule(saved.sessionId, saved._storageRevision)
     if (!str(metadata?.source).startsWith('compaction.')) queueAutoCompaction(saved.sessionId)
     return saved
   }
@@ -689,6 +699,7 @@ export async function apply(ctx) {
     await syncChatSummary(saved)
     if (saved !== undefined) {
       void coordinationEvents?.publish(saved.sessionId)
+      templateSync.schedule(saved.sessionId, saved._storageRevision)
       if (!str(metadata?.source).startsWith('compaction.')) queueAutoCompaction(saved.sessionId)
     }
     return saved
@@ -1167,6 +1178,7 @@ export async function apply(ctx) {
       if(saved) {
         await syncChatSummary(saved)
         void coordinationEvents?.publish(saved.sessionId)
+        templateSync.schedule(saved.sessionId, saved._storageRevision)
         queueAutoCompaction(saved.sessionId)
       }
       return saved
@@ -1247,6 +1259,7 @@ export async function apply(ctx) {
   }
   const incrementalReplyView = createIncrementalReplyView({ readChanges: (id, revision) => chatPersistence.readChangedSlice(id, revision) })
   async function view(chat, card, persistedProjection = false) {
+    templateSync.schedule(chat.sessionId, chat._storageRevision)
     const runtimeSettings = await requestPerformance.stage('settings', () => readTavernSettings())
     let scriptProgress = null
     if ((chat.mode || 'story') === 'script') {
@@ -2733,7 +2746,7 @@ export async function apply(ctx) {
   const cardResponseTest = createCardResponseTest({ api: gameplayApi, store: profileData, chatForSession })
   ctx.effect(() => () => cardResponseTest.dispose())
 
-  async function dispatchMethod(method, args) {
+  async function dispatchMethod(method, args, serverTemplate = false) {
     if (method.startsWith('gameplay.')) return await gameplayApi.call(method.slice(9), args || {})
     switch (method) {
       case 'getCardOrganization': return { groups: (await cardOrganization.read()).groups }
@@ -2756,11 +2769,11 @@ export async function apply(ctx) {
       }
       case 'callOpeningRuntime': return await openingPreparation.callRuntime(args && args.id, args && args.method, args && args.args)
       case 'saveOpeningSelection': return openingPreparation.select(args && args.id, args && args.openingId)
-      case 'initializeOpeningTemplate': return openingPreparation.applyTemplateInitial(args.id, await fullTemplateRuntime.forSession('opening:' + args.id).initializeVariables([]))
+      case 'initializeOpeningTemplate': try { return await openingPreparation.applyTemplateInitial(args.id, await fullTemplateRuntime.forSession('opening:' + args.id).initializeVariables([])) } finally { fullTemplateRuntime.cancel('opening:' + args.id) }
       case 'createOpeningPreparation': return await openingPreparation.create(args && args.path)
       case 'getOpeningPreparation': return args?.touchOnly === true ? openingPreparation.retain(args.id) : openingPreparation.get(args && args.id)
       case 'retainOpeningPreparation': return openingPreparation.retain(args && args.id)
-      case 'releaseOpeningPreparation': return openingPreparation.release(args && args.id)
+      case 'releaseOpeningPreparation': fullTemplateRuntime.cancel('opening:' + args.id); return openingPreparation.release(args && args.id)
       case 'replaceOpeningWorldbook': return await openingPreparation.replaceWorldbook(args && args.id, args && args.entries, args && args.expectedEntries)
       case 'getCardOpenings': return await getCardOpenings(args && args.path, args && args.userName, args && args.requestMode)
       case 'preparePlayStart': {
@@ -3080,19 +3093,36 @@ export async function apply(ctx) {
 	      case 'updateTavernHelperVariables': return await tavernScriptHostAdapter.updateVariables(args && args.sessionId, args && args.option, args && args.variables, args && args.expectedLifecycleRevision, args && args.eventId, args && args.contextBaseline)
 	      case 'updateTavernHelperMessages': return await tavernScriptHostAdapter.updateMessages(args && args.sessionId, args && args.messages, args && args.expectedLifecycleRevision, args && args.eventId)
 	      case 'createTavernHelperMessages': return await tavernScriptHostAdapter.createMessages(args && args.sessionId, args && args.messages, args && args.option, args && args.expectedLifecycleRevision, args && args.eventId)
-      case 'releaseFullTemplateRuntime': return { released: fullTemplateRuntime.dispatch.dispose(args.sessionId, args.runtimeId) }
-      case 'heartbeatFullTemplateRuntime': return fullTemplateRuntime.heartbeat(args.sessionId, args.runtimeId, args.phase, args.initializationError, args.work)
-      case 'claimFullTemplateWork': return fullTemplateRuntime.dispatch.claim(args.sessionId, args.runtimeId, args.ready, args.initializationError)
-      case 'startFullTemplateWork': return await fullTemplateRuntime.start(args.sessionId, args.eventId, args.leaseToken, args.runtimeId)
-      case 'completeFullTemplateWork': return { completed: await fullTemplateRuntime.complete(args.sessionId, args.eventId, args.args, args.runtimeId, args.leaseToken, args.error) }
+      // Old pages must not create a second executor or receive server work.
+      case 'releaseFullTemplateRuntime': return { released: false }
+      case 'heartbeatFullTemplateRuntime': return { active: false, executor: 'server' }
+      case 'claimFullTemplateWork': return { event: null, executor: 'server' }
+      case 'startFullTemplateWork': return { started: false }
+      case 'completeFullTemplateWork': return { completed: false }
+      case 'executeTemplateHostCommand': {
+        if (!serverTemplate) throw new Error('模板命令仅由服务端执行器调用')
+        const text = str(args.text)
+        const send = /^\/send\s+([\s\S]+)\|\s*\/trigger\s*$/.exec(text)
+        if (send || /^\/trigger\s*$/.test(text)) {
+          await ctx.get('sessionController').prompt({ sessionId: args.sessionId, requestId: randomUUID(),
+            content: send ? [{ type: 'text', text: send[1].trim() }] : [], mode: 'followup' })
+          return { pipe: '' }
+        }
+        if (/^\/setinput(?:\s|$)/.test(text)) throw new Error('服务端模板不能操作网页输入框，请使用 /send … | /trigger')
+        const agent = agentRegistry.get(args.sessionId)
+        if (!agent || !commands) throw new Error('当前会话没有可用的命令执行器')
+        const result = await commands.execute(agent, text, [])
+        if (!result || result.result?.kind === 'error') throw new Error(result?.result?.text || '未注册的模板命令')
+        return { pipe: str(result.result?.text) }
+      }
       case 'getFullTemplateWorldbook': return await tavernScriptHostAdapter.getWorldbook(args.sessionId, args.name, true)
       case 'replaceFullTemplateWorldbook': return await tavernScriptHostAdapter.replaceWorldbook(args.sessionId, args.name, args.entries, args.expectedEntries, true)
       case 'executeFullTemplateCommand': return await fullTemplateRuntime.forSession(args.sessionId).command(args.text)
       case 'countFullTemplateTokens': return { tokens: estimateWorldBookTokens(args.text), estimator: 'unicode-estimate' }
       case 'getFullPromptTemplateState': if (args.sessionId?.startsWith('opening:')) return openingPreparation.templateState(args.sessionId.slice(8)); return await tavernScriptHostAdapter.readFullPromptTemplateState(args && args.sessionId, args?.cursor)
-      case 'saveFullPromptTemplateGlobals': if (args.sessionId?.startsWith('opening:')) return openingPreparation.saveTemplateGlobals(args.sessionId.slice(8), args.variables); return await tavernScriptHostAdapter.saveFullPromptTemplateGlobals(args && args.sessionId, args && args.variables, args && args.expectedVariables)
+      case 'saveFullPromptTemplateGlobals': if (!serverTemplate) throw new Error('提示词模板已迁移到服务端，请刷新页面'); if (args.sessionId?.startsWith('opening:')) return openingPreparation.saveTemplateGlobals(args.sessionId.slice(8), args.variables); return await tavernScriptHostAdapter.saveFullPromptTemplateGlobals(args && args.sessionId, args && args.variables, args && args.expectedVariables)
       case 'saveFullPromptTemplateSettings': if (args.sessionId?.startsWith('opening:')) return openingPreparation.saveTemplateSettings(args.sessionId.slice(8), args.settings); return await tavernScriptHostAdapter.saveFullPromptTemplateSettings(args && args.sessionId, args && args.settings, args && args.expectedSettings)
-      case 'saveFullPromptTemplateState': if (args.sessionId?.startsWith('opening:')) return openingPreparation.saveTemplateState(args.sessionId.slice(8), args.state); return await tavernScriptHostAdapter.saveFullPromptTemplateState(args && args.sessionId, args && args.state)
+      case 'saveFullPromptTemplateState': if (!serverTemplate) throw new Error('提示词模板已迁移到服务端，请刷新页面'); if (args.sessionId?.startsWith('opening:')) return openingPreparation.saveTemplateState(args.sessionId.slice(8), args.state); return await tavernScriptHostAdapter.saveFullPromptTemplateState(args && args.sessionId, args && args.state)
       case 'saveTavernChatData': return await tavernScriptHostAdapter.saveChatData(args && args.sessionId, args && args.request)
       case 'saveTavernExtensionSettings': return await tavernScriptHostAdapter.saveExtensionSettings(args && args.sessionId, args && args.settings, args && args.expectedSettings)
       case 'loadTavernWorldInfo': return await tavernScriptHostAdapter.loadWorldInfo(args && args.sessionId, args && args.name)
@@ -3140,7 +3170,7 @@ export async function apply(ctx) {
         }, { source: 'card-context.apply-update' })
         return { view: await view(saved, card) }
       }
-      case 'getFullTemplateRuntimeInfo': return await fullPromptTemplateRuntimeInfo()
+      case 'getFullTemplateRuntimeInfo': throw new Error('提示词模板已迁移到服务端，请刷新页面');
       case 'getSession': {
         const view = await sessionView(args && args.sessionId)
         return args?.viewSync === 1 ? synchronizeSessionView(args.sessionId, view, args.viewCursor) : { view }

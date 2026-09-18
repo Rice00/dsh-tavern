@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createTemplateSessionTasks } from '../tavern-plugin/lib/vendor/st-prompt-template/host-build/session-tasks.js'
 import { createNativeTemplateConnection } from '../tavern-plugin/lib/vendor/st-prompt-template/host-build/native-connection.js'
-import { createFullTemplateRuntime } from '../tavern-plugin/lib/domain/full-template-runtime.js'
+import { createFullTemplateRuntime } from './fixtures/browser-template-transport.mjs'
 const deferred = () => { let resolve, reject;const promise = new Promise((a,b) => {resolve=a;reject=b});return {promise,resolve,reject} }
 
 async function harness({saveGate, syncGate, receiptFailure=false}={}) {

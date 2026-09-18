@@ -28,6 +28,7 @@
     "dsh-tavern-plugin": "link:./tavern-plugin",
     "dsh-tavern-remote": "link:./tavern-plugin/packages/dsh-tavern-remote",
     "dsh-web-mobile": "2.3.0",
+    "jsdom": "26.1.0",
     "mathjs": "12.4.3",
     "yaml": "2.9.0"
   },

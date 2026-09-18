@@ -1,3 +1,4 @@
+import { createServerTemplateFixture } from './server-template-runtime.mjs'
 import { createServer } from 'node:http'
 import { after } from 'node:test'
 import { chromium } from 'playwright'
@@ -7,7 +8,7 @@ import { readTavernRuntimeAsset, TAVERN_RUNTIME_ASSET_PREFIX } from '../../taver
 let shared, cleanup
 after(async () => { if (cleanup) await cleanup() })
 export class UpstreamTemplateRuntime {
-  static async create() { return shared ||= createRuntime() }
+  static async create() { return shared ||= process.env.TEMPLATE_EXECUTOR === 'server' ? createServerTemplateFixture() : createRuntime() }
 }
 async function createRuntime() {
   const server = createServer(async (req, res) => {

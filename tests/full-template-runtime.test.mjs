@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createFullTemplateRuntime } from '../tavern-plugin/lib/domain/full-template-runtime.js'
+import { createFullTemplateRuntime } from './fixtures/browser-template-transport.mjs'
 
 test('前后台模板任务按会话串行，返回浏览器结果并支持释放后重连', async () => {
   const runtime = createFullTemplateRuntime({ publishSignal(sessionId) {

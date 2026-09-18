@@ -4191,7 +4191,7 @@ window.__ModuleLoader__.load({
 				if (record.stopView) record.stopView();
 				if (views.evict) views.evict(record.sessionId);
 				record.execution.dispose();
-				record.template.dispose();
+				record.templatePanel.dispose();
 			}
 			function retire(record) {
                 if (records.get(record.sessionId) !== record) return;
@@ -4209,13 +4209,13 @@ window.__ModuleLoader__.load({
 				const state = record.viewState;
 				if (state && state.phase === "ready") {
 					record.execution.sync(record.sessionId, state.view || {});
-					record.template.sync(record.sessionId, state.view || {});
+					record.templatePanel.sync(record.sessionId, state.view || {});
 				}
 				retire(record);
 			}
 			function createRecord(sessionId) {
 				const record = { sessionId: sessionId, viewState: null, loadState: null, fresh: false, foregroundRunning: sessions.list.getSnapshot().byId?.[sessionId]?.running === true, stopView: null };
-				record.template = createFullTemplateExecutor({ window: hostWindow, rpc: options.rpc || rpc, executeSlash: options.executeSlash });
+				record.templatePanel = createServerTemplatePanel({ window: hostWindow, rpc: options.rpc || rpc, isActive: () => current === record });
 				record.execution = (options.createExecution || createTavernScriptExecutionModule)({
 					window: hostWindow, rpc: options.rpc || rpc,
 					signals: options.signals || tavernSessionSignals,

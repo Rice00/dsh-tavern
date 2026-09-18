@@ -1,5 +1,6 @@
+// Browser reference transport for migration comparisons and historical benchmarks.
 import { randomUUID, createHash } from 'node:crypto'
-import { createTavernScriptDispatch } from './tavern-script-dispatch.js'
+import { createTavernScriptDispatch } from '../../tavern-plugin/lib/domain/tavern-script-dispatch.js'
 
 /** Transport only. All template semantics are executed by the upstream browser plugin. */
 export function createFullTemplateRuntime({ publishSignal, claimTimeoutMs = 30000, readyTimeoutMs = 60000, executionTimeoutMs = 60000, store }) {

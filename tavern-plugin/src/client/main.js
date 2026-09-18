@@ -9815,8 +9815,9 @@ window.__ModuleLoader__.load({
             if (!request) return [];
             const sections = [];
             // System and tool declarations are independent request fields, not trailing messages.
-            const keys = ['system', 'tools', 'messages'].filter(key => Object.hasOwn(request, key))
-                .concat(Object.keys(request).filter(key => !['system', 'tools', 'messages'].includes(key)));
+            const metadata = Object.fromEntries(Object.entries(request).filter(([key]) => !['system', 'tools', 'messages'].includes(key)));
+            if (Object.keys(metadata).length) sections.push({ title: "调用参数", value: metadata });
+            const keys = ['system', 'tools', 'messages'].filter(key => Object.hasOwn(request, key));
             for (const key of keys) {
                 const value = request[key];
                 if (key === "messages" && Array.isArray(value) && value.length) {

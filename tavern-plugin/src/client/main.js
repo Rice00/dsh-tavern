@@ -9901,7 +9901,7 @@ window.__ModuleLoader__.load({
 				}
 				if (task === "gentle") {
 					if (!targetPath) throw new Error("温和改写缺少目标人物卡");
-					input.setDraft("/gentle-rewrite\n\n@\"" + targetPath + "\"\n\n将这张人物卡改写为温和副本，减少模型拒绝输出的情况；改完后配置试玩案例，实测验证效果。");
+					input.setDraft("/gentle-rewrite\n\n@\"" + targetPath + "\"\n\n先调用 tavern_copy_card 创建保留原卡图片的独立副本，再按温和改写 skill 完成改写，交付副本路径与改写摘要。");
 					return;
 				}
 				if (task === "mvu") {

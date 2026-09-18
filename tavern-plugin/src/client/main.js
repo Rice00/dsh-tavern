@@ -5533,6 +5533,7 @@ window.__ModuleLoader__.load({
 		}
 
 		function createTavernShellFeatureModule() {
+		// @include modules/host-compatibility.js
 		function TavernSidebar(props) {
             const askConfirm = useTavernConfirm(props.sessionId || props.scope?.sessionId);
 			function TavernCardListContent(props) {
@@ -6451,6 +6452,7 @@ window.__ModuleLoader__.load({
 				!picking && error ? h("div", { className: "dsh-tavern-dock-error", role: "alert" }, error) : null,
 				h("div", { className: "dsh-tavern-update" },
 					h("div", { className: "dsh-tavern-update-identity" }, "DSH Tavern " + currentVersionLabel + " · " + currentCommitLabel + " · " + updateHostLabel),
+                    h(TavernHostCompatibility),
 					updateActions,
 					h("div", { className: "dsh-tavern-update-status" + (updateStatus.phase === "failed" || updateStatus.phase === "check-failed" ? " error" : "") }, updateMessage)
 				),

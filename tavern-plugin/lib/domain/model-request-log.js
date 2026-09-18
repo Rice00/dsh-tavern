@@ -43,6 +43,32 @@ export function createModelRequestLog(options = {}) {
   const id = typeof options.id === 'function' ? options.id : function () { return randomUUID() }
   if (typeof readJson !== 'function' || typeof writeJson !== 'function' || typeof updateJson !== 'function') throw new TypeError('模型请求日志缺少存储适配器')
 
+  // Cache only durable ownership, never request bodies. Bound idle-session memory.
+  const sessionOwners = new Map()
+  const ownerWrites = new Map()
+  function rememberOwner(sessionId, chatId) {
+    sessionOwners.delete(sessionId)
+    sessionOwners.set(sessionId, chatId)
+    if (sessionOwners.size > 512) sessionOwners.delete(sessionOwners.keys().next().value)
+  }
+  async function ensureSessionOwner(sessionId, chatId) {
+    if (!sessionId) return
+    const previous = ownerWrites.get(sessionId)
+    if (previous) {
+      await previous.catch(() => {})
+      return ensureSessionOwner(sessionId, chatId)
+    }
+    if (sessionOwners.get(sessionId) === chatId) return
+    const pending = (async () => {
+      const path = 'model-request-sessions/' + encodeURIComponent(sessionId) + '.json'
+      const saved = await readJson(path)
+      if (saved?.chatId !== chatId) await writeJson(path, { chatId })
+      rememberOwner(sessionId, chatId)
+    })()
+    ownerWrites.set(sessionId, pending)
+    try { await pending } finally { if (ownerWrites.get(sessionId) === pending) ownerWrites.delete(sessionId) }
+  }
+
   async function record(input) {
     const chat = input.chat
     const context = input.context
@@ -93,7 +119,7 @@ export function createModelRequestLog(options = {}) {
         }])
       }
     })
-    if (record.sessionId) await writeJson('model-request-sessions/' + encodeURIComponent(record.sessionId) + '.json', { chatId: chat.id });
+    await ensureSessionOwner(record.sessionId, chat.id)
     return evidenceRecord(record)
   }
 

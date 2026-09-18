@@ -202,3 +202,37 @@ test('latest context isolates foreground, background and image sessions and surv
   files.delete('model-request-sessions/image.json')
   assert.equal((await restarted.latestForSession('image', '', 'owner')).id, records[2].id)
 })
+
+test('session ownership writes once under concurrent requests and reuses disk ownership after restart', async () => {
+  const files = new Map(), ownerReads = [], ownerWrites = []
+  let fail = false
+  const adapter = {
+    readJson: async path => { if (path.startsWith('model-request-sessions/')) ownerReads.push(path); return structuredClone(files.get(path)) },
+    writeJson: async (path, value) => {
+      if (path.startsWith('model-request-sessions/')) {
+        ownerWrites.push(path)
+        if (fail) { fail = false; throw new Error('disk failure') }
+        await new Promise(resolve => setTimeout(resolve, 5))
+      }
+      files.set(path, structuredClone(value))
+    },
+    updateJson: async (path, fn) => files.set(path, fn(structuredClone(files.get(path))))
+  }
+  let log = createModelRequestLog(adapter)
+  const input = { chat: { id: 'owner' }, options: { sessionId: 'agent', messages: [] } }
+  await Promise.all(Array.from({ length: 20 }, () => log.record(input)))
+  assert.equal(ownerReads.length, 1)
+  assert.equal(ownerWrites.length, 1)
+  await log.record(input)
+  assert.equal(ownerReads.length, 1)
+  log = createModelRequestLog(adapter)
+  await log.record(input)
+  assert.equal(ownerReads.length, 2)
+  assert.equal(ownerWrites.length, 1)
+  fail = true
+  const changed = { ...input, chat: { id: 'new-owner' } }
+  await assert.rejects(log.record(changed), /disk failure/)
+  await log.record(changed)
+  assert.equal(files.get('model-request-sessions/agent.json').chatId, 'new-owner')
+  assert.equal(ownerWrites.length, 3)
+})

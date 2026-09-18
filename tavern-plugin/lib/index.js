@@ -148,6 +148,7 @@ import { cordisToolNames, createTurnOrchestrator, dshFileToolNames } from './dom
 import { resourceWorkspaceContext } from './domain/workspace-resources.js'
 import { createWorldBookLibrary } from './domain/worldbook-library.js'
 import { createWorldbookRecallLog, compactRecallDiagnostics } from './domain/worldbook-recall-log.js'
+import { createWorldbookSearch, WORLD_BOOK_SEARCH_TOOL } from './domain/worldbook-search.js'
 import { createForegroundWorldbook } from './domain/foreground-worldbook.js'
 import { prepareTemplateWorldbook, mvuUpdateRulesFromWorldBook, prepareWorldBookRecall, projectWorldBookTemplates } from './domain/worldbook-recall.js'
 import {
@@ -1597,6 +1598,23 @@ export async function apply(ctx) {
     globalVariables: readPromptTemplateGlobalVariables,
     scanText: scriptPromptScanText,
     filterCandidates: input => worldbookFilter(input)
+  })
+  const searchWorldbook = createWorldbookSearch({
+    load: async sessionId => {
+      const chat = await chatForSession(sessionId)
+      if (!chat || !['story', 'script'].includes(chat.mode || 'story')) throw new Error('世界书查询仅用于当前游玩对话')
+      const card = await readChatCard(chat)
+      return { chat, card, worldBook: await worldBooks.bound(chat.cardPath, card, chat) }
+    },
+    render: async ({ chat, card, worldBook }, selected) => {
+      const runtime = await promptTemplateRuntime(chat.sessionId)
+      const globalVariables = await readPromptTemplateGlobalVariables()
+      worldBook = await prepareTemplateWorldbook(worldBook, runtime, chat, globalVariables)
+      const refs = new Set(selected.map(entry => entry.ref))
+      return projectWorldBookTemplates({ worldBook, runtime, globalVariables, chat, card, includeConstants: true,
+        selectedEntries: worldBook.view.entries.filter(entry => entry.constant || refs.has(entry.ref)),
+        randomSeed: chat.worldBookRandomState?.seed, randomOutputs: chat.worldBookRandomState?.outputs })
+    }
   })
   const chatHistoryImporter = createChatHistoryImportService({
     projectWorldBookTemplates: nativeWorldBookTemplateContext,
@@ -3703,7 +3721,7 @@ export async function apply(ctx) {
     })
   }
 
-  const controlledToolNames = new Set(['bash', 'pwsh', ...dshFileToolNames, 'skill', 'tavern_read_skill_reference', 'web_search', 'tavern_save_skill', ...cordisToolNames, 'tavern_user_profile_read', 'tavern_user_profile_save_draft', 'tavern_user_profile_confirm', 'tavern_read_card', 'tavern_read_card_raw', 'tavern_read_play_chat', 'tavern_read_script', 'tavern_recall_history', 'tavern_read_worldbook', 'tavern_update_worldbook', 'tavern_read_preset', 'tavern_update_preset', 'tavern_update_card', 'tavern_restore_card', 'tavern_validate_card', 'tavern_test_response'])
+  const controlledToolNames = new Set(['bash', 'pwsh', ...dshFileToolNames, 'skill', 'tavern_read_skill_reference', 'web_search', 'tavern_save_skill', ...cordisToolNames, 'tavern_user_profile_read', 'tavern_user_profile_save_draft', 'tavern_user_profile_confirm', 'tavern_read_card', 'tavern_read_card_raw', 'tavern_read_play_chat', 'tavern_read_script', 'tavern_recall_history', 'worldbook_search', 'tavern_read_worldbook', 'tavern_update_worldbook', 'tavern_read_preset', 'tavern_update_preset', 'tavern_update_card', 'tavern_restore_card', 'tavern_validate_card', 'tavern_test_response'])
   const foregroundStrategies = createForegroundOrchestrationStrategies({
     compatibility: {
       beforeTurn: async function (input) {
@@ -3988,6 +4006,17 @@ export async function apply(ctx) {
       isConcurrencySafe: function () { return false },
       async execute(args, exec) {
         return { report: JSON.stringify(await cardResponseTest.execute(exec?.agent?.session?.id || '', args), null, 2) }
+      }
+    }))
+    tools.register(defineTool({
+      ...WORLD_BOOK_SEARCH_TOOL,
+      output: {
+        schema: { type: 'object', additionalProperties: false, properties: { report: { type: 'string', required: true } } },
+        render: (_args, value) => [{ type: 'text', text: value.report }]
+      },
+      isConcurrencySafe: () => false,
+      async execute(args, exec) {
+        return { report: JSON.stringify(await searchWorldbook(exec?.agent?.session?.id || '', args)) }
       }
     }))
     tools.register(defineTool({

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "37e0dbf12dd1f1db3b44472211c3cce6c45f972b",
-  "releaseSequence": 279,
+  "revision": "b6ccf1b6fa9d5d2b4447c4d431ecd250eae7a534",
+  "releaseSequence": 280,
   "version": "1.9.0",
   "files": [
     {
@@ -211,8 +211,8 @@
     },
     {
       "path": "presets/tavern/skills/gentle-rewrite/SKILL.md",
-      "sha256": "88968d35334b7b95e262179f19c79050fa65fc7dea128b5587ab23a5f6ce9b74",
-      "size": 4448
+      "sha256": "1cd1e36be36dc640e09743a87a730f65cbf0fdf98e9ef0b84d4815595046bf60",
+      "size": 4297
     },
     {
       "path": "presets/tavern/skills/user-profile/SKILL.md",

@@ -18,6 +18,12 @@ export function normalizeBackgroundTasks(value) {
 export function applyTavernSettingsPatch(current, patch) {
   const next = Object.assign({}, object(current))
   const input = object(patch)
+  for (const name of ['defaultForegroundModel', 'defaultBackgroundModel']) {
+    if (!Object.hasOwn(input, name)) continue
+    const selection = normalizeBackgroundModel(input[name])
+    if (input[name] !== null && !selection) throw new Error('默认模型配置无效')
+    next[name] = selection
+  }
   if (Object.hasOwn(input, 'contextCompaction')) next.contextCompaction = { ...compactionPolicy(input.contextCompaction), revision: Date.now() }
   if (Object.prototype.hasOwnProperty.call(input, 'backgroundTasks')) {
     next.backgroundTasks = normalizeBackgroundTasks({ ...normalizeBackgroundTasks(next.backgroundTasks), ...object(input.backgroundTasks) })
@@ -77,6 +83,8 @@ export function presentTavernSettings(document, defaults) {
   })
   const story = prompts.find(function (item) { return item.name === 'story' }) || { text: '', customized: false }
   return {
+    defaultForegroundModel: normalizeBackgroundModel(object(document).defaultForegroundModel),
+    defaultBackgroundModel: normalizeBackgroundModel(object(document).defaultBackgroundModel),
     contextCompaction: compactionPolicy(object(document).contextCompaction),
     compatibilityMode: true,
     webSearchEnabled: object(document).webSearchEnabled === true,

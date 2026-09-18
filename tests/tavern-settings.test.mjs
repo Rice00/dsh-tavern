@@ -91,7 +91,7 @@ test('实验分支始终公开兼容模式，旧关闭信任值不影响运行',
 })
 
 test('设置界面提供分色与现有设置，不恢复旧兼容样式选项', () => {
-  const context = { TavernTextColorSettings: function TavernTextColorSettings() {}, ContextCompactionSettings: function ContextCompactionSettings() {}, SceneImageSettings: function SceneImageSettings() {}, React: {
+  const context = { TavernDefaultModelSetting: function TavernDefaultModelSetting() {}, TavernTextColorSettings: function TavernTextColorSettings() {}, ContextCompactionSettings: function ContextCompactionSettings() {}, SceneImageSettings: function SceneImageSettings() {}, React: {
     useState: initial => [initial, () => {}],
     useEffect() {},
     createElement: (type, props, ...children) => ({ type, props, children })
@@ -165,7 +165,9 @@ test('系统正文提示词默认使用内置内容，并可保存自定义覆�
     contextCompaction: { mode: 'manual', rounds: 20, percent: 80, revision: 0 },
     compatibilityMode: true,
     webSearchEnabled: false,
-    systemAppendEnabled: false,
+    systemAppendEnabled: true,
+    defaultForegroundModel: null,
+    defaultBackgroundModel: null,
     backgroundModel: null,
     backgroundTasks: { posture: true, characterDesign: false, variables: true, ledger: false },
     trustedCardMode: true,
@@ -181,7 +183,9 @@ test('系统正文提示词默认使用内置内容，并可保存自定义覆�
     contextCompaction: { mode: 'manual', rounds: 20, percent: 80, revision: 0 },
     compatibilityMode: true,
     webSearchEnabled: false,
-    systemAppendEnabled: false,
+    systemAppendEnabled: true,
+    defaultForegroundModel: null,
+    defaultBackgroundModel: null,
     backgroundModel: null,
     backgroundTasks: { posture: true, characterDesign: false, variables: true, ledger: false },
     trustedCardMode: true,
@@ -274,4 +278,20 @@ test('已保存的全部系统提示词在重启和内置默认更新后保留�
   for (const name of SYSTEM_PROMPT_NAMES.filter(name => name !== 'story')) {
     assert.equal(resolveSystemPrompt(restored, name, key => defaults[key]), '用户内容：' + name)
   }
+})
+
+
+test('新游戏前后台默认模型分别保存、清除且不触碰旧全局模型版本', () => {
+  let settings = { unknown: true, backgroundModelRevision: 7 }
+  for (const name of ['defaultForegroundModel', 'defaultBackgroundModel']) {
+    assert.equal(presentTavernSettings(settings, {})[name], null)
+    settings = applyTavernSettingsPatch(settings, { [name]: { provider: ' p ', model: ' m ', reasoningEffort: 'low' } })
+    assert.deepEqual(presentTavernSettings(settings, {})[name], { provider: 'p', model: 'm', reasoningEffort: 'low' })
+    assert.throws(() => applyTavernSettingsPatch(settings, { [name]: { provider: 'p' } }), /默认模型配置无效/)
+  }
+  const cleared = applyTavernSettingsPatch(settings, { defaultForegroundModel: null })
+  assert.equal(cleared.defaultForegroundModel, null)
+  assert.deepEqual(cleared.defaultBackgroundModel, settings.defaultBackgroundModel)
+  assert.equal(cleared.backgroundModelRevision, 7)
+  assert.equal(cleared.unknown, true)
 })

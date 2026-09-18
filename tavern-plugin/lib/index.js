@@ -270,6 +270,9 @@ export async function apply(ctx) {
   }
   async function updateTavernSettings(patch) {
     if (patch && (Object.hasOwn(patch, 'backgroundModel') || Object.hasOwn(patch, 'backgroundTasks') || Object.hasOwn(patch, 'webSearchEnabled'))) throw new Error('后台配置已移至顶栏的本局设置')
+    for (const name of ['defaultForegroundModel', 'defaultBackgroundModel']) {
+      if (patch?.[name] != null) await llm.resolveCallConfig(patch[name])
+    }
     tavernSettingsDocument = await profileData.updateJson(settingsPath, function (current) {
       return applyTavernSettingsPatch(current, patch)
     })
@@ -427,7 +430,8 @@ export async function apply(ctx) {
         const agents = ctx.get('agents')
         const agent = agents !== undefined ? agents.get(sessionId) : undefined
         if (agent !== undefined && agent.session !== undefined && typeof agent.session.requestHeader === 'function') {
-          const cfg = agent.session.requestHeader()?.config
+          const pending = ctx.get('sessionProjections')?.stateOf(agent.session, 'modelSelection')?.pending
+          const cfg = pending || agent.session.requestHeader()?.config
           if (cfg !== undefined && typeof cfg.provider === 'string' && typeof cfg.model === 'string') {
             return { provider: cfg.provider, model: cfg.model, ...(cfg.reasoningEffort === undefined ? {} : { reasoningEffort: cfg.reasoningEffort }) }
           }
@@ -1599,7 +1603,14 @@ export async function apply(ctx) {
       ensurePrefix: function (session, text) { return ensureSessionStablePrefix(session, text, stablePrefixStorage) },
       ensureCardWorkspace: ensureNativeCardWorkspace,
       flush: function (session) { return sessionStore.flush(session) },
-      selection: modelSelection
+      selection: modelSelection,
+      async selectModel(target, selection) {
+        const controller = ctx.get('sessionController')
+        if (!target.agent || typeof controller?.agents?.selectForNextRequest !== 'function') throw new Error('无法设置新游戏默认前台模型')
+        const resolved = await llm.resolveCallConfig(selection)
+        controller.agents.selectForNextRequest(target.agent, { provider: resolved.provider, model: resolved.model, ...(resolved.reasoningEffort ? { reasoningEffort: resolved.reasoningEffort } : {}) })
+        await sessionStore.flush(target.session)
+      }
     },
     present: async function (chat, card) {
       const result = await view(chat, card)

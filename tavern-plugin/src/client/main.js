@@ -6769,20 +6769,57 @@ window.__ModuleLoader__.load({
 			}, React.createElement("span", null, label));
 		}
 
+        function TavernDefaultModelSetting(props) {
+            const h = React.createElement;
+            const selection = props.selection;
+            const key = selection ? JSON.stringify({ provider: selection.provider, model: selection.model }) : "";
+            const [reasoning, setReasoning] = React.useState({ key: "", value: null, error: "" });
+            React.useEffect(() => {
+                let active = true;
+                if (key) rpc("getBackgroundModelReasoning", JSON.parse(key)).then(result => {
+                    if (active) setReasoning({ key, value: result.reasoning, error: "" });
+                }, err => { if (active) setReasoning({ key, value: null, error: String(err.message || err) }); });
+                return () => { active = false; };
+            }, [key]);
+            const efforts = reasoning.key === key ? reasoning.value?.efforts || [] : [];
+            const known = !selection || props.catalog.some(group => group.provider === selection.provider && group.models.some(model => model.id === selection.model));
+            return h("section", { className: "dsh-local-section" },
+                h("label", null, props.label, h("select", { className: "dsh-tavern-settings-select", "aria-label": props.label, value: key, disabled: props.disabled,
+                    onChange: event => props.onChange(event.target.value ? JSON.parse(event.target.value) : null) },
+                    h("option", { value: "" }, props.fallback),
+                    !known ? h("option", { value: key }, backgroundModelLabel(selection, props.catalog) + "（当前不可用）") : null,
+                    props.catalog.map(group => h("optgroup", { key: group.provider, label: group.providerName || group.provider }, group.models.map(model => h("option", { key: model.id, value: JSON.stringify({ provider: group.provider, model: model.id }) }, model.name || model.id)))))),
+                h("label", null, "推理强度", h("select", { className: "dsh-tavern-settings-select", "aria-label": props.label + "推理强度", value: selection?.reasoningEffort || "", disabled: props.disabled || !key || !efforts.length,
+                    onChange: event => { const next = { ...selection }; if (event.target.value) next.reasoningEffort = event.target.value; else delete next.reasoningEffort; return props.onChange(next); } },
+                    h("option", { value: "" }, key ? "模型默认" : props.fallback), efforts.map(item => h("option", { key: item.id, value: item.id }, item.name || item.id)))),
+                key && reasoning.key === key && reasoning.error ? h("p", { role: "alert" }, reasoning.error) : null);
+        }
+
 		function TavernSettingsSection() {
-			const [state, setState] = React.useState({ loading: true, busy: false, webSearchEnabled: false, backgroundModel: null, backgroundTasks: { posture: true, characterDesign: false, variables: true, ledger: false }, modelCatalog: [], sceneImages: false, error: "" });
+			const [state, setState] = React.useState({ loading: true, busy: false, defaultForegroundModel: null, defaultBackgroundModel: null, notice: "", webSearchEnabled: false, backgroundModel: null, backgroundTasks: { posture: true, characterDesign: false, variables: true, ledger: false }, modelCatalog: [], sceneImages: false, error: "" });
 			React.useEffect(function () {
 				let active = true;
 				rpc("getTavernSettings").then(function (result) {
-					if (active) setState({ loading: false, busy: false, webSearchEnabled: Boolean(result.settings && result.settings.webSearchEnabled), backgroundModel: result.settings && result.settings.backgroundModel || null, backgroundTasks: result.settings && result.settings.backgroundTasks || { posture: true, characterDesign: false, variables: true, ledger: false }, modelCatalog: Array.isArray(result.modelCatalog) ? result.modelCatalog : [], sceneImages: Boolean(result.releaseCapabilities && result.releaseCapabilities.sceneImages), error: "" });
+					if (active) setState({ loading: false, busy: false, defaultForegroundModel: result.settings?.defaultForegroundModel || null, defaultBackgroundModel: result.settings?.defaultBackgroundModel || null, notice: "", webSearchEnabled: Boolean(result.settings && result.settings.webSearchEnabled), backgroundModel: result.settings && result.settings.backgroundModel || null, backgroundTasks: result.settings && result.settings.backgroundTasks || { posture: true, characterDesign: false, variables: true, ledger: false }, modelCatalog: Array.isArray(result.modelCatalog) ? result.modelCatalog : [], sceneImages: Boolean(result.releaseCapabilities && result.releaseCapabilities.sceneImages), error: "" });
 				}, function (error) {
 					if (active) setState(function (current) { return Object.assign({}, current, { loading: false, busy: false, error: String(error && error.message || error) }); });
 				});
 				return function () { active = false; };
 			}, []);
+            async function saveDefault(name, selection) {
+                if (state.loading || state.busy) return;
+                setState(current => ({ ...current, busy: true, error: "", notice: "" }));
+                try {
+                    const result = await rpc("updateTavernSettings", { patch: { [name]: selection } });
+                    setState(current => ({ ...current, [name]: result.settings[name], busy: false, notice: "已保存，下次新游戏生效" }));
+                } catch (err) { setState(current => ({ ...current, busy: false, error: String(err.message || err) })); }
+            }
 			return React.createElement("div", { className: "dsh-tavern-settings-section" },
-				React.createElement("p", { className: "dsh-tavern-settings-intro" }, "设置通用游戏选项。后台配置请在顶栏“本局设置”中调整。"),
+				React.createElement("p", { className: "dsh-tavern-settings-intro" }, "默认模型用于新游戏；已有游戏保持当前配置，可在本局单独调整。"),
                 React.createElement("p", { className: "dsh-tavern-settings-intro" }, "建议前台和后台先使用 Low 推理强度：等待更短，也可能让续写更自然、任务执行更直接。遇到复杂情节或规则处理不佳时，再尝试提高。"),
+                React.createElement(TavernDefaultModelSetting, { label: "默认前台模型", fallback: "使用 DSH 默认模型", selection: state.defaultForegroundModel, catalog: state.modelCatalog, disabled: state.loading || state.busy, onChange: selection => saveDefault("defaultForegroundModel", selection) }),
+                React.createElement(TavernDefaultModelSetting, { label: "默认后台模型", fallback: "跟随前台", selection: state.defaultBackgroundModel, catalog: state.modelCatalog, disabled: state.loading || state.busy, onChange: selection => saveDefault("defaultBackgroundModel", selection) }),
+                state.notice ? React.createElement("p", { role: "status" }, state.notice) : null,
                 React.createElement(TavernTextColorSettings),
                 React.createElement(ContextCompactionSettings),
 				state.sceneImages ? React.createElement(SceneImageSettings, null) : null,

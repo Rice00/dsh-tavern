@@ -225,7 +225,7 @@ test('外部预设作用于前台游玩，后台与卡片 Agent 保持 DSH 原�
   assert.match(backgroundSetup, /resolveRuntimePresetSnapshot: async function \(input\) \{[\s\S]*return null/)
   assert.doesNotMatch(backgroundSetup, /resolveChatRuntimePreset/)
   const lifecycle = between(serverSource, '// ---------- DSH 回合生命周期 ----------', '// ---------- 模型可选工具 ----------')
-  assert.match(orchestrationStrategiesSource, /const snapshot = mode === 'story' \|\| mode === 'script' \? await options\.resolvePreset\(input\.chat\) : null/)
+  assert.match(orchestrationStrategiesSource, /const rawSnapshot = mode === 'story' \|\| mode === 'script' \? await options\.resolvePreset\(input\.chat\) : null/)
   assert.match(orchestrationStrategiesSource, /scope: 'foreground'/)
   assert.match(serverSource, /foregroundFrameSessionAdapter\.append\(input\)/)
   const compatibility = between(serverSource, 'async function compileCompatibilityTurn', '// ---------- DSH 回合生命周期 ----------')

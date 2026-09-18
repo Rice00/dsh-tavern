@@ -1,3 +1,4 @@
+import { resolveRuntimePresetMacros } from './runtime-presets.js'
 import { composeTavernRegexScripts } from './card-extension-reading.js'
 import { scriptPromptFrameInputs, consumeScriptPrompts } from './tavern-script-prompts.js'
 import { rememberTavernResources } from './workspace-resources.js'
@@ -384,7 +385,9 @@ export function createTurnOrchestrator(options) {
       basedOnRevision: foregroundOperation.basedOn.revision,
       operationId: foregroundOperation.operationId,
       turn,
-      inputs: foregroundFrameInputs(plan, userText, runtimeUserText, chat.runtimePresetSnapshot, chat),
+      inputs: foregroundFrameInputs(plan, userText, runtimeUserText,
+        Object.hasOwn(input, 'runtimePresetSnapshot') ? input.runtimePresetSnapshot
+          : resolveRuntimePresetMacros(chat.runtimePresetSnapshot, { charName: card.name, macroState: chat.macroState }).snapshot, chat),
       source: { ...source, ...(sceneWorldbook ? { sceneWorldbook } : {}) }
     }
     let frame = frameBuilder.build(frameInput)

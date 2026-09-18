@@ -516,3 +516,35 @@ test('失败清理与回退留下的空占位不进入提供商请求，工具�
   assert.equal(input.length, 6)
   assert.equal(input[1].content.length, 0)
 })
+
+test('native preset macros render across phases before projection without rewriting snapshots or history', async () => {
+  const raw = {
+    front: { entries: [{ role: 'system', content: '{{setvar::style::温和}}{{//不发送}}{{trim}}风格：{{getvar::style}}；{{user}}与{{char}}' }] },
+    middle: { entries: [{ role: 'system', content: '{{setvar::rule::慢慢来}}中段：{{getvar::style}}' }] },
+    back: { entries: [{ role: 'user', content: '末尾：{{getvar::style}}，{{getvar::rule}}' }] }
+  }
+  const original = structuredClone(raw)
+  let received
+  const strategy = createNativePlayOrchestrationStrategy({
+    modeFor: async () => 'story', filterMessages: x => x, resolvePreset: async () => raw,
+    prepareTurn: async input => { received = input.runtimePresetSnapshot; return { frame: { userInput: { projectedText: input.userText } } } },
+    appendFrame: ({ messages }) => ({ messages: messages.concat([userMessage(received.middle.entries[0].content)]), receipt: {} }),
+    recordFrame() {}
+  })
+  const history = [pluginMessage('assistant', '历史里的 {{getvar::old}} 保持原样', 'history'), userMessage('继续')]
+  const historyBefore = structuredClone(history)
+  const input = { sessionId: 'macro-test', chat: { cardName: '掌柜', macroState: { userName: '游客', local: {}, global: {} } }, payload: { turn: 2, step: 1 }, decision: { messages: history } }
+  const prepared = await strategy.prepareStep(input)
+  const request = strategy.projectRequest({ sessionId: input.sessionId, messages: prepared.messages, tools: [] })
+  const texts = request.messages.map(m => m.content.map(b => b.text).join(''))
+  assert.match(texts[0], /风格：温和；游客与掌柜/)
+  assert.equal(received.middle.entries[0].content, '中段：温和')
+  assert.match(texts.at(-1), /末尾：温和，慢慢来/)
+  assert.equal(texts[1], history[0].content[0].text)
+  assert.deepEqual(raw, original)
+  assert.deepEqual(history, historyBefore)
+  assert.deepEqual(input.chat.macroState.local, {})
+  const next = await strategy.prepareStep({ ...input, payload: { turn: 2, step: 2 } })
+  const followup = strategy.projectRequest({ sessionId: input.sessionId, messages: next.messages })
+  assert.equal(followup.messages[0].content[0].text, request.messages[0].content[0].text)
+})

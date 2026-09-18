@@ -1,3 +1,4 @@
+import { resolveRuntimePresetMacros } from './runtime-presets.js'
 import { createEphemeralCompatibilityRequest, isCompatibilityConversationRequest } from './compatibility-request.js'
 import { projectRuntimePresetRequest } from './runtime-preset-lifecycle.js'
 
@@ -233,7 +234,9 @@ export function createNativePlayOrchestrationStrategy(options) {
     const mode = await options.modeFor(sessionId)
     const visibleMessages = options.filterMessages(input.decision.messages, mode)
     let agentMessages = visibleMessages
-    const snapshot = mode === 'story' || mode === 'script' ? await options.resolvePreset(input.chat) : null
+    const rawSnapshot = mode === 'story' || mode === 'script' ? await options.resolvePreset(input.chat) : null
+    // Render the three phases together; the persisted preset and prior messages stay authoritative.
+    const snapshot = resolveRuntimePresetMacros(rawSnapshot, { charName: input.chat?.cardName, macroState: input.chat?.macroState }).snapshot
     if (mode === 'story' || mode === 'script') {
       if (Number(payload.step) === 1 && typeof options.synchronizeTail === 'function') {
         await options.synchronizeTail({ sessionId, chat: input.chat, payload })
@@ -248,7 +251,7 @@ export function createNativePlayOrchestrationStrategy(options) {
       })
     }
     if (Number(payload.step) === 1) {
-      const prepared = await options.prepareTurn({ sessionId, turn: payload.turn, requestId: input.requestId, userText: userTextOf(payload.messages) })
+      const prepared = await options.prepareTurn({ sessionId, turn: payload.turn, requestId: input.requestId, userText: userTextOf(payload.messages), runtimePresetSnapshot: snapshot })
       if (prepared && prepared.duplicate) throw new Error('该消息已由酒馆处理，请勿重复发送')
       if (mode === 'story' || mode === 'script') {
         agentMessages = replaceTurnInput(agentMessages, prepared.frame.userInput.projectedText)

@@ -487,6 +487,17 @@ test('普通游玩的预设中段作为写作规则进入 ForegroundFrame', asyn
   assert.equal(prepared.frame.source.preset.digest, 'preset-digest')
 })
 
+test('预设中段渲染后进入真实 Frame，并保留存档中的原始宏', async () => {
+  const raw = {
+    front: { entries: [{ role: 'system', content: '{{setvar::style::温和}}' }] },
+    middle: { entries: [{ role: 'system', content: '采用{{getvar::style}}笔调。' }] }
+  }
+  const run = harness('story', { runtimePresetSnapshot: structuredClone(raw) })
+  const prepared = await run.orchestrator.prepare({ sessionId: 'session-1', turn: 2, userText: '继续' })
+  assert.match(prepared.frame.context.writingRules, /采用温和笔调。/)
+  assert.deepEqual(run.chat().runtimePresetSnapshot, raw)
+})
+
 test('游玩回复先执行人物卡宏，再分别保存原文、Session 和展示投影', async () => {
   const run = harness('story', { macros: true })
   await run.orchestrator.prepare({ sessionId: 'session-1', turn: 2, userText: '查看状态' })

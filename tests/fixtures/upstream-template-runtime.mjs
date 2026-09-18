@@ -43,6 +43,7 @@ async function createRuntime() {
     history: (context,steps) => run('history',{context,steps}),
     command: (text, context={}) => run('command', { text, context }),
     render: (template, context = {}, environmentEntries) => run('render', { template, context, environmentEntries }),
+    renderProjections: (items, context = {}, environmentEntries) => run('renderMany', { items, context, environmentEntries }),
     renderMessages: (messages, context = {}) => run('messages', { messages, context }),
     projectRequest: request => run('request', { request }),
     initializeVariables: (entries, context = {}) => run('initialize', { context: { ...context, worldBookEntries: entries } })

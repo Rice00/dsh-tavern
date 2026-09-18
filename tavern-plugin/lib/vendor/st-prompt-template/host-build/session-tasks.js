@@ -20,6 +20,23 @@ export function createTemplateSessionTasks({ connection, plugin, dispatch }) {
     finally { await connection.flush() }
   }
   async function project(operation, input) {
+    if (operation === 'renderMany') {
+      const results = []
+      let scopes = input.context?.scopes
+      for (const item of input.items) {
+        // Batch transport, not evaluation: each entry keeps its refresh,
+        // prepare event and persistence boundary. Failed renders do not pass
+        // speculative scopes to the next entry. Save/transport errors abort
+        // the batch; already executed entries must never be replayed.
+        const result = await project('render', {
+          template: item.template,
+          context: { ...input.context, scopes, randomRef: item.randomRef }
+        })
+        results.push(result)
+        if (result.ok) scopes = structuredClone(result.scopes)
+      }
+      return results
+    }
     const snapshot = await refreshed()
     if (operation === 'request' && input?.request?.model) snapshot.dsh.model = input.request.model
     return settled(() => plugin.project(operation, input))

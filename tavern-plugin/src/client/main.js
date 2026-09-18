@@ -6399,11 +6399,11 @@ window.__ModuleLoader__.load({
 				)
 			);
 			const updateMessage = updateStatus.phase === "checking"
-				? "正在通过 jsDelivr 检查最新构建…"
+				? "正在向 GitHub 核实最新构建…"
 				: updateStatus.phase === "up-to-date"
 					? "✓ 未发现更新构建"
 				: updateStatus.phase === "update-available"
-					? "发现新构建 " + ((updateStatus.latestCommit || "").slice(0, 7) || updateStatus.latestVersion || "")
+					? "发现新构建 " + ((updateStatus.latestCommit || "").slice(0, 7) || updateStatus.latestVersion || "") + (updateStatus.checkWarning ? " · " + updateStatus.checkWarning : "")
 				: updateStatus.phase === "running"
 				? "正在下载并安装，期间页面可能暂时断开… 如果较长时间仍未更新完成，建议重新安装一次；检测到 Git 时只会下载运行所需代码。"
 				: updateStatus.phase === "installed-restart-required"

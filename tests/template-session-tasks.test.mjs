@@ -157,3 +157,35 @@ test('批量回执丢失只重传回执，不重新执行批次', async () => {
   assert.equal(h.state().chat[0].variables[0].hp,8)
   h.runtime.dispose(); await rejected; await h.tasks.dispose()
 })
+
+test('批量回执不携带作用域，成功状态继续传递、失败状态隔离，单条接口保持完整', async () => {
+  const initial = {global:{g:1},local:{payload:'v'.repeat(200000)},initial:{i:2},message:{m:3}}
+  const seen = [], trace = []
+  const tasks = createTemplateSessionTasks({
+    connection:{snapshot:{},refresh:async()=>{trace.push('refresh');return {}},flush:async()=>trace.push('flush')},
+    plugin:{refresh:async()=>{},dispose:async()=>{},project:async(_op,input)=>{
+      const scopes=structuredClone(input.context.scopes)
+      seen.push(structuredClone(scopes))
+      if(input.template==='fail') {
+        scopes.global.g=999
+        return {ok:false,kind:'runtime-error',error:'isolated',scopes}
+      }
+      scopes.global.g++;scopes.initial.i++;scopes.message.m++
+      return {ok:true,text:String(scopes.global.g),scopes,randomCalls:2,activationRequests:[{ref:'leaf',force:true}],evaluated:true}
+    }},dispatch:{}
+  })
+  try {
+    const results=await tasks.project('renderMany',{items:[{template:'one'},{template:'fail'},{template:'two'}],context:{scopes:initial}})
+    assert.deepEqual(results.map(r=>r.ok),[true,false,true])
+    assert.deepEqual(seen.map(s=>[s.global.g,s.initial.i,s.message.m]),[[1,2,3],[2,3,4],[2,3,4]])
+    assert.ok(seen.every(s=>s.local.payload.length===200000))
+    assert.ok(results.every(r=>!Object.hasOwn(r,'scopes')))
+    assert.deepEqual(results[1],{ok:false,kind:'runtime-error',error:'isolated'})
+    assert.deepEqual(results[2],{ok:true,text:'3',randomCalls:2,activationRequests:[{ref:'leaf',force:true}],evaluated:true})
+    assert.ok(JSON.stringify(results).length<1000)
+    assert.deepEqual(trace,['refresh','flush','refresh','flush','refresh','flush'])
+    const single=await tasks.project('render',{template:'single',context:{scopes:initial}})
+    assert.equal(single.scopes.local.payload.length,200000)
+    assert.deepEqual(initial.global,{g:1})
+  } finally {await tasks.dispose()}
+})

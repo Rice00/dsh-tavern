@@ -207,7 +207,7 @@ export async function projectWorldBookTemplates(input = {}) {
     }
     for (let count = 0; count < (result.randomCalls || 0); count++) random()
     activationRequests.push(...(result.activationRequests || []).map(request => ({ ...request, sourceRef: entry.ref })))
-    scopes = clone(result.scopes)
+    if (!useBatch) scopes = clone(result.scopes)
     const projected = input.includeConstants === true
       ? projectAgentContent(renderWorldbookRandom(result.text, random), { charName: str(input.card?.name), macroState }) : null
     if (projected) macroState = projected.macroState

@@ -32,8 +32,11 @@ export function createTemplateSessionTasks({ connection, plugin, dispatch }) {
           template: item.template,
           context: { ...input.context, scopes, randomRef: item.randomRef }
         })
-        results.push(result)
         if (result.ok) scopes = structuredClone(result.scopes)
+        // Scopes feed the next browser evaluation, not the host's completed
+        // projection. Do not retain/upload one full variable tree per entry.
+        const { scopes: _scopes, ...receipt } = result
+        results.push(receipt)
       }
       return results
     }

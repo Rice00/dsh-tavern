@@ -1,4 +1,5 @@
-// Isolated experiment: large local variables, unchanged render/refresh/save counts.
+// Isolated comparison: baseline restores full-scope receipts; compact uses production.
+// Large local variables, unchanged render/refresh/save counts.
 // DSH_TAVERN_RECEIPT_EXPERIMENT=baseline|compact node --import ./tests/fixtures/worldbook-batch-receipt-experiment.mjs tests/fixtures/worldbook-template-benchmark.mjs OUTPUT large 20
 import { registerHooks } from 'node:module'
 const mode = process.env.DSH_TAVERN_RECEIPT_EXPERIMENT || 'baseline'
@@ -17,9 +18,9 @@ registerHooks({ load(url, context, nextLoad) {
   source = replaceOnce(source, "res.end(await readFile(new URL(relative,sourceRoot)))", `res.end(await experimentSource(relative))`)
   source = replaceOnce(source, 'const html = mode =>', `async function experimentSource(relative) {
     const original = await readFile(new URL(relative,sourceRoot), 'utf8')
-    if (${JSON.stringify(mode)} !== 'compact' || !relative.endsWith('/session-tasks.js')) return original
-    if (original.split('results.push(result)').length !== 2) throw new Error('Batch receipt code changed')
-    return original.replace('results.push(result)', 'const { scopes: receiptScopes, ...receipt } = result; results.push(receipt)')
+    if (${JSON.stringify(mode)} !== 'baseline' || !relative.endsWith('/session-tasks.js')) return original
+    if (original.split('results.push(receipt)').length !== 2) throw new Error('Batch receipt code changed')
+    return original.replace('results.push(receipt)', 'results.push(result)')
   }
   const html = mode =>`)
   source = replaceOnce(source, 'const args=JSON.parse(body),method=path.slice(5),begin=performance.now();let result', `const args=JSON.parse(body),method=path.slice(5),begin=performance.now();let result

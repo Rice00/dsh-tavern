@@ -102,6 +102,7 @@ export function createFullTemplateRuntime({ publishSignal, claimTimeoutMs = 3000
       // survive restart. Keep ordinary renders and commands durable. Started
       // projections are still never replayed automatically: EJS may call out.
       renderProjection: (template, context = {}) => invoke(sessionId, 'render', { template, context: JSON.parse(JSON.stringify(context)) }, true),
+      // Per-entry receipts omit scopes; the browser owns their sequential handoff.
       renderProjections: (items, context = {}) => invoke(sessionId, 'renderMany', JSON.parse(JSON.stringify({ items, context })), true),
       renderMessages: (messages, context = {}) => invoke(sessionId, 'messages', { messages, context }),
       projectRequest: request => invoke(sessionId, 'request', { request }),

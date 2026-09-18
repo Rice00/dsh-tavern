@@ -8681,11 +8681,11 @@ window.__ModuleLoader__.load({
 		function SystemPromptSidebarTab() {
             const askConfirm = useTavernConfirm();
 			const h = React.createElement;
-			const [state, setState] = React.useState({ loading: true, busy: false, prompts: [], systemAppendEnabled: false, drafts: {}, error: "", notice: "" });
+			const [state, setState] = React.useState({ loading: true, busy: false, prompts: [], systemAppendEnabled: true, drafts: {}, error: "", notice: "" });
 			const importInput = React.useRef(null);
 			function accept(result, notice) {
 				const value = result && result.systemPrompts || {};
-				setState({ loading: false, busy: false, prompts: Array.isArray(value.prompts) ? value.prompts : [], systemAppendEnabled: value.systemAppendEnabled === true, drafts: {}, error: "", notice: notice || "" });
+				setState({ loading: false, busy: false, prompts: Array.isArray(value.prompts) ? value.prompts : [], systemAppendEnabled: value.systemAppendEnabled !== false, drafts: {}, error: "", notice: notice || "" });
 			}
 			async function load() {
 				try { accept(await rpc("getSystemPrompts"), ""); }
@@ -8698,7 +8698,7 @@ window.__ModuleLoader__.load({
 				setState(function (current) { return Object.assign({}, current, { busy: true, error: "", notice: "" }); });
 				try {
 					const result = await rpc("updateTavernSettings", { patch: { systemAppendEnabled: enabled } });
-					setState(function (current) { return Object.assign({}, current, { busy: false, systemAppendEnabled: result.settings.systemAppendEnabled === true, notice: enabled ? "已开启，将从下一次请求开始生效。" : "已关闭，已保存的内容仍然保留。" }); });
+					setState(function (current) { return Object.assign({}, current, { busy: false, systemAppendEnabled: result.settings.systemAppendEnabled !== false, notice: enabled ? "已开启，将从下一次请求开始生效。" : "已关闭，已保存的内容仍然保留。" }); });
 				} catch (error) { setState(function (current) { return Object.assign({}, current, { busy: false, error: String(error && error.message || error) }); }); }
 			}
 

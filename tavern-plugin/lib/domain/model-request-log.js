@@ -135,5 +135,26 @@ export function createModelRequestLog(options = {}) {
     return { loaded: true, chatId, requests }
   }
 
-  return Object.freeze({ record, complete, evidence })
+  async function list(chatId) {
+    const index = await readJson('model-requests/' + chatId + '/index.json')
+    return Array.isArray(index?.requests) ? index.requests : []
+  }
+  async function detail(chatId, id) {
+    const entries = await list(chatId)
+    if (!entries.some(entry => entry.id === id)) throw new Error('请求记录不存在')
+    const base = 'model-requests/' + chatId + '/'
+    const record = await readJson(base + id + '.json')
+    if (!record) throw new Error('请求记录已缺失')
+    return evidenceRecord(record, await readJson(base + id + '.result.json'))
+  }
+  async function latest(chatId, knownId) {
+    const entries = await list(chatId)
+    const entry = entries.findLast(item => item.scope === 'foreground')
+    if (!entry) return null
+    if (knownId === entry.id) return { unchanged: true, id: entry.id }
+    const base = 'model-requests/' + chatId + '/'
+    const record = await readJson(base + entry.id + '.json')
+    return record ? evidenceRecord(record, await readJson(base + entry.id + '.result.json')) : null
+  }
+  return Object.freeze({ record, complete, evidence, list, detail, latest })
 }

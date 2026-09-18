@@ -2917,6 +2917,10 @@ export async function apply(ctx) {
         invalidateTavernSkills()
         return { saved: true }
       }
+      case 'getLatestRequestContext': {
+        const chat = await chatForSession(str(args?.sessionId))
+        return { record: chat ? await modelRequestLog.latest(chat.id, str(args?.knownId)) : null }
+      }
       case 'listSkills': return { skills: (await tavernSkills.list()).map(({ content, path, ...summary }) => summary) }
       case 'editSkill': return { skill: await tavernSkills.edit(args) }
       case 'getSkill': return { skill: await tavernSkills.read(args.name), references: await tavernSkills.referenceFiles(args.name) }
@@ -3881,10 +3885,10 @@ export async function apply(ctx) {
         return
       }
       let requestRecord = null
-      if (options.purpose === undefined && chat !== undefined && (chat.mode === 'story' || chat.mode === 'script')) {
+      if (options.purpose === undefined && chat !== undefined && ['story', 'script', 'card'].includes(chat.mode)) {
         const coordinates = requestCoordinates.get(sessionId) || {}
         requestRecord = await modelRequestLog.record({ chat, context: backgroundContext, coordinates, options })
-        if (!backgroundContext) {
+        if (!backgroundContext && ['story', 'script'].includes(chat.mode)) {
           try { await worldbookRecallLog.requested(chat, options, requestRecord.id) }
           catch (error) { console.warn('dsh-tavern: 世界书请求日志关联失败', String(error?.message || error)) }
         }

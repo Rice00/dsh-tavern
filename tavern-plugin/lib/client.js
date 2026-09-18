@@ -11938,6 +11938,47 @@ window.__ModuleLoader__.load({
 		const playControlsFeature = createPlayControlsFeatureModule();
 		const assistantRendererFeature = createTavernAssistantRendererFeatureModule();
 
+		function FullRequestContextView(props) {
+			const h = React.createElement;
+            const [record, setRecord] = React.useState(null);
+            const [error, setError] = React.useState("");
+            const [query, setQuery] = React.useState("");
+            const [refresh, setRefresh] = React.useState(0);
+            const loaded = React.useRef(null);
+            const [loading, setLoading] = React.useState(true);
+            React.useEffect(() => {
+                let active = true; setError(""); setLoading(true);
+                if (loaded.current?.sessionId !== props.contextSessionId) { loaded.current = null; setRecord(null); }
+                rpc("getLatestRequestContext", { sessionId: props.contextSessionId, knownId: loaded.current?.id || "" }, props.contextSessionId)
+                    .then(value => { if (active && !value.record?.unchanged) { setRecord(value.record); loaded.current = value.record ? { sessionId: props.contextSessionId, id: value.record.id } : null; } })
+                    .catch(e => { if (active) setError(String(e.message || e)); })
+                    .finally(() => { if (active) setLoading(false); });
+                return () => { active = false; };
+            }, [props.contextSessionId, refresh]);
+			const request = record && record.request;
+			const sections = React.useMemo(() => request ? [
+				{ title: "系统提示词", value: request.system },
+				...(request.messages || []).map((message, index) => ({ title: (index + 1) + ". " + message.role, value: message })),
+				{ title: "工具定义", value: request.tools },
+				{ title: "其他调用参数", value: Object.fromEntries(Object.entries(request).filter(([key]) => !["system", "messages", "tools"].includes(key))) }
+			].filter(section => section.value !== undefined).map(section => ({ ...section, text: typeof section.value === "string" ? section.value : JSON.stringify(section.value, null, 2) })) : [], [request]);
+			return h("div", { style: { height: "100%", overflow: "auto", padding: "16px", boxSizing: "border-box" } },
+				h("h3", null, "完整上下文"),
+				h("p", null, "最近一次前台调用的完整上下文，包含全部历史和工具。取自发送时记录（供应商协议转换前）。"),
+				h("button", { onClick: () => setRefresh(value => value + 1) }, "刷新"),
+                record ? h("p", null, "第 " + record.turn + " 轮 · 步骤 " + record.step + " · " + new Date(record.createdAt).toLocaleString() + " · " + (request.provider || "") + " / " + (request.model || "")) : null,
+				h("input", { "aria-label": "搜索完整上下文", placeholder: "搜索内容", value: query, onChange: e => setQuery(e.target.value) }),
+				request ? h("button", { onClick: async () => { try { await navigator.clipboard.writeText(JSON.stringify(request, null, 2)); } catch (e) { setError("复制失败：" + String(e.message || e)); } } }, "复制完整 JSON") : null,
+				error ? h("p", { role: "alert" }, error) : null,
+				!loading && !record && !error ? h("p", null, "暂无已记录的模型调用。旧会话未记录的请求不会补造；发送新消息后刷新查看。") : null,
+				loading ? h("p", null, "正在读取完整上下文…") : null,
+				sections.filter(section => !query || (section.title + section.text).toLowerCase().includes(query.toLowerCase())).map((section, index) => h("details", { key: record.id + ":" + index, open: !!query },
+					h("summary", null, section.title + " · " + section.text.length + " 字符"),
+					h("pre", { style: { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } }, section.text)))
+			);
+		}
+
+
 		const inject = ["slots", "sessions", "workspaces", "layout", "connection", "conversation", "betterSidebar", "remote", "remote.commands", "tavernSessionSignals"];
 
 		function apply(ctx) {
@@ -11945,6 +11986,10 @@ window.__ModuleLoader__.load({
 			ctx.effect(() => syncTavernSubagentCatalogs(ctx.sessions), "dsh-tavern: subagent catalog synchronization");
 			const slots = ctx.slots;
 			if (slots === undefined) return;
+            ctx.effect(() => slots.inject("conversation.view", () => slots.register({
+                name: "conversation.view", id: "dsh-tavern:full-context", order: 11,
+                label: "完整上下文", inject: sessionId => ({ contextSessionId: sessionId })
+            }, FullRequestContextView)), "dsh-tavern: full request context");
 			const signals = ctx.tavernSessionSignals;
 			if (!signals || typeof signals.subscribe !== "function") throw new Error("DSH Tavern Remote 状态流不可用");
 			tavernSessionSignals = signals;

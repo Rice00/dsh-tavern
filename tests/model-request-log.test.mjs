@@ -151,3 +151,29 @@ test('并发请求的完成结果互不串写，缺少状态文件仍可查看�
   await log.complete({ chatId: 'chat', id: first.id, text: '恢复结果' })
   assert.equal((await log.evidence('chat')).requests[0].response.text, '恢复结果')
 })
+
+test('context browser lists metadata only and retrieves exact snapshots within the owning chat', async () => {
+  const files = new Map(), reads = []
+  const log = createModelRequestLog({
+    readJson: async path => { reads.push(path); return structuredClone(files.get(path)) },
+    writeJson: async (path, value) => files.set(path, structuredClone(value)),
+    updateJson: async (path, fn) => files.set(path, fn(structuredClone(files.get(path))))
+  })
+  const options = { system: 'system', messages: [{ role: 'user', content: [{ type: 'text', text: '完整'.repeat(20000) }] }], tools: [{ name: 'test', parameters: { type: 'object' } }] }
+  const original = structuredClone(options)
+  const item = await log.record({ chat: { id: 'owner', mode: 'card' }, coordinates: { turn: 2, step: 3 }, options })
+  assert.equal((await log.latest('owner')).id, item.id)
+  reads.length = 0
+  assert.deepEqual(await log.latest('owner', item.id), { unchanged: true, id: item.id })
+  assert.deepEqual(reads, ['model-requests/owner/index.json'])
+  await log.record({ chat: { id: 'owner' }, context: { scope: 'background', turn: 2 }, options: { messages: [] } })
+  assert.equal((await log.latest('owner')).id, item.id)
+  assert.equal(await log.latest('empty'), null)
+  options.messages[0].content[0].text = 'changed later'
+  reads.length = 0
+  assert.equal((await log.list('owner')).length, 2)
+  assert.deepEqual(reads, ['model-requests/owner/index.json'])
+  assert.deepEqual((await log.detail('owner', item.id)).request, original)
+  await assert.rejects(log.detail('other', item.id), /不存在/)
+  await assert.rejects(log.detail('owner', '../private'), /不存在/)
+})

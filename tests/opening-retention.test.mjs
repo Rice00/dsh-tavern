@@ -64,13 +64,13 @@ test('开局过程中遮罩点击不会收起或清除准备页', () => {
 })
 
 const preview = readFileSync(new URL('../tavern-plugin/src/client/opening-preview.js', import.meta.url), 'utf8')
-test('隐藏期间续期不拉取或重建界面，卸载后停止；失败不会重复刷屏', async () => {
+test('隐藏期间续期不重建界面，卸载后停止；失败不会重复刷屏', async () => {
   const retain = vm.runInNewContext(preview + '; retainOpeningPreparation')
   let tick, focus, pending, calls = 0, errors = 0, cleared = false
   const host = { setInterval(fn, ms) { tick = fn; assert.equal(ms, 60000); return 1 }, clearInterval() { cleared = true },
     addEventListener(name, fn) { assert.equal(name, 'focus'); focus = fn }, removeEventListener(name, fn) { assert.equal(fn, focus); focus = null } }
   const stop = retain('draft', { window: host, onError() { errors++ }, call(method, args) {
-    assert.equal(method, 'retainOpeningPreparation'); assert.equal(args.id, 'draft'); calls++
+    assert.equal(method, 'getOpeningPreparation'); assert.equal(args.touchOnly, true); assert.equal(args.id, 'draft'); calls++
     return new Promise((resolve, reject) => { pending = { resolve, reject } })
   } })
   await tick(); assert.equal(calls, 1)
@@ -92,4 +92,28 @@ for (const targetMode of ['card', 'story']) test(`完成 ${targetMode} 创建时
   await ctx.finishPendingOpen({ sessionId: 'created', targetMode })
   assert.equal(state.openingPicker, targetMode === 'card' ? draft : null)
   assert.deepEqual(calls, targetMode === 'card' ? [] : [['releaseOpeningPreparation', 'draft']])
+})
+
+test('新版页面连接旧后端时使用已有读取接口续期，不报未知方法或重建开局', async () => {
+  const retain = vm.runInNewContext(preview + '; retainOpeningPreparation')
+  const calls = [], errors = []
+  let tick, touches = 0
+  const stop = retain('existing-draft', {
+    window: { setInterval(fn) { tick = fn; return 1 }, clearInterval() {}, addEventListener() {}, removeEventListener() {} },
+    async call(method, args) {
+      calls.push(method)
+      if (method !== 'getOpeningPreparation') throw Error('未知方法: ' + method)
+      assert.equal(args.id, 'existing-draft')
+      assert.equal(args.touchOnly, true)
+      touches++
+      // Old hosts ignore touchOnly and return their normal draft projection.
+      return { id: args.id, worldbook: { entries: [{ content: '已选内容' }] } }
+    },
+    onError(error) { errors.push(error.message) },
+  })
+  await new Promise(resolve => setImmediate(resolve))
+  await tick(); stop()
+  assert.deepEqual(errors, [])
+  assert.equal(touches, 2)
+  assert.deepEqual(calls, ['getOpeningPreparation', 'getOpeningPreparation'])
 })

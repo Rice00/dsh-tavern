@@ -25,3 +25,9 @@ playwright-cli -s=opening-retention eval 'async () => await window.verifyOpening
 ```
 
 设置 `DSH_CLIENT_SOURCE` 可以加载修复前的客户端。测试仅使用本地合成卡和模拟宿主响应，不读取玩家资料、不调用模型；开始游戏故意返回错误，以验证失败后保留表单。
+
+## 前后端更新衔接补充
+
+运行中的旧 Host 不会随客户端文件重建自动加载新增 RPC。实测旧 Host 对 `retainOpeningPreparation` 返回“未知方法”，但已有 `getOpeningPreparation` 正常识别。
+
+续期改用已有 `getOpeningPreparation`，附带 `touchOnly: true`。新 Host 仅更新时间戳并返回轻量结果；旧 Host 忽略附加参数，沿用读取时续期。客户端不把返回数据写回页面，避免覆盖表单和脚本状态。这样更新页面无需为续期接口重启 Host；已加载的旧页面需重新加载客户端后使用修复。

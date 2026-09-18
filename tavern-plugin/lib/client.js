@@ -2327,7 +2327,8 @@ window.__ModuleLoader__.load({
 		}
 
 		// A retained preview still owns its private host draft while hidden. Renew only
-		// its expiry; fetching/projecting the full runtime here would reset card state.
+		// its expiry without applying the response to the iframe. Older hosts ignore
+		// touchOnly and return the draft, so a refreshed client needs no host restart.
 		function retainOpeningPreparation(id, options) {
 		  const host = options.window;
 		  let stopped = false, pending = false, lastError = "";
@@ -2335,7 +2336,7 @@ window.__ModuleLoader__.load({
 		    if (stopped || pending) return;
 		    pending = true;
 		    try {
-		      await options.call("retainOpeningPreparation", { id: id });
+		      await options.call("getOpeningPreparation", { id: id, touchOnly: true });
 		      lastError = "";
 		    } catch (error) {
 		      const message = String(error && error.message || error);

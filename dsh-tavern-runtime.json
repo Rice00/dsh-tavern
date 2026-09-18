@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "400fa382e71b774ca075be69f12f46abb52344f9",
-  "releaseSequence": 274,
+  "revision": "af78a415c4673538be95dc3c3b81c95308f9d426",
+  "releaseSequence": 275,
   "version": "1.9.0",
   "files": [
     {
@@ -266,8 +266,8 @@
     },
     {
       "path": "tavern-plugin/lib/client.js",
-      "sha256": "725c67100414d4034d61b0892f4491187c3e70807f784844f4229cccc729fcd9",
-      "size": 975688
+      "sha256": "6f1dc389ab8b713c571b53031b1d3a22e9b5487f82ce46ff670cc1d8592f829e",
+      "size": 975689
     },
     {
       "path": "tavern-plugin/lib/cordis-inspect.js",
@@ -1136,8 +1136,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/tavern-settings.js",
-      "sha256": "1f03b2c528edcc5f088b4edf4c5b170795b219137377bd7514f56dcd59b2f7af",
-      "size": 5385
+      "sha256": "4e16ec80e2b6f2f53b95359f18f49be60d0b5812ef2948d3b155777f2ac7c67c",
+      "size": 5386
     },
     {
       "path": "tavern-plugin/lib/domain/tavern-skill-provider.js",
@@ -1261,8 +1261,8 @@
     },
     {
       "path": "tavern-plugin/lib/index.js",
-      "sha256": "cb3e0b378bb9cfa2b5c141987b6c146887bb7aa2389cc15851fe822bb370503f",
-      "size": 283622
+      "sha256": "f5f3a1aa3f5a69dcd34eafb78891a358dbdda5885c9cc0f8ee8fd96b9e2869d9",
+      "size": 283624
     },
     {
       "path": "tavern-plugin/lib/profile-data-store.js",
@@ -1271,8 +1271,8 @@
     },
     {
       "path": "tavern-plugin/lib/prompt-catalog.js",
-      "sha256": "557814be028fd12adff1447b53a18661338d886c2d259b7bfc8bfa19dbaa2342",
-      "size": 2761
+      "sha256": "08a20836219c5e6322ab5d3411b1c1485a61947f4b4f8925ed64509588e9f083",
+      "size": 2742
     },
     {
       "path": "tavern-plugin/lib/scene-image-prompts.js",
@@ -3641,8 +3641,8 @@
     },
     {
       "path": "tavern-plugin/prompts/system-append.md",
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-      "size": 0
+      "sha256": "b07f871e0fcd35a29fb2753b4e53448cdb148a0a8cac8a57c921fd9e788fa8ef",
+      "size": 145
     },
     {
       "path": "tavern-plugin/src/client/background-suppression.js",
@@ -3681,8 +3681,8 @@
     },
     {
       "path": "tavern-plugin/src/client/main.js",
-      "sha256": "aefbbd1624a784a5c8a37dee012dcec8c7c9c8e37b3250d2c33a9c76097c654c",
-      "size": 724970
+      "sha256": "5d3743eeeb06f52a89d25d5f477213ea877e77e688bbee69ee14bdd6fea3e566",
+      "size": 724971
     },
     {
       "path": "tavern-plugin/src/client/modules/confirm-dialog.js",

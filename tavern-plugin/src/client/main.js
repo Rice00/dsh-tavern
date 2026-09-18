@@ -6821,7 +6821,7 @@ window.__ModuleLoader__.load({
                         h("option", { value: "" }, "不使用画像"),
                         currentConversation.enabled && !profiles.some(function (item) { return item.id === currentConversation.profileId && item.hasConfirmed; }) ? h("option", { value: currentConversation.profileId || "default" }, "当前画像（库中已不可用）") : null,
                         profiles.filter(function (item) { return item.hasConfirmed; }).map(function (item) { return h("option", { key: item.id, value: item.id }, item.name); })),
-                    h("p", { className: "dsh-tavern-settings-desc" }, "选择后从下一轮生效；查看内容可核对本局使用的版本。"),
+                    h("p", { className: "dsh-tavern-settings-desc" }, "选择后从下一轮生效；查看内容可核对本局使用的画像。"),
                     currentConversation.enabled ? h("details", null, h("summary", null, "查看内容"), h("div", { className: "dsh-tavern-user-profile-text" }, currentConversation.content || "暂无画像内容")) : null,
                     outdated ? h("div", { className: "dsh-tavern-profile-update" }, h("span", null, "画像已修改，这局仍使用修改前的内容。"), h("button", { className: "dsh-tavern-btn", disabled: busy || editing, onClick: function () { toggleCurrent(true, active.id); } }, "更新到当前游戏")) : null
                 ) : null;
@@ -6843,7 +6843,7 @@ window.__ModuleLoader__.load({
 			return h("div", { className: "dsh-tavern-user-profile" }, header, controls,
 				h("div", { className: "dsh-tavern-user-profile-body" },
 					error ? h("div", { className: "dsh-card-error" }, error) : null,
-					record.hasDraft ? h("div", { className: "dsh-tavern-extension-note" }, "存在尚未确认的新草案；当前仍使用已确认版本。") : null,
+					record.hasDraft ? h("div", { className: "dsh-tavern-extension-note" }, "有待确认的修改；当前仍使用已保存的画像。") : null,
 					editing ? h("div", { className: "dsh-tavern-user-profile-editor" },
 						h("div", { className: "dsh-tavern-status-label", style: { marginTop: "14px" } }, "画像内容"),
 						h("textarea", { value: injectionText, onChange: function (event) { setInjectionText(event.target.value); } }),

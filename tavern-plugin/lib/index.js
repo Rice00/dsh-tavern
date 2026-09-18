@@ -4052,7 +4052,7 @@ export async function apply(ctx) {
     }))
     tools.register(defineTool({
       name: 'tavern_user_profile_read',
-      description: '读取 Profile 中独立保存的用户画像草案和已确认版本。建立、复查或修改用户画像时先调用；草案不等于已确认偏好。',
+      description: '读取当前用户画像及待确认的修改。画像始终作为同一份资料维护，revision 仅供工具校验，不向用户展示编号。建立、复查或修改用户画像时先调用；草案不等于已确认偏好。',
       parameters: {},
       output: {
         schema: { type: 'object', additionalProperties: false, properties: {
@@ -4089,7 +4089,7 @@ export async function apply(ctx) {
 
     tools.register(defineTool({
       name: 'tavern_user_profile_save_draft',
-      description: '保存用户画像草案。只记录问卷原始回答、Agent 分析和拟注入摘要；不会覆盖已确认画像，也不会自动注入游玩。保存后必须向用户展示草案并等待确认。',
+      description: '保存用户画像草案。只记录问卷原始回答、Agent 分析和拟注入摘要；不会覆盖已确认画像，也不会自动注入游玩。将当前内容展示给用户核对；用户已明确确认相同内容时可直接调用确认工具，不重复询问。revision 仅用于工具校验，不作为画像版本号展示。',
       parameters: {
         rawAnswers: {
           type: 'array', required: true,
@@ -4118,7 +4118,7 @@ export async function apply(ctx) {
           hasConfirmed: { type: 'boolean', required: true }
         } },
         render: function (_args, value) {
-          return [{ type: 'text', text: '用户画像草案 v' + value.draftRevision + ' 已保存，尚未确认、不会注入游玩。请先向用户展示并等待明确确认。' }]
+          return [{ type: 'text', text: '当前画像修改已暂存。展示内容供用户核对；用户已明确确认当前内容时直接保存，不重复询问。' }]
         }
       },
       async execute(args, exec) {
@@ -4132,9 +4132,9 @@ export async function apply(ctx) {
 
     tools.register(defineTool({
       name: 'tavern_user_profile_confirm',
-      description: '把刚刚向用户完整展示且由用户明确同意的画像草案保存为确认版。不得把沉默、继续回答、模糊认可或 Agent 自己的判断当作确认。',
+      description: '将用户已核对并明确同意的当前内容保存到同一份画像。用户已确认时直接调用，不重复询问。不得把沉默、继续回答、模糊认可或 Agent 自己的判断当作确认。',
       parameters: {
-        draftRevision: { type: 'integer', required: true, description: '用户刚刚确认的草案 revision' },
+        draftRevision: { type: 'integer', required: true, description: '工具返回的内部校验值，不向用户展示' },
         confirmation: { type: 'string', required: true, enum: ['确认保存用户画像'], description: '只有用户明确确认保存后才能填写此固定文本' }
       },
       output: {
@@ -4142,7 +4142,7 @@ export async function apply(ctx) {
           confirmedRevision: { type: 'integer', required: true }
         } },
         render: function (_args, value) {
-          return [{ type: 'text', text: '用户画像已确认保存为 Profile 版本 v' + value.confirmedRevision + '。可在用户画像面板为当前游戏或新游戏启用。' }]
+          return [{ type: 'text', text: '用户画像已保存。可在用户画像面板为当前游戏或新游戏启用。' }]
         }
       },
       async execute(args, exec) {

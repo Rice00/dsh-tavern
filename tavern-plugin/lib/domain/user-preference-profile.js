@@ -95,6 +95,10 @@ function createSingleProfile({ store, now = Date.now }) {
   }
 
   async function save(input) {
+    if (Object.hasOwn(input, 'content')) {
+      if (typeof input.content !== 'string' || !input.content.trim() || input.content.length > 3000) throw new Error('画像正文须为 1 至 3000 字')
+      input = { ...input, summary: input.content, injectionText: input.content, rawAnswers: [], dimensions: [], uncertainties: [] }
+    }
     const saved = await store.updateJson(PROFILE_PATH, value => {
       const current = document(value)
       const timestamp = now()

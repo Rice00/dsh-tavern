@@ -4091,26 +4091,7 @@ export async function apply(ctx) {
       name: 'tavern_user_profile_save',
       description: '将整理好的长期偏好直接保存到当前用户画像，更新同一份资料。用户要求建立或修改画像即授权保存，无需额外确认；保存后简短报告，用户可随时要求修改。不会自动启用画像。',
       parameters: {
-        rawAnswers: {
-          type: 'array', required: true,
-          items: { type: 'object', additionalProperties: false, properties: {
-            question: { type: 'string', required: true },
-            answer: { type: 'string', required: true }
-          } }
-        },
-        dimensions: {
-          type: 'array', required: true,
-          items: { type: 'object', additionalProperties: false, properties: {
-            id: { type: 'string', required: true },
-            label: { type: 'string', required: true },
-            conclusion: { type: 'string', required: true },
-            confidence: { type: 'string', required: true, enum: ['confirmed', 'likely', 'uncertain'] },
-            evidence: { type: 'string', required: true }
-          } }
-        },
-        summary: { type: 'string', required: true, description: '供用户核对的完整画像草案' },
-        injectionText: { type: 'string', required: true, description: '最多约 3000 字的最小充分游玩偏好摘要；不能包含本轮人物卡专属要求' },
-        uncertainties: { type: 'array', required: true, items: { type: 'string' } }
+        content: { type: 'string', required: true, description: '完整 Markdown 用户画像正文，最多 3000 字；保存内容与启用内容相同' }
       },
       output: {
         schema: { type: 'object', additionalProperties: false, properties: {
@@ -4125,7 +4106,7 @@ export async function apply(ctx) {
         const sessionId = exec && exec.agent && exec.agent.session ? exec.agent.session.id : ''
         const chat = await chatForSession(sessionId)
         if (chat === undefined || (chat.mode || 'story') !== 'card') throw new Error('用户画像只能在卡片工作台中管理')
-        const value = await userPreferenceProfile.save({ ...args, profileId: chat.userProfileId || 'default' })
+        const value = await userPreferenceProfile.save({ content: args.content, profileId: chat.userProfileId || 'default' })
         return { saved: true, hasConfirmed: value.hasConfirmed }
       }
     }))

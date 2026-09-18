@@ -140,3 +140,15 @@ test('direct save updates the same profile atomically without confirmation or en
   assert.equal(second.hasDraft, false)
   assert.equal(second.defaultEnabled, false)
 })
+
+test('single profile content is saved identically for display and injection', async () => {
+  const profile = createUserPreferenceProfile({ store: memoryStore() })
+  const content = '# 用户画像\n\n偏好慢热，保留玩家的行动选择。'
+  const saved = await profile.save({ content })
+  assert.equal(saved.confirmed.summary, content)
+  assert.equal(saved.confirmed.injectionText, content)
+  assert.deepEqual(saved.confirmed.rawAnswers, [])
+  assert.deepEqual(saved.confirmed.dimensions, [])
+  await assert.rejects(profile.save({ content: 'x'.repeat(3001) }), /3000/)
+  assert.equal((await profile.read()).confirmed.summary, content)
+})

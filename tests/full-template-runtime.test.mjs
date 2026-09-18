@@ -314,3 +314,42 @@ test('领取超时不清除在线心跳，不误报断连或重复派发', async
     assert.equal(offers, 1)
   } finally { clearInterval(pulse); runtime.dispose() }
 })
+
+test('同一任务有效执行确认允许跨越时限等待，手动取消立即结束且不重跑', async () => {
+  let work, executions = 0
+  const runtime = createFullTemplateRuntime({ executionTimeoutMs: 100, publishSignal(id) {
+    work = runtime.dispatch.claim(id, 'page', true)
+    runtime.dispatch.start(id, work.event.id, work.leaseToken, 'page')
+    executions++
+  } })
+  runtime.heartbeat('s', 'page', 'ready')
+  const output = runtime.forSession('s').render('x')
+  const cancelled = assert.rejects(output, /手动取消/)
+  const pulse = setInterval(() => { if (work) runtime.heartbeat('s', 'page', 'working', '', { eventId: work.event.id, leaseToken: work.leaseToken }) }, 20)
+  try {
+    await new Promise(resolve => setTimeout(resolve, 240))
+    assert.equal(runtime.dispatch.status('s').phase, 'executing')
+    runtime.cancel('s')
+    await cancelled
+    assert.equal(executions, 1)
+  } finally { clearInterval(pulse); runtime.dispose() }
+})
+
+test('慢任务持续确认后正常完成；普通页面心跳不能给任务续期', async () => {
+  for (const confirmWork of [true, false]) {
+    let work
+    const runtime = createFullTemplateRuntime({ executionTimeoutMs: 100, publishSignal(id) {
+      work = runtime.dispatch.claim(id, 'page', true)
+      runtime.dispatch.start(id, work.event.id, work.leaseToken, 'page')
+    } })
+    runtime.heartbeat('s', 'page', 'ready')
+    const output = runtime.forSession('s').render('slow')
+    const verdict = confirmWork ? output : assert.rejects(output, /执行超时/)
+    const pulse = setInterval(() => runtime.heartbeat('s', 'page', 'ready', '', confirmWork && work ? { eventId: work.event.id, leaseToken: work.leaseToken } : undefined), 20)
+    try {
+      await new Promise(resolve => setTimeout(resolve, 230))
+      if (confirmWork) runtime.dispatch.complete('s', work.event.id, ['done'], 'page', work.leaseToken)
+      assert.equal(await verdict, confirmWork ? 'done' : undefined)
+    } finally { clearInterval(pulse); runtime.dispose() }
+  }
+})

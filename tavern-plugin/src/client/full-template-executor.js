@@ -121,7 +121,14 @@ import * as YAML from '/api/dsh-tavern/vendor/runtime-assets/yaml/index.mjs';
 const token=${JSON.stringify(token)},sessionId=${JSON.stringify(sessionId)},runtimeId=token;
 let sequence=0,context,plugin,panel,templateHost,dirty=true,panelRequested=false,lastSync=0;const pending=new Map();
 const idleWait=(${createTemplateIdleWait.toString()})();
-const rpc=(method,args={})=>new Promise((resolve,reject)=>{const requestId=++sequence;const timer=setTimeout(()=>{pending.delete(requestId);parent.postMessage({type:'full-template-cancel',token,requestId},'*');reject(new Error('模板 RPC 超时：'+method))},15000);pending.set(requestId,{resolve,reject,timer});parent.postMessage({type:'full-template-rpc',token,requestId,method,args},'*')});
+let activeWork=null;
+const transport=(method,args={})=>new Promise((resolve,reject)=>{const requestId=++sequence;const timer=setTimeout(()=>{pending.delete(requestId);parent.postMessage({type:'full-template-cancel',token,requestId},'*');reject(new Error('模板 RPC 超时：'+method))},15000);pending.set(requestId,{resolve,reject,timer});parent.postMessage({type:'full-template-rpc',token,requestId,method,args},'*')});
+const rpc=async(method,args={})=>{
+ const result=await transport(method,method==='heartbeatFullTemplateRuntime'?{...args,work:activeWork}:args);
+ if(method==='startFullTemplateWork'&&result.started)activeWork={eventId:args.eventId,leaseToken:args.leaseToken};
+ if(method==='completeFullTemplateWork'&&result.completed)activeWork=null;
+ return result;
+};
 addEventListener('message',event=>{if(event.source!==parent||event.data?.token!==token)return;const data=event.data;if(data.type==='template-dirty'){dirty=true;idleWait.wake();return}if(data.type==='template-open'){panelRequested=true;idleWait.wake();return}const item=pending.get(data.requestId);if(!item)return;pending.delete(data.requestId);clearTimeout(item.timer);data.error?item.reject(new Error(data.error)):item.resolve(data.result)});
 const heartbeat=(${createTemplateHeartbeat.toString()})({rpc,runtimeId});
 addEventListener('pagehide',()=>heartbeat.dispose(),{once:true});

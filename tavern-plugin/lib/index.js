@@ -3076,7 +3076,7 @@ export async function apply(ctx) {
 	      case 'updateTavernHelperMessages': return await tavernScriptHostAdapter.updateMessages(args && args.sessionId, args && args.messages, args && args.expectedLifecycleRevision, args && args.eventId)
 	      case 'createTavernHelperMessages': return await tavernScriptHostAdapter.createMessages(args && args.sessionId, args && args.messages, args && args.option, args && args.expectedLifecycleRevision, args && args.eventId)
       case 'releaseFullTemplateRuntime': return { released: fullTemplateRuntime.dispatch.dispose(args.sessionId, args.runtimeId) }
-      case 'heartbeatFullTemplateRuntime': return fullTemplateRuntime.heartbeat(args.sessionId, args.runtimeId, args.phase, args.initializationError)
+      case 'heartbeatFullTemplateRuntime': return fullTemplateRuntime.heartbeat(args.sessionId, args.runtimeId, args.phase, args.initializationError, args.work)
       case 'claimFullTemplateWork': return fullTemplateRuntime.dispatch.claim(args.sessionId, args.runtimeId, args.ready, args.initializationError)
       case 'startFullTemplateWork': return await fullTemplateRuntime.start(args.sessionId, args.eventId, args.leaseToken, args.runtimeId)
       case 'completeFullTemplateWork': return { completed: await fullTemplateRuntime.complete(args.sessionId, args.eventId, args.args, args.runtimeId, args.leaseToken, args.error) }
@@ -3922,6 +3922,8 @@ export async function apply(ctx) {
     const session = payload.agent && payload.agent.session
     if (session === undefined) return
     const sessionId = session.id
+    const templateOwner = backgroundAgentRunner.requestContext(sessionId)?.parentSessionId || sessionId
+    fullTemplateRuntime.cancel(templateOwner)
     clearRuntimePresetRequestState(payload.agent)
     if (backgroundAgentRunner.owns(sessionId)) return
     const userText = userTextForTurn(session, payload.turn)

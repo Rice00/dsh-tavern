@@ -115,11 +115,11 @@ test('回执失联后只重发保留的回执，不重新执行模板', async ()
 })
 
 test('iframe RPC 回包丢失时按期限失败并清除待办，不永久挂起', async () => {
-  const line = source.split('\n').find(line => line.startsWith('const rpc='))
+  const line = source.split('\n').find(line => line.startsWith('const transport='))
   const timers = [], pending = new Map()
   const scope = vm.createContext({ pending, sequence: 0, token: 'page', parent: {postMessage() {}},
     setTimeout(fn, delay) { timers.push({fn, delay}); return timers.length } })
-  vm.runInContext(line + ';this.rpc=rpc', scope)
+  vm.runInContext(line + ';this.rpc=transport', scope)
   const call = scope.rpc('getFullPromptTemplateState')
   const rejected = assert.rejects(call, /模板 RPC 超时：getFullPromptTemplateState/)
   assert.equal(timers[0].delay, 15000)

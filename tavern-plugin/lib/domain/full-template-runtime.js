@@ -3,7 +3,7 @@ import { createTavernScriptDispatch } from './tavern-script-dispatch.js'
 
 /** Transport only. All template semantics are executed by the upstream browser plugin. */
 export function createFullTemplateRuntime({ publishSignal, claimTimeoutMs = 30000, readyTimeoutMs = 60000, executionTimeoutMs = 60000, store }) {
-  const dispatch = createTavernScriptDispatch({ renewableExecution: false, preservePresenceOnClaimTimeout: true, publishSignal, presenceTtlMs: 60000, claimTimeoutMs, executionTimeoutMs })
+  const dispatch = createTavernScriptDispatch({ renewableExecution: true, preservePresenceOnClaimTimeout: true, publishSignal, presenceTtlMs: 60000, claimTimeoutMs, executionTimeoutMs })
   let disposed = false
   const jobs = new Map()
   // Projection receipts are useful only while their caller is alive. Retain
@@ -16,7 +16,7 @@ export function createFullTemplateRuntime({ publishSignal, claimTimeoutMs = 3000
   const health = new Map()
   const tails = new Map()
   const sessions = new Set()
-  function waitUntilReady(sessionId) {
+  function waitUntilReady(sessionId, job) {
     return new Promise((resolve, reject) => {
       let stop = () => {}
       const timer = setTimeout(() => {
@@ -29,7 +29,11 @@ export function createFullTemplateRuntime({ publishSignal, claimTimeoutMs = 3000
         error.code = 'FULL_TEMPLATE_UNAVAILABLE'
         reject(error)
       }, readyTimeoutMs)
+      Object.defineProperty(job, 'cancelWait', { configurable: true, value: () => {
+        clearTimeout(timer); stop(); reject(new Error('完整提示词模板任务已手动取消'))
+      } })
       function check() {
+        if (job.cancelled) { job.cancelWait(); return }
         const state = dispatch.status(sessionId)
         if (!state.ready && !state.initializationError) return
         clearTimeout(timer); stop()
@@ -58,8 +62,9 @@ export function createFullTemplateRuntime({ publishSignal, claimTimeoutMs = 3000
       jobs.set(sessionId, job)
       try {
       for (let attempt = 0; attempt < 2; attempt++) {
-        await waitUntilReady(sessionId)
+        await waitUntilReady(sessionId, job)
         const result = await dispatch.dispatch(sessionId, operation, [input], null, { eventId: job.id })
+        if (job.cancelled) throw new Error('完整提示词模板任务已手动取消')
         if (result.handled) return result.args[0]
         if (result.claimTimedOut && dispatch.status(sessionId).present) {
           const error = new Error('完整提示词模板任务领取超时；执行器仍有有效心跳，但未确认领取任务，本轮已停止。这不代表模型生成超时或连接断开。')
@@ -68,8 +73,8 @@ export function createFullTemplateRuntime({ publishSignal, claimTimeoutMs = 3000
         }
         // Only unstarted work can be safely retried: templates may mutate variables.
         if (!disposed && attempt === 0 && (result.unavailable || result.disposed) && !result.timedOut && (!result.phase || ['queued', 'offered'].includes(result.phase))) continue
-        const error = new Error(result.error || (result.timedOut
-          ? '完整提示词模板执行超时，本轮已停止。请检查页面后手动重试。'
+        const error = new Error(result.error || ((result.timedOut || result.executionLost)
+          ? '完整提示词模板执行超时：未持续收到当前任务的执行确认，本轮已停止；无法据此确认连接断开。'
           : result.disposed ? '完整提示词模板执行器已释放，任务已停止，请刷新酒馆页面后重试。' : '完整提示词模板任务未完成，未能确认执行器状态，请检查酒馆页面后重试。'))
         error.code = 'FULL_TEMPLATE_UNAVAILABLE'
         throw error
@@ -131,9 +136,10 @@ export function createFullTemplateRuntime({ publishSignal, claimTimeoutMs = 3000
     }
     return accepted
   }
-  function heartbeat(sessionId, runtimeId, phase, initializationError = '') {
+  function heartbeat(sessionId, runtimeId, phase, initializationError = '', work) {
     const ready = ['ready', 'working', 'synchronizing'].includes(phase)
     const active = dispatch.touch(sessionId, runtimeId, ready, initializationError)
+    if (active && work?.eventId && work?.leaseToken) dispatch.workState(sessionId, work.eventId, work.leaseToken, runtimeId, true)
     if (active) health.set(sessionId, { phase, seenAt: Date.now() })
     return { active, ...dispatch.status(sessionId) }
   }
@@ -143,5 +149,12 @@ export function createFullTemplateRuntime({ publishSignal, claimTimeoutMs = 3000
       task: job ? { id: job.id, operation: job.operation, phase: job.phase, createdAt: job.createdAt,
         completedAt: job.completedAt, error: job.error, previous: job.previous } : null }
   }
-  return { dispatch, forSession, heartbeat, start, complete, inspect, dispose: () => { disposed = true; for (const id of sessions) dispatch.dispose(id); sessions.clear(); projectionReceipts.clear() } }
+  function cancel(sessionId) {
+    const job = jobs.get(sessionId)
+    if (!job) return
+    job.cancelled = true
+    job.cancelWait?.()
+    dispatch.dispose(sessionId)
+  }
+  return { dispatch, forSession, heartbeat, start, complete, inspect, cancel, dispose: () => { disposed = true; for (const id of sessions) dispatch.dispose(id); sessions.clear(); projectionReceipts.clear() } }
 }

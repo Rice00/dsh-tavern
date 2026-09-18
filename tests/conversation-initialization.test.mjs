@@ -485,3 +485,20 @@ test('新局采用全局默认模型，重入和卡片工作台不覆盖本局�
   assert.equal(h.session('workbench-default').selectedModel, undefined)
   assert.equal(h.trace.filter(x => x === 'model.select').length, 2)
 })
+
+
+test('新游戏复制全局 Skill 开关，本局调整和后续全局修改互不覆盖', async () => {
+  const h = initializationFixture()
+  h.state.settings.defaultDisabledWritingSkills = ['writing-a']
+  const first = await h.make().start(h.input)
+  assert.deepEqual(first.disabledWritingSkills, ['writing-a'])
+  h.state.settings.defaultDisabledWritingSkills.push('writing-b')
+  assert.deepEqual((await h.make().start(h.input)).disabledWritingSkills, ['writing-a'])
+  const local = h.saved.get(first.id)
+  local.disabledWritingSkills = []
+  assert.deepEqual((await h.make().start(h.input)).disabledWritingSkills, [])
+  const next = await h.make().start({ ...h.input, sessionId: 'next-skills' })
+  assert.deepEqual(next.disabledWritingSkills, ['writing-a', 'writing-b'])
+  const card = await h.make().start({ ...h.input, sessionId: 'card-skills', mode: 'card', cardPath: '' })
+  assert.deepEqual(card.disabledWritingSkills, [])
+})

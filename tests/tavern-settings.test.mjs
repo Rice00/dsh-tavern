@@ -91,7 +91,7 @@ test('实验分支始终公开兼容模式，旧关闭信任值不影响运行',
 })
 
 test('设置界面提供分色与现有设置，不恢复旧兼容样式选项', () => {
-  const context = { TavernDefaultModelSetting: function TavernDefaultModelSetting() {}, TavernTextColorSettings: function TavernTextColorSettings() {}, ContextCompactionSettings: function ContextCompactionSettings() {}, SceneImageSettings: function SceneImageSettings() {}, React: {
+  const context = { TavernConversationWritingSkills: function TavernConversationWritingSkills() {}, TavernDefaultModelSetting: function TavernDefaultModelSetting() {}, TavernTextColorSettings: function TavernTextColorSettings() {}, ContextCompactionSettings: function ContextCompactionSettings() {}, SceneImageSettings: function SceneImageSettings() {}, React: {
     useState: initial => [initial, () => {}],
     useEffect() {},
     createElement: (type, props, ...children) => ({ type, props, children })
@@ -166,6 +166,7 @@ test('系统正文提示词默认使用内置内容，并可保存自定义覆�
     compatibilityMode: true,
     webSearchEnabled: false,
     systemAppendEnabled: false,
+    defaultDisabledWritingSkills: [],
     defaultForegroundModel: null,
     defaultBackgroundModel: null,
     backgroundModel: null,
@@ -184,6 +185,7 @@ test('系统正文提示词默认使用内置内容，并可保存自定义覆�
     compatibilityMode: true,
     webSearchEnabled: false,
     systemAppendEnabled: false,
+    defaultDisabledWritingSkills: [],
     defaultForegroundModel: null,
     defaultBackgroundModel: null,
     backgroundModel: null,
@@ -294,4 +296,15 @@ test('新游戏前后台默认模型分别保存、清除且不触碰旧全局�
   assert.deepEqual(cleared.defaultBackgroundModel, settings.defaultBackgroundModel)
   assert.equal(cleared.backgroundModelRevision, 7)
   assert.equal(cleared.unknown, true)
+})
+
+
+test('全局写作 Skill 逐项保存，恢复开启不改动其他 Skill', () => {
+  let document = applyTavernSettingsPatch({}, { defaultWritingSkill: { name: 'one', enabled: false } })
+  document = applyTavernSettingsPatch(document, { defaultWritingSkill: { name: 'two', enabled: false } })
+  document = applyTavernSettingsPatch(document, { defaultWritingSkill: { name: 'one', enabled: false } })
+  assert.deepEqual(presentTavernSettings(document, {}).defaultDisabledWritingSkills, ['one', 'two'])
+  document = applyTavernSettingsPatch(document, { defaultWritingSkill: { name: 'one', enabled: true } })
+  assert.deepEqual(document.defaultDisabledWritingSkills, ['two'])
+  assert.throws(() => applyTavernSettingsPatch(document, { defaultWritingSkill: { name: 'one', enabled: 'false' } }), /无效/)
 })

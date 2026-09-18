@@ -18,6 +18,12 @@ export function normalizeBackgroundTasks(value) {
 export function applyTavernSettingsPatch(current, patch) {
   const next = Object.assign({}, object(current))
   const input = object(patch)
+  if (Object.hasOwn(input, 'defaultWritingSkill')) {
+    const { name, enabled } = object(input.defaultWritingSkill)
+    if (typeof name !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name) || typeof enabled !== 'boolean') throw new Error('无效的写作 Skill 配置')
+    const disabled = Array.isArray(next.defaultDisabledWritingSkills) ? next.defaultDisabledWritingSkills : []
+    next.defaultDisabledWritingSkills = enabled ? disabled.filter(value => value !== name) : [...new Set([...disabled, name])]
+  }
   for (const name of ['defaultForegroundModel', 'defaultBackgroundModel']) {
     if (!Object.hasOwn(input, name)) continue
     const selection = normalizeBackgroundModel(input[name])
@@ -83,6 +89,7 @@ export function presentTavernSettings(document, defaults) {
   })
   const story = prompts.find(function (item) { return item.name === 'story' }) || { text: '', customized: false }
   return {
+    defaultDisabledWritingSkills: Array.isArray(object(document).defaultDisabledWritingSkills) ? object(document).defaultDisabledWritingSkills.filter(name => typeof name === 'string') : [],
     defaultForegroundModel: normalizeBackgroundModel(object(document).defaultForegroundModel),
     defaultBackgroundModel: normalizeBackgroundModel(object(document).defaultBackgroundModel),
     contextCompaction: compactionPolicy(object(document).contextCompaction),

@@ -153,6 +153,7 @@ export function createConversationInitialization(options) {
     chat.sceneImagesEnabled = false
     chat.conversationFeaturesVersion = 1
     chat.backgroundModelSelection = groupOfMode(chat.mode) === 'play' ? normalizeBackgroundModel(currentSettings.defaultBackgroundModel) : null
+    chat.disabledWritingSkills = groupOfMode(chat.mode) === 'play' ? [...(currentSettings.defaultDisabledWritingSkills || [])] : []
     chat.backgroundConfigVersion = 1
     chat.backgroundTasks = normalizeBackgroundTasks({})
     chat.mvu = usesMvu ? {

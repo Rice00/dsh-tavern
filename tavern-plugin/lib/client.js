@@ -8818,6 +8818,7 @@ window.__ModuleLoader__.load({
                 React.createElement(TavernDefaultModelSetting, { label: "默认前台模型", fallback: "使用 DSH 默认模型", selection: state.defaultForegroundModel, catalog: state.modelCatalog, disabled: state.loading || state.busy, onChange: selection => saveDefault("defaultForegroundModel", selection) }),
                 React.createElement(TavernDefaultModelSetting, { label: "默认后台模型", fallback: "跟随前台", selection: state.defaultBackgroundModel, catalog: state.modelCatalog, disabled: state.loading || state.busy, onChange: selection => saveDefault("defaultBackgroundModel", selection) }),
                 state.notice ? React.createElement("p", { role: "status" }, state.notice) : null,
+                React.createElement(TavernConversationWritingSkills, { globalDefaults: true }),
                 React.createElement(TavernTextColorSettings),
                 React.createElement(ContextCompactionSettings),
 				state.sceneImages ? React.createElement(SceneImageSettings, null) : null,
@@ -11787,19 +11788,19 @@ window.__ModuleLoader__.load({
         function TavernConversationWritingSkills(props) {
             const h = React.createElement;
             const [skills, setSkills] = React.useState(null), [busy, setBusy] = React.useState(false), [error, setError] = React.useState(""), [notice, setNotice] = React.useState("");
-            async function load() { try { const result = await rpc("getConversationWritingSkills", { sessionId: props.sessionId }, props.sessionId); setSkills(result.skills); setError(""); } catch (err) { setError(String(err.message || err)); } }
+            async function load() { try { const result = await rpc(props.globalDefaults ? "getDefaultWritingSkills" : "getConversationWritingSkills", { sessionId: props.sessionId }, props.sessionId); setSkills(result.skills); setError(""); } catch (err) { setError(String(err.message || err)); } }
             React.useEffect(() => { void load(); }, []);
             async function change(name, enabled) {
                 if (busy) return;
                 setBusy(true); setError(""); setNotice("");
-                try { await rpc("setConversationWritingSkill", { sessionId: props.sessionId, name, enabled }, props.sessionId); setSkills(skills.map(skill => skill.name === name ? { ...skill, enabled } : skill)); setNotice("已保存"); }
+                try { await rpc(props.globalDefaults ? "setDefaultWritingSkill" : "setConversationWritingSkill", { sessionId: props.sessionId, name, enabled }, props.sessionId); setSkills(skills.map(skill => skill.name === name ? { ...skill, enabled } : skill)); setNotice(props.globalDefaults ? "已保存，下次新游戏生效" : "已保存"); }
                 catch (err) { setError(String(err.message || err)); } finally { setBusy(false); }
             }
-            return h("section", { className: "dsh-local-section", "aria-label": "写作 Skill" }, h("h3", null, "写作 Skill"),
-                h("p", { className: "dsh-local-help" }, "默认开启，前台按场景选用。关闭只影响本局后续加载。"),
+            return h("section", { className: "dsh-local-section", "aria-label": props.globalDefaults ? "默认写作 Skill" : "写作 Skill" }, h("h3", null, props.globalDefaults ? "默认写作 Skill" : "写作 Skill"),
+                h("p", { className: "dsh-local-help" }, props.globalDefaults ? "设置新游戏默认启用的写作 Skill。已有游戏不变，可在本局设置中逐项调整。" : "开局采用全局默认配置，可在此逐项调整本局后续加载；前台按场景选用。"),
                 (skills || []).map(skill => h("label", { key: skill.name, className: "dsh-tavern-background-task" }, h("span", null, skill.name, h("span", { className: "dsh-tavern-settings-desc" }, skill.description)), h("input", { type: "checkbox", role: "switch", "aria-label": skill.name, checked: skill.enabled, disabled: busy, onChange: event => change(skill.name, event.target.checked) }))),
                 skills && !skills.length ? h("p", null, "暂无写作 Skill，请在 Skill 库中分配给前台。") : null,
-                h("p", { className: "dsh-local-warning" }, "切换会使提示词缓存失效，首次请求会增加耗时和费用。已载入历史的内容不会删除。"),
+                !props.globalDefaults ? h("p", { className: "dsh-local-warning" }, "切换会使提示词缓存失效，首次请求会增加耗时和费用。已载入历史的内容不会删除。") : null,
                 error ? h("p", { role: "alert" }, error) : h("span", { role: "status" }, busy ? "保存中…" : skills ? notice : "正在读取…"),
                 error ? h("button", { className: "dsh-tavern-btn", onClick: load }, "重新加载") : null);
         }

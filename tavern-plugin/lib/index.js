@@ -2931,6 +2931,16 @@ export async function apply(ctx) {
       case 'renameResource': return { resource: await renameResource(args && args.path, args && args.name) }
       case 'deleteResource': return await deleteResource(args && args.path)
       case 'deletePreset': return await deletePreset(args && args.path)
+      case 'getDefaultWritingSkills': {
+        const settings = await readTavernSettings()
+        return { skills: (await tavernSkills.list()).filter(skill => skill.agents.includes('foreground')).map(skill => ({ name: skill.name, description: skill.description, enabled: !settings.defaultDisabledWritingSkills.includes(skill.name) })) }
+      }
+      case 'setDefaultWritingSkill': {
+        const skill = await tavernSkills.read(args?.name)
+        if (!skill?.agents.includes('foreground') || typeof args?.enabled !== 'boolean') throw new Error('无效的写作 Skill 配置')
+        await updateTavernSettings({ defaultWritingSkill: { name: skill.name, enabled: args.enabled } })
+        return { saved: true }
+      }
       case 'getConversationWritingSkills': {
         const chat = await chatForSession(str(args?.sessionId))
         if (!chat || groupOfMode(chat.mode) !== 'play') throw new Error('请先打开游玩会话')

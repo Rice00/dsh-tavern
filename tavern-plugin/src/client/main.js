@@ -6782,7 +6782,9 @@ window.__ModuleLoader__.load({
             }
             return h("section", { className: "dsh-local-section", "aria-label": props.globalDefaults ? "默认写作 Skill" : "写作 Skill" }, h("h3", null, props.globalDefaults ? "默认写作 Skill" : "写作 Skill"),
                 h("p", { className: "dsh-local-help" }, props.globalDefaults ? "设置新游戏默认启用的写作 Skill。已有游戏不变，可在本局设置中逐项调整。" : "开局采用全局默认配置，可在此逐项调整本局后续加载；前台按场景选用。"),
-                (skills || []).map(skill => h("label", { key: skill.name, className: "dsh-tavern-background-task" }, h("span", null, skill.name, h("span", { className: "dsh-tavern-settings-desc" }, skill.description)), h("input", { type: "checkbox", role: "switch", "aria-label": skill.name, checked: skill.enabled, disabled: busy, onChange: event => change(skill.name, event.target.checked) }))),
+                (skills || []).map(skill => h("div", { key: skill.name, className: "dsh-tavern-background-task dsh-tavern-writing-skill" },
+                    h("label", { className: "dsh-tavern-writing-skill-heading" }, h("span", null, skill.name), h("input", { type: "checkbox", role: "switch", "aria-label": skill.name, checked: skill.enabled, disabled: busy, onChange: event => change(skill.name, event.target.checked) })),
+                    h("p", { className: "dsh-tavern-settings-desc" }, skill.description))),
                 skills && !skills.length ? h("p", null, "暂无写作 Skill，请在 Skill 库中分配给前台。") : null,
                 !props.globalDefaults ? h("p", { className: "dsh-local-warning" }, "切换会使提示词缓存失效，首次请求会增加耗时和费用。已载入历史的内容不会删除。") : null,
                 error ? h("p", { role: "alert" }, error) : h("span", { role: "status" }, busy ? "保存中…" : skills ? notice : "正在读取…"),
@@ -6836,7 +6838,7 @@ window.__ModuleLoader__.load({
             }
 			return React.createElement("div", { className: "dsh-tavern-settings-section" },
 				React.createElement("p", { className: "dsh-tavern-settings-intro" }, "默认模型用于新游戏；已有游戏保持当前配置，可在本局单独调整。"),
-                React.createElement("p", { className: "dsh-tavern-settings-intro" }, "建议前台和后台先使用 Low 推理强度：等待更短，也可能让续写更自然、任务执行更直接。遇到复杂情节或规则处理不佳时，再尝试提高。"),
+                React.createElement("p", { className: "dsh-tavern-settings-intro" }, "建议前台和后台使用 High 推理强度，优先保证正文输出和后台任务的质量。不推荐 Max，以免过度思考、增加等待。若更在意响应速度，可按需降低。"),
                 React.createElement(TavernDefaultModelSetting, { label: "默认前台模型", fallback: "使用 DSH 默认模型", selection: state.defaultForegroundModel, catalog: state.modelCatalog, disabled: state.loading || state.busy, onChange: selection => saveDefault("defaultForegroundModel", selection) }),
                 React.createElement(TavernDefaultModelSetting, { label: "默认后台模型", fallback: "跟随前台", selection: state.defaultBackgroundModel, catalog: state.modelCatalog, disabled: state.loading || state.busy, onChange: selection => saveDefault("defaultBackgroundModel", selection) }),
                 state.notice ? React.createElement("p", { role: "status" }, state.notice) : null,
@@ -9550,7 +9552,7 @@ window.__ModuleLoader__.load({
             return h("div", { className: "dsh-local-runtime" },
                 h("section", { className: "dsh-local-section" }, h("h3", null, "后台模型"),
                     h("p", { className: "dsh-tavern-settings-desc" }, "仅影响本局，下一次后台任务生效。正在运行的任务不变，保留原后台 Agent 和历史。"),
-                    h("p", { className: "dsh-tavern-settings-desc" }, "建议前台和后台先使用 Low 推理强度：等待更短，也可能让续写更自然、任务执行更直接。遇到复杂情节或规则处理不佳时，再尝试提高。"),
+                    h("p", { className: "dsh-tavern-settings-desc" }, "建议前台和后台使用 High 推理强度，优先保证正文输出和后台任务的质量。不推荐 Max，以免过度思考、增加等待。若更在意响应速度，可按需降低。"),
                     h("p", { className: "dsh-local-warning" }, "切换模型或推理强度会使缓存失效，首次请求会增加耗时和费用。"),
                     h("label", null, "后台模型", h("select", { "aria-label": "本局后台模型", className: "dsh-tavern-settings-select", value: key, disabled: !loaded || busy, onChange: event => { return save({ backgroundModel: event.target.value ? JSON.parse(event.target.value) : null }); } },
                         h("option", { value: "" }, "跟随前台"),

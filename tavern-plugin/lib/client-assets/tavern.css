@@ -1024,3 +1024,10 @@ body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
 .dsh-context-list .dsh-context-source > summary { font-size: 12px; color: var(--dsw-alias-label-tertiary); padding: 8px 10px; }
 
 .dsh-context-part-label { padding: 8px 20px; font-size: 12px; color: var(--dsw-alias-label-tertiary); }
+
+/* Shared by global defaults and conversation writing-skill controls. */
+.dsh-tavern-writing-skill,
+.dsh-local-settings .dsh-tavern-writing-skill { display: block; padding: 12px 0; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+.dsh-tavern-writing-skill > .dsh-tavern-writing-skill-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0; cursor: pointer; }
+.dsh-tavern-writing-skill-heading > span { min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+.dsh-tavern-writing-skill > .dsh-tavern-settings-desc { margin: 6px 0 0; }

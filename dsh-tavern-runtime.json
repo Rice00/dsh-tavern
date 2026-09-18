@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "8abdfcaf41bca1116b32f805f51f7faa821eff95",
-  "releaseSequence": 281,
+  "revision": "c2ff2c129042373a46d25eb840d40d37234240f0",
+  "releaseSequence": 282,
   "version": "1.9.0",
   "files": [
     {
@@ -591,8 +591,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/immutable-json-projection.js",
-      "sha256": "a7f0fda4b56dd48db54ee0b0a67e284f5a43ff5bf66c2a54bbfaaecec56baa4a",
-      "size": 2102
+      "sha256": "d9c5894486a66fb940bd49ae87699b068c3ad0c8b01e14a9b4d55443a28cace3",
+      "size": 4074
     },
     {
       "path": "tavern-plugin/lib/domain/import-context-preparation.js",
@@ -1131,8 +1131,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/tavern-script-host-adapter.js",
-      "sha256": "ae5a6ba03f2d24b31bc1414050a3854a559a6ff1be41ac0657fcb69588807cfa",
-      "size": 45612
+      "sha256": "77529af5ca524fb9aee36dfc659af0002daa0b110c6256cc6a8358dff2f3b0fc",
+      "size": 45570
     },
     {
       "path": "tavern-plugin/lib/domain/tavern-script-prompts.js",

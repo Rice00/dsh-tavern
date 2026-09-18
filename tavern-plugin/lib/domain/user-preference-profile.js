@@ -94,6 +94,19 @@ function createSingleProfile({ store, now = Date.now }) {
     return present(await store.readJson(PROFILE_PATH))
   }
 
+  async function save(input) {
+    const saved = await store.updateJson(PROFILE_PATH, value => {
+      const current = document(value)
+      const timestamp = now()
+      const revision = current.revision + 1
+      return { spec: SPEC, version: VERSION, revision,
+        defaultEnabled: current.defaultEnabled, draft: null,
+        confirmed: { ...normalizeDraft(input, revision, timestamp), profileRevision: revision, confirmedAt: timestamp },
+        updatedAt: timestamp }
+    })
+    return present(saved)
+  }
+
   async function saveDraft(input) {
     const saved = await store.updateJson(PROFILE_PATH, function (value) {
       const current = document(value)
@@ -194,7 +207,7 @@ function createSingleProfile({ store, now = Date.now }) {
     }
   }
 
-  return Object.freeze({ read, saveDraft, confirm, updateConfirmed, setDefaultEnabled, stableContext })
+  return Object.freeze({ read, save, saveDraft, confirm, updateConfirmed, setDefaultEnabled, stableContext })
 }
 
 export const USER_PREFERENCE_PROFILE_PATH = PROFILE_PATH
@@ -274,6 +287,7 @@ export function createUserPreferenceProfile({ store, now = Date.now }) {
     return context ? { ...context, profileId: selected.profileId } : null
   }
   return Object.freeze({ read, manage, stableContext,
+    save: input => mutateProfile('save', input),
     saveDraft: input => mutateProfile('saveDraft', input),
     confirm: input => mutateProfile('confirm', input),
     updateConfirmed: input => mutateProfile('updateConfirmed', input),

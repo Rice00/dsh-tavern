@@ -3728,7 +3728,7 @@ export async function apply(ctx) {
     })
   }
 
-  const controlledToolNames = new Set(['bash', 'pwsh', ...dshFileToolNames, 'skill', 'tavern_read_skill_reference', 'web_search', 'tavern_save_skill', ...cordisToolNames, 'tavern_user_profile_read', 'tavern_user_profile_save_draft', 'tavern_user_profile_confirm', 'tavern_read_card', 'tavern_read_card_raw', 'tavern_read_play_chat', 'tavern_read_script', 'tavern_recall_history', 'worldbook_search', 'tavern_read_worldbook', 'tavern_update_worldbook', 'tavern_read_preset', 'tavern_update_preset', 'tavern_copy_card', 'tavern_update_card', 'tavern_restore_card', 'tavern_validate_card', 'tavern_test_response'])
+  const controlledToolNames = new Set(['bash', 'pwsh', ...dshFileToolNames, 'skill', 'tavern_read_skill_reference', 'web_search', 'tavern_save_skill', ...cordisToolNames, 'tavern_user_profile_read', 'tavern_user_profile_save', 'tavern_user_profile_confirm', 'tavern_read_card', 'tavern_read_card_raw', 'tavern_read_play_chat', 'tavern_read_script', 'tavern_recall_history', 'worldbook_search', 'tavern_read_worldbook', 'tavern_update_worldbook', 'tavern_read_preset', 'tavern_update_preset', 'tavern_copy_card', 'tavern_update_card', 'tavern_restore_card', 'tavern_validate_card', 'tavern_test_response'])
   const foregroundStrategies = createForegroundOrchestrationStrategies({
     compatibility: {
       beforeTurn: async function (input) {
@@ -4088,8 +4088,8 @@ export async function apply(ctx) {
     }))
 
     tools.register(defineTool({
-      name: 'tavern_user_profile_save_draft',
-      description: '保存用户画像草案。只记录问卷原始回答、Agent 分析和拟注入摘要；不会覆盖已确认画像，也不会自动注入游玩。将当前内容展示给用户核对；用户已明确确认相同内容时可直接调用确认工具，不重复询问。revision 仅用于工具校验，不作为画像版本号展示。',
+      name: 'tavern_user_profile_save',
+      description: '将整理好的长期偏好直接保存到当前用户画像，更新同一份资料。用户要求建立或修改画像即授权保存，无需额外确认；保存后简短报告，用户可随时要求修改。不会自动启用画像。',
       parameters: {
         rawAnswers: {
           type: 'array', required: true,
@@ -4114,19 +4114,19 @@ export async function apply(ctx) {
       },
       output: {
         schema: { type: 'object', additionalProperties: false, properties: {
-          draftRevision: { type: 'integer', required: true },
+          saved: { type: 'boolean', required: true },
           hasConfirmed: { type: 'boolean', required: true }
         } },
         render: function (_args, value) {
-          return [{ type: 'text', text: '当前画像修改已暂存。展示内容供用户核对；用户已明确确认当前内容时直接保存，不重复询问。' }]
+          return [{ type: 'text', text: '用户画像已保存。用户提出修改时继续更新当前画像。' }]
         }
       },
       async execute(args, exec) {
         const sessionId = exec && exec.agent && exec.agent.session ? exec.agent.session.id : ''
         const chat = await chatForSession(sessionId)
         if (chat === undefined || (chat.mode || 'story') !== 'card') throw new Error('用户画像只能在卡片工作台中管理')
-        const value = await userPreferenceProfile.saveDraft({ ...args, profileId: chat.userProfileId || 'default' })
-        return { draftRevision: Number(value.draft.revision) || 0, hasConfirmed: value.hasConfirmed }
+        const value = await userPreferenceProfile.save({ ...args, profileId: chat.userProfileId || 'default' })
+        return { saved: true, hasConfirmed: value.hasConfirmed }
       }
     }))
 

@@ -3728,7 +3728,7 @@ export async function apply(ctx) {
     })
   }
 
-  const controlledToolNames = new Set(['bash', 'pwsh', ...dshFileToolNames, 'skill', 'tavern_read_skill_reference', 'web_search', 'tavern_save_skill', ...cordisToolNames, 'tavern_user_profile_read', 'tavern_user_profile_save_draft', 'tavern_user_profile_confirm', 'tavern_read_card', 'tavern_read_card_raw', 'tavern_read_play_chat', 'tavern_read_script', 'tavern_recall_history', 'worldbook_search', 'tavern_read_worldbook', 'tavern_update_worldbook', 'tavern_read_preset', 'tavern_update_preset', 'tavern_update_card', 'tavern_restore_card', 'tavern_validate_card', 'tavern_test_response'])
+  const controlledToolNames = new Set(['bash', 'pwsh', ...dshFileToolNames, 'skill', 'tavern_read_skill_reference', 'web_search', 'tavern_save_skill', ...cordisToolNames, 'tavern_user_profile_read', 'tavern_user_profile_save_draft', 'tavern_user_profile_confirm', 'tavern_read_card', 'tavern_read_card_raw', 'tavern_read_play_chat', 'tavern_read_script', 'tavern_recall_history', 'worldbook_search', 'tavern_read_worldbook', 'tavern_update_worldbook', 'tavern_read_preset', 'tavern_update_preset', 'tavern_copy_card', 'tavern_update_card', 'tavern_restore_card', 'tavern_validate_card', 'tavern_test_response'])
   const foregroundStrategies = createForegroundOrchestrationStrategies({
     compatibility: {
       beforeTurn: async function (input) {
@@ -4206,6 +4206,27 @@ export async function apply(ctx) {
     }))
 
     tools.register(defineTool({
+      name: 'tavern_copy_card',
+      description: '在卡片工作台创建独立人物卡副本，复制当前工作数据和源 PNG 封面，生成独立资源 ID；重名时拒绝覆盖。返回副本 path 与 imageCopied。不会切换当前卡，也不复制外部世界书或剧本绑定；后续编辑须显式使用返回路径。',
+      parameters: {
+        path: { type: 'string', required: true, description: '源人物卡路径，如 cards/角色.json' },
+        name: { type: 'string', required: true, description: '副本名称，如 角色 MVU版本；须使用未占用名称' }
+      },
+      output: {
+        schema: { type: 'object', additionalProperties: false, properties: {
+          path: { type: 'string', required: true }, sourcePath: { type: 'string', required: true }, imageCopied: { type: 'boolean', required: true }
+        } },
+        render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }]
+      },
+      isConcurrencySafe: () => false,
+      async execute(args, exec) {
+        const chat = await chatForSession(exec?.agent?.session?.id || '')
+        if (!chat || chat.mode !== 'card') throw new Error('人物卡复制只能在卡片工作台中执行')
+        return await fileResources.copyCard(args.path, args.name)
+      }
+    }))
+
+    tools.register(defineTool({
       name: 'tavern_validate_card',
       description: '只读校验人物卡 JSON、字段类型和 MVU 扩展结构。写入后必须调用，始终读取磁盘文件。不会执行脚本、自动修复或覆盖文件。',
       parameters: { path: { type: 'string', description: '可选的 cards/... 相对路径；省略时检查当前已保存人物卡' } },
@@ -4644,7 +4665,7 @@ export async function apply(ctx) {
 
     tools.register(defineTool({
       name: 'tavern_update_card',
-      description: '仅当用户明确要求或确认修改时，立即保存最小的人物卡变更；保存后调用 tavern_validate_card 检查实际文件。空白工作台会直接创建并绑定正式人物卡文件，必须同时具备角色名和玩家身份。本工具保存人物卡数据，不会为新副本复制源卡封面；普通卡转 MVU 等另存操作还须用文件工具保留已确认数据根下 originals/cards 中的源 PNG，按副本 JSON 的文件名保存且不覆盖已有文件，不能只交付 JSON 就宣称保留图片。只讨论时不要调用。',
+      description: '仅当用户明确要求或确认修改时，立即保存最小的人物卡变更；保存后调用 tavern_validate_card 检查实际文件。空白工作台会直接创建并绑定正式人物卡文件，必须同时具备角色名和玩家身份。另存为副本时先调用 tavern_copy_card，由工具保留源卡 PNG。只讨论时不要调用。',
       parameters: {
         fields: {
           type: 'object', additionalProperties: false,

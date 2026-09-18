@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { diffJson } from './json-mutation.js'
 import { createFullPromptTemplateSync } from './full-prompt-template-sync.js'
-import { createJsonProjectionCache } from './immutable-json-projection.js'
+import { createJsonValueProjectionCache } from './immutable-json-projection.js'
 import { resourceSaveSummary, observeResourceSave } from './resource-save-summary.js'
 import { projectFullPromptTemplateState, applyFullPromptTemplateState, validateFullPromptTemplateSave, expandFullPromptTemplatePatch } from './full-prompt-template-state.js'
 import { mutateScriptPrompts } from './tavern-script-prompts.js'
@@ -40,7 +40,7 @@ const MVU_RETRY_AFTER_MS = 3100
  */
 export function createTavernScriptHostAdapter(options = {}) {
   const syncTemplateState = createFullPromptTemplateSync()
-  const templateCharacters = createJsonProjectionCache({ capacity: 8, maxBytes: 16 * 1024 * 1024 })
+  const templateCharacters = createJsonValueProjectionCache({ capacity: 8, maxBytes: 16 * 1024 * 1024 })
   const mutationTails = new Map()
   const settlementTransactions = new Map()
 
@@ -410,8 +410,7 @@ export function createTavernScriptHostAdapter(options = {}) {
     const extensionSettings = options.fullExtensionSettings ? await options.fullExtensionSettings.read() : {}
     extensionSettings.variables = { ...extensionSettings.variables, global: options.globalVariables ? await options.globalVariables.read() : {} }
     if (!Array.isArray(extensionSettings.regex)) extensionSettings.regex = []
-    const characters = templateCharacters(JSON.stringify([chat.cardPath, worldName]), JSON.stringify(card), text => {
-      const source = JSON.parse(text)
+    const characters = templateCharacters(JSON.stringify([chat.cardPath, worldName]), card, source => {
       return [{ ...source, data: { ...source, extensions: { ...source.extensions, ...(worldName ? { world: worldName } : {}) } } }]
     })
     const snapshot = {

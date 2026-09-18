@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -16,6 +16,8 @@ async function fixture(t) {
   t.after(() => rm(dataRoot, { recursive: true, force: true }))
   const globals = createPromptTemplateGlobalVariables(createProfileDataStore({ dataRoot }))
   await globals.save({ shared: 'before' })
+  const cardPath = path.join(dataRoot, 'card.json')
+  await writeFile(cardPath, JSON.stringify({ name: 'Test', extensions: { nested: { value: 'before' } } }))
   const chat = {
     id: 'chat', sessionId: 'session', cardPath: 'cards/test.json', mode: 'story',
     _storageRevision: 1, tavernHelperLifecycleRevision: 1,
@@ -26,7 +28,7 @@ async function fixture(t) {
   const adapter = createTavernScriptHostAdapter({
     resolveChat: async () => structuredClone(chat),
     writeChat: async () => { throw new Error('Unexpected chat write') },
-    readCard: async () => ({ name: 'Test' }),
+    readCard: async () => JSON.parse(await readFile(cardPath, 'utf8')),
     worldBooks: { bound: async () => null }, scriptDispatch: {},
     globalVariables: globals, modelFor: () => model
   })
@@ -44,6 +46,7 @@ async function fixture(t) {
       seen.push({
         shared: connection.snapshot.extension_settings.variables.global.shared,
         model: connection.snapshot.dsh.model,
+        character: structuredClone(connection.snapshot.characters[0]),
         text: connection.snapshot.chat[0].mes,
         scratch: connection.snapshot.scratch
       })
@@ -53,7 +56,7 @@ async function fixture(t) {
   } })
   t.after(() => tasks.dispose())
   return {
-    dataRoot, responses, seen,
+    dataRoot, cardPath, responses, seen,
     setModel(value) { model = value },
     async run(change) {
       afterFirst = change
@@ -85,6 +88,15 @@ test('聊天 revision 不变时，批次下一条仍重新读取宿主模型', a
   const run = await fixture(t)
   await run.run(async () => run.setModel('after'))
   assert.deepEqual(run.seen.map(value => value.model), ['before', 'after'])
+})
+
+test('人物卡投影命中后，批次下一条仍可见外部文件的嵌套变更和删除', async t => {
+  const run = await fixture(t)
+  await run.run(() => writeFile(run.cardPath, JSON.stringify({ name: 'Changed', extensions: { added: true } })))
+  assert.equal(run.seen[0].character.extensions.nested.value, 'before')
+  assert.equal(run.seen[1].character.name, 'Changed')
+  assert.deepEqual(run.seen[1].character.extensions, { added: true })
+  assert.deepEqual(run.seen[1].character.data.extensions, { added: true })
 })
 
 test('批次下一条恢复未保存的任意上下文修改，不仅恢复作用域', async t => {

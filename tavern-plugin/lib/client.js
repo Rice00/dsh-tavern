@@ -11938,6 +11938,28 @@ window.__ModuleLoader__.load({
 		const playControlsFeature = createPlayControlsFeatureModule();
 		const assistantRendererFeature = createTavernAssistantRendererFeatureModule();
 
+        function requestContextSections(request) {
+            if (!request) return [];
+            const sections = [];
+            if (request.system !== undefined && request.system !== "" && request.system !== null) sections.push({ title: "系统提示词", value: request.system });
+            (request.messages || []).forEach((message, index) => {
+                const names = (message.source?.sections || []).map(section => section.name);
+                const phases = [["front", "前段预设"], ["middle", "中段预设"], ["back", "末尾预设投影"]]
+                    .filter(([phase]) => names.includes("tavern:runtime-preset-" + phase)).map(([, label]) => label);
+                sections.push({ title: (index + 1) + ". " + message.role + (phases.length ? " · " + phases.join("、") : ""), value: message });
+            });
+            if (request.tools !== undefined) sections.push({ title: "工具定义（独立请求字段）", value: request.tools });
+            sections.push({ title: "其他调用参数", value: Object.fromEntries(Object.entries(request).filter(([key]) => !["system", "messages", "tools"].includes(key))) });
+            return sections.map(section => ({ ...section, text: typeof section.value === "string" ? section.value : JSON.stringify(section.value, null, 2) }));
+        }
+        function FullRequestProjection(props) {
+            const [open, setOpen] = React.useState(false);
+            const text = React.useMemo(() => open ? JSON.stringify(props.request, null, 2) : "", [open, props.request]);
+            return React.createElement("details", { onToggle: event => setOpen(event.currentTarget.open) },
+                React.createElement("summary", null, "完整投影 JSON（原始顺序）"),
+                open ? React.createElement("pre", { style: { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } }, text) : null);
+        }
+
 		function FullRequestContextView(props) {
 			const h = React.createElement;
             const [record, setRecord] = React.useState(null);
@@ -11956,12 +11978,7 @@ window.__ModuleLoader__.load({
                 return () => { active = false; };
             }, [props.contextSessionId, refresh]);
 			const request = record && record.request;
-			const sections = React.useMemo(() => request ? [
-				{ title: "系统提示词", value: request.system },
-				...(request.messages || []).map((message, index) => ({ title: (index + 1) + ". " + message.role, value: message })),
-				{ title: "工具定义", value: request.tools },
-				{ title: "其他调用参数", value: Object.fromEntries(Object.entries(request).filter(([key]) => !["system", "messages", "tools"].includes(key))) }
-			].filter(section => section.value !== undefined).map(section => ({ ...section, text: typeof section.value === "string" ? section.value : JSON.stringify(section.value, null, 2) })) : [], [request]);
+            const sections = React.useMemo(() => requestContextSections(request), [request]);
 			return h("div", { style: { height: "100%", overflow: "auto", padding: "16px", boxSizing: "border-box" } },
 				h("h3", null, "完整上下文"),
 				h("p", null, "最近一次前台调用的完整上下文，包含全部历史和工具。取自发送时记录（供应商协议转换前）。"),
@@ -11974,7 +11991,8 @@ window.__ModuleLoader__.load({
 				loading ? h("p", null, "正在读取完整上下文…") : null,
 				sections.filter(section => !query || (section.title + section.text).toLowerCase().includes(query.toLowerCase())).map((section, index) => h("details", { key: record.id + ":" + index, open: !!query },
 					h("summary", null, section.title + " · " + section.text.length + " 字符"),
-					h("pre", { style: { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } }, section.text)))
+					h("pre", { style: { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } }, section.text))),
+                request ? h(FullRequestProjection, { key: record.id, request }) : null
 			);
 		}
 

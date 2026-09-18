@@ -1313,7 +1313,7 @@ test('普通游玩投影对话预设快照，兼容模式继续按 SillyTavern �
 	assert.match(compile, /const snapshot = await resolveChatRuntimePreset\(chat\)/)
 	assert.match(compile, /presetPath === '' \? createCleanCompatibilityPreset\(\) : snapshot\.compatibilityPreset/)
 	assert.match(compile, /presetPath === '' \? \{\} : snapshot\.compatibilityPresetDocument/)
-	assert.match(compile, /Array\.isArray\(snapshot && snapshot\.regexScripts\) \? snapshot\.regexScripts : \[\]/)
+	assert.match(compile, /composeTavernRegexScripts\(extensions, snapshot\?\.regexScripts\)/)
 	assert.doesNotMatch(compile, /bypassPlans/)
 	assert.match(serverSource, /return chat\.runtimePresetSnapshot && typeof chat\.runtimePresetSnapshot === 'object'/)
 	assert.match(turnOrchestrationSource, /presetMiddleInstructions\(snapshot\)/)

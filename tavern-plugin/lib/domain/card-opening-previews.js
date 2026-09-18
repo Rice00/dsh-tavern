@@ -1,3 +1,4 @@
+import { composeTavernRegexScripts } from './card-extension-reading.js'
 import { projectTavernHostHtml } from './tavern-host-script-projection.js'
 import { cardOpeningChoices, cardOpeningSwipes } from './card-openings.js'
 import { projectOpeningPreview } from './runtime-content-projection.js'
@@ -18,9 +19,8 @@ export async function projectCardOpeningPreviews(input = {}) {
   const extensions = input.extensions && typeof input.extensions === 'object' ? input.extensions : {}
   const openings = cardOpeningChoices(card)
   const userName = str(input.userName).trim() || '你'
-  const cardRegexScripts = Array.isArray(extensions.regexScripts) ? extensions.regexScripts : []
   const presetRegexScripts = Array.isArray(input.presetRegexScripts) ? input.presetRegexScripts : []
-  const regexScripts = cardRegexScripts.concat(presetRegexScripts)
+  const regexScripts = composeTavernRegexScripts(extensions, presetRegexScripts)
   const { swipes, openingIds } = cardOpeningSwipes(card)
   return {
     openings: openings.map(function (opening, index) {

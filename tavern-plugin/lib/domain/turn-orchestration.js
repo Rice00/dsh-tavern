@@ -1,3 +1,4 @@
+import { composeTavernRegexScripts } from './card-extension-reading.js'
 import { scriptPromptFrameInputs, consumeScriptPrompts } from './tavern-script-prompts.js'
 import { rememberTavernResources } from './workspace-resources.js'
 import { projectBackgroundInput } from './runtime-content-projection.js'
@@ -304,7 +305,7 @@ export function createTurnOrchestrator(options) {
         ? await store.readCardExtensions(cardPath)
         : null
       const presetRegexScripts = await resolvePresetRegexScripts(chat)
-      const regexScripts = (Array.isArray(extensions && extensions.regexScripts) ? extensions.regexScripts : []).concat(presetRegexScripts)
+      const regexScripts = composeTavernRegexScripts(extensions, presetRegexScripts)
       runtimeUserText = projectBackgroundInput(runtimeUserText, regexScripts, 1).text
       if (typeof options.projectUserTemplate === 'function' && runtimeUserText !== '') {
         const projected = await options.projectUserTemplate({chat,card,turn,text:runtimeUserText})
@@ -544,7 +545,7 @@ export function createTurnOrchestrator(options) {
       const projectionText = assistantText
       reply = projectReply(sourceText, {
         projectionText,
-        regexScripts: (Array.isArray(extensions && extensions.regexScripts) ? extensions.regexScripts : []).concat(presetRegexScripts),
+        regexScripts: composeTavernRegexScripts(extensions, presetRegexScripts),
         placement: 2,
         isEdit: false,
         depth: 0

@@ -443,3 +443,17 @@ test('正式会话默认保留10分钟，返回复用原脚本，第二次离开
   await h.advance(600000); assert.equal(original.disposed, 1)
   assert.equal(h.gate.status('A').present, false)
 })
+
+test('会话到期先解除视图订阅再淘汰快照，活动会话不淘汰', async () => {
+  const h = harness({ retentionMs: 600000 }), evicted = []
+  h.liveView.evict = id => {
+    assert.equal(h.subscriptions.some(s => s.id === id && s.active), false)
+    evicted.push(id)
+  }
+  const owner = h.client.createTavernScriptSessionOwner(h.options)
+  owner.start(); await h.poll()
+  h.list.set({ current: 'B' }); await h.poll()
+  await h.advance(599999); assert.deepEqual(evicted, [])
+  await h.advance(1); assert.deepEqual(evicted, ['A'])
+  owner.dispose()
+})

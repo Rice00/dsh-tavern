@@ -288,6 +288,7 @@ window.__ModuleLoader__.load({
 
 		const liveTavernView = createLiveTavernViewModule({
 			loadTimeoutMs: 10000,
+			cacheRetentionMs: 10 * 60 * 1000,
 			timeoutRetryDelayMs: 5000,
 			load: function (sessionId, request) { return rpc("getSession", {}, sessionId, request); },
 			shouldPoll: function (view) { return !!(view && view.activity && view.activity.busy); },
@@ -435,8 +436,9 @@ window.__ModuleLoader__.load({
 		// @include modules/history-window.js
 
 		function useLiveTavernView(sessionId, revision) {
-			const [state, setState] = React.useState(function () { return liveTavernView.getSnapshot(sessionId); });
-			React.useEffect(function () { return liveTavernView.subscribe(sessionId, setState); }, [sessionId]);
+			const subscribe = React.useCallback(function (notify) { return liveTavernView.subscribe(sessionId, notify); }, [sessionId]);
+			const snapshot = React.useCallback(function () { return liveTavernView.getSnapshot(sessionId); }, [sessionId]);
+			const state = React.useSyncExternalStore(subscribe, snapshot, snapshot);
 			const previous = React.useRef({ sessionId: sessionId, revision: revision });
 			React.useEffect(function () {
 				const last = previous.current;
@@ -4187,6 +4189,7 @@ window.__ModuleLoader__.load({
 				records.delete(record.sessionId);
 				if (record.stopRetention) record.stopRetention();
 				if (record.stopView) record.stopView();
+				if (views.evict) views.evict(record.sessionId);
 				record.execution.dispose();
 				record.template.dispose();
 			}

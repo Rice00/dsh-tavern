@@ -27,7 +27,7 @@ test('全局与本局 Skill 面板分别保存，失败不改变开关显示', a
   for (const globalDefaults of [true, false]) {
     let cursor = 0, fail = false
     const states = [], effects = [], calls = []
-    const render = vm.runInNewContext('(' + source.slice(source.indexOf('function TavernConversationWritingSkills(props)'), source.indexOf('function TavernConversationSettingsTab(props)')).trim() + ')', {
+    const render = vm.runInNewContext('(' + source.slice(source.indexOf('function TavernConversationWritingSkills(props)'), source.indexOf('function TavernDefaultModelSetting(props)')).trim() + ')', {
       React: { useState(initial) { const i = cursor++; if (!(i in states)) states[i] = initial; return [states[i], value => { states[i] = value }] }, useEffect(fn) { effects.push(fn) }, createElement: (type, props, ...children) => ({ type, props, children }) },
       rpc: async (method, args) => { calls.push({ method, args }); if (fail) throw Error('保存失败'); return { skills: [{ name: 'writing', description: '写作', enabled: true }] } }
     })

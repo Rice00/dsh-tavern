@@ -137,6 +137,7 @@ import { createScriptContinuity } from './domain/script-continuity.js'
 import { filterSkillMessages } from './domain/skill-visibility.js'
 import { createStoryTimeline } from './domain/story-timeline.js'
 import { createStoryCompactionRequest, usesStoryCompaction } from './domain/story-compaction.js'
+import { installCompactionRequestProjection } from './domain/compaction-request.js'
 import { resolveTavernDataRoot } from './domain/tavern-data.js'
 import { FileSystemSkillProvider } from '@deepseek-ai/dsh-skill-filesystem'
 import { createTavernSkillProvider } from './domain/tavern-skill-provider.js'
@@ -3898,6 +3899,7 @@ export async function apply(ctx) {
   })
   const fullTemplateRequests = new WeakMap()
   installWorkspaceInstructionPresentation(ctx, async sessionId => backgroundAgentRunner.owns(sessionId) || Boolean(await chatForSession(sessionId)))
+  installCompactionRequestProjection(ctx, async sessionId => backgroundAgentRunner.owns(sessionId) || Boolean(await chatForSession(sessionId)))
 
   ctx.on('llm/stream', function (options, next) {
     const sessionId = str(options && options.sessionId)

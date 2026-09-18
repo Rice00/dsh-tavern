@@ -1,3 +1,5 @@
+import { createWorldbookBm25 } from './worldbook-bm25.js'
+
 export const WORLD_BOOK_FILTER_TOOLS = [
   { name: 'worldbook_candidate_read', description: '读取本轮候选的完整渲染正文，编号只能来自候选列表。',
     parameters: { type: 'object', properties: { refs: { type: 'array', items: { type: 'string' } } }, required: ['refs'], additionalProperties: false } },
@@ -5,11 +7,19 @@ export const WORLD_BOOK_FILTER_TOOLS = [
     parameters: { type: 'object', properties: { selected: { type: 'array', items: { type: 'string' } } }, required: ['selected'], additionalProperties: false } }
 ]
 export function createWorldbookFilter({ runAgent, selection, beginTask }) {
-  return async ({ chat, userText, candidates }) => {
+  const shortlist = createWorldbookBm25()
+  return async ({ chat, userText, candidates, corpus }) => {
     const estimatedTokens = candidates.reduce((sum, item) => sum + item.tokenCost, 0)
     const metrics = { candidateCount: candidates.length, estimatedTokens, thresholds: { count: 5, estimatedTokens: 2000 } }
     if (candidates.length <= 5 && estimatedTokens <= 2000) return { ...metrics, ran: false, selected: candidates.map(item => item.ref) }
-    const started = Date.now(), byRef = new Map(candidates.map(item => [item.ref, item]))
+    const started = Date.now()
+    const originalCandidates = candidates
+    const latestBody = (chat.messages || []).findLast(message => message.role === 'assistant')
+    const coarse = shortlist({ candidates, corpus, query: latestBody?.sourceText ?? latestBody?.text ?? '' })
+    candidates = coarse.candidates
+    metrics.bm25 = coarse.diagnostics
+    const retainedRefs = new Set(candidates.map(item => item.ref))
+    const byRef = new Map(candidates.map(item => [item.ref, item]))
     let selected
     const taskRun = await beginTask(chat)
     let run
@@ -57,6 +67,6 @@ export function createWorldbookFilter({ runAgent, selection, beginTask }) {
       throw error
     }
     return { ...metrics, ran: true, elapsedMs: Date.now() - started, traceSessionId: run.traceSessionId,
-      decisions: candidates.map(item => ({ ref: item.ref, keep: selected.includes(item.ref), reason: selected.includes(item.ref) ? '模型选择保留' : '模型未选择保留' })), selected }
+      decisions: originalCandidates.map(item => ({ ref: item.ref, keep: selected.includes(item.ref), reason: !retainedRefs.has(item.ref) ? 'BM25 粗筛排除' : selected.includes(item.ref) ? '模型选择保留' : '模型未选择保留' })), selected }
   }
 }

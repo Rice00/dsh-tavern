@@ -55,7 +55,7 @@ export function createForegroundWorldbook({ bound, runtime, globalVariables, sca
               text: projected.renderedEntries.find(output => output.ref === entry.ref).text,
               match: recalled.diagnostics.find(item => item.ref === entry.ref)?.match
             }))
-            screening = await filterCandidates({ chat, card, userText, candidates })
+            screening = await filterCandidates({ chat, card, userText, candidates, corpus: (worldBook?.view?.entries || []).filter(entry => entry.enabled !== false && !isMvuUpdateEntry(entry)) })
             allowedRefs = new Set(screening.selected)
             screeningDone = true
             continue

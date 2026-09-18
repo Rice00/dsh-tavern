@@ -9811,6 +9811,28 @@ window.__ModuleLoader__.load({
 		const playControlsFeature = createPlayControlsFeatureModule();
 		const assistantRendererFeature = createTavernAssistantRendererFeatureModule();
 
+        function requestContextSections(request) {
+            if (!request) return [];
+            const sections = [];
+            if (request.system !== undefined && request.system !== "" && request.system !== null) sections.push({ title: "系统提示词", value: request.system });
+            (request.messages || []).forEach((message, index) => {
+                const names = (message.source?.sections || []).map(section => section.name);
+                const phases = [["front", "前段预设"], ["middle", "中段预设"], ["back", "末尾预设投影"]]
+                    .filter(([phase]) => names.includes("tavern:runtime-preset-" + phase)).map(([, label]) => label);
+                sections.push({ title: (index + 1) + ". " + message.role + (phases.length ? " · " + phases.join("、") : ""), value: message });
+            });
+            if (request.tools !== undefined) sections.push({ title: "工具定义（独立请求字段）", value: request.tools });
+            sections.push({ title: "其他调用参数", value: Object.fromEntries(Object.entries(request).filter(([key]) => !["system", "messages", "tools"].includes(key))) });
+            return sections.map(section => ({ ...section, text: typeof section.value === "string" ? section.value : JSON.stringify(section.value, null, 2) }));
+        }
+        function FullRequestProjection(props) {
+            const [open, setOpen] = React.useState(false);
+            const text = React.useMemo(() => open ? JSON.stringify(props.request, null, 2) : "", [open, props.request]);
+            return React.createElement("details", { onToggle: event => setOpen(event.currentTarget.open) },
+                React.createElement("summary", null, "完整投影 JSON（原始顺序）"),
+                open ? React.createElement("pre", { style: { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } }, text) : null);
+        }
+
 		function FullRequestContextView(props) {
 			const h = React.createElement;
             const [record, setRecord] = React.useState(null);
@@ -9830,19 +9852,7 @@ window.__ModuleLoader__.load({
             }, [props.contextSessionId, refresh]);
 			const request = record && record.request;
             const text = React.useMemo(() => request ? JSON.stringify(request, null, 2) : "", [request]);
-            const editor = React.useRef(null);
-            const [searchStatus, setSearchStatus] = React.useState("");
-            function findNext() {
-                if (!query || !editor.current) return;
-                const input = editor.current;
-                const haystack = text.toLowerCase(), needle = query.toLowerCase();
-                let index = haystack.indexOf(needle, input.selectionEnd);
-                if (index < 0) index = haystack.indexOf(needle);
-                if (index < 0) { setSearchStatus("未找到"); return; }
-                setSearchStatus(""); input.focus(); input.setSelectionRange(index, index + query.length);
-                const line = text.slice(0, index).split("\n").length - 1;
-                input.scrollTop = Math.max(0, line * 20 - input.clientHeight / 2);
-            }
+            const sections = React.useMemo(() => requestContextSections(request), [request]);
             function downloadJson() {
                 const url = URL.createObjectURL(new Blob([text], { type: "application/json;charset=utf-8" }));
                 const link = document.createElement("a"); link.href = url; link.download = "request-context.json";
@@ -9853,18 +9863,16 @@ window.__ModuleLoader__.load({
 				h("p", null, "最近一次前台调用的完整上下文，包含全部历史和工具。取自发送时记录（供应商协议转换前）。"),
 				h("button", { onClick: () => setRefresh(value => value + 1) }, "刷新"),
                 record ? h("p", null, "第 " + record.turn + " 轮 · 步骤 " + record.step + " · " + new Date(record.createdAt).toLocaleString() + " · " + (request.provider || "") + " / " + (request.model || "")) : null,
-				h("input", { "aria-label": "搜索完整上下文", placeholder: "搜索内容", value: query, onChange: e => { setQuery(e.target.value); setSearchStatus(""); }, onKeyDown: e => { if (e.key === "Enter") findNext(); } }),
-                h("button", { disabled: !query || !request, onClick: findNext }, "查找下一个"),
-                h("span", { role: "status" }, searchStatus),
+				h("input", { "aria-label": "搜索完整上下文", placeholder: "搜索内容", value: query, onChange: e => setQuery(e.target.value) }),
 				request ? h("button", { onClick: async () => { try { await navigator.clipboard.writeText(text); } catch (e) { setError("复制失败：" + String(e.message || e)); } } }, "复制完整 JSON") : null,
 				error ? h("p", { role: "alert" }, error) : null,
 				!loading && !record && !error ? h("p", null, "暂无已记录的模型调用。旧会话未记录的请求不会补造；发送新消息后刷新查看。") : null,
 				loading ? h("p", null, "正在读取完整上下文…") : null,
                 request ? h("button", { onClick: downloadJson }, "下载 JSON") : null,
-                request ? h("div", null,
-                    h("p", null, "request-context.json · " + text.length + " 字符"),
-                    h("textarea", { ref: editor, "aria-label": "完整上下文 JSON", readOnly: true, spellCheck: false, wrap: "off", value: text,
-                        style: { width: "100%", height: "65vh", boxSizing: "border-box", fontFamily: "monospace", fontSize: "13px", lineHeight: "20px", tabSize: 2 } })) : null
+                sections.filter(section => !query || (section.title + section.text).toLowerCase().includes(query.toLowerCase())).map((section, index) => h("details", { key: record.id + ":" + section.title, open: !!query },
+                    h("summary", null, section.title + " · " + section.text.length + " 字符"),
+                    h("pre", { style: { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } }, section.text))),
+                request ? h(FullRequestProjection, { key: record.id, request }) : null
 			);
 		}
 

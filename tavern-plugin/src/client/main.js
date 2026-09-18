@@ -9858,21 +9858,31 @@ window.__ModuleLoader__.load({
                 const link = document.createElement("a"); link.href = url; link.download = "request-context.json";
                 document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
             }
-			return h("div", { className: "dsh-tavern-full-context", style: { width: "100%", minWidth: 0, padding: "16px", boxSizing: "border-box", overflowWrap: "anywhere" } },
-				h("h3", null, "完整上下文"),
-				h("p", null, "最近一次前台调用的完整上下文，包含全部历史和工具。取自发送时记录（供应商协议转换前）。"),
-				h("button", { onClick: () => setRefresh(value => value + 1) }, "刷新"),
-                record ? h("p", null, "第 " + record.turn + " 轮 · 步骤 " + record.step + " · " + new Date(record.createdAt).toLocaleString() + " · " + (request.provider || "") + " / " + (request.model || "")) : null,
-				h("input", { "aria-label": "搜索完整上下文", placeholder: "搜索内容", value: query, onChange: e => setQuery(e.target.value) }),
-				request ? h("button", { onClick: async () => { try { await navigator.clipboard.writeText(text); } catch (e) { setError("复制失败：" + String(e.message || e)); } } }, "复制完整 JSON") : null,
-				error ? h("p", { role: "alert" }, error) : null,
-				!loading && !record && !error ? h("p", null, "暂无已记录的模型调用。旧会话未记录的请求不会补造；发送新消息后刷新查看。") : null,
-				loading ? h("p", null, "正在读取完整上下文…") : null,
-                request ? h("button", { onClick: downloadJson }, "下载 JSON") : null,
-                sections.filter(section => !query || (section.title + section.text).toLowerCase().includes(query.toLowerCase())).map((section, index) => h("details", { key: record.id + ":" + section.title, open: !!query },
-                    h("summary", null, section.title + " · " + section.text.length + " 字符"),
-                    h("pre", { style: { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } }, section.text)))
-			);
+            const visibleSections = sections.filter(section => !query || (section.title + section.text).toLowerCase().includes(query.toLowerCase()));
+            return h("section", { className: "dsh-tavern-full-context" },
+                h("header", { className: "dsh-context-header" },
+                    h("div", null, h("h3", null, "完整上下文"), h("p", null, "最近一次请求 · 系统提示、工具与完整消息")),
+                    h("button", { disabled: loading, onClick: () => setRefresh(value => value + 1) }, loading ? "读取中…" : "刷新")),
+                record ? h("div", { className: "dsh-context-meta" },
+                    h("span", { className: "dsh-context-badge" }, "第 " + record.turn + " 轮 · 步骤 " + record.step),
+                    h("span", null, request.model || ""),
+                    h("time", null, new Date(record.createdAt).toLocaleString())) : null,
+                h("div", { className: "dsh-context-toolbar" },
+                    h("input", { type: "search", "aria-label": "搜索完整上下文", placeholder: "搜索提示词、消息或工具…", value: query, onChange: e => setQuery(e.target.value) }),
+                    request ? h("button", { onClick: async () => { try { await navigator.clipboard.writeText(text); } catch (e) { setError("复制失败：" + String(e.message || e)); } } }, "复制 JSON") : null,
+                    request ? h("button", { onClick: downloadJson }, "下载 JSON") : null),
+                error ? h("p", { className: "dsh-context-empty", role: "alert" }, error) : null,
+                !loading && !record && !error ? h("p", { className: "dsh-context-empty" }, "暂无请求记录，发送消息后刷新查看。") : null,
+                loading && !record ? h("p", { className: "dsh-context-empty" }, "正在读取完整上下文…") : null,
+                request ? h("div", { className: "dsh-context-list" },
+                    visibleSections.map(section => h("details", { key: record.id + ":" + section.title, open: !!query },
+                        h("summary", null, h("span", { className: "dsh-context-chevron", "aria-hidden": true }, "›"),
+                            h("span", { className: "dsh-context-section-title" }, section.title),
+                            h("span", { className: "dsh-context-count" }, section.text.length.toLocaleString() + " 字符")),
+                        h("pre", null, section.text))),
+                    query && !visibleSections.length ? h("p", { className: "dsh-context-empty" }, "没有匹配的内容") : null) : null,
+                request ? h("p", { className: "dsh-context-footnote" }, "发送时的上下文快照 · 供应商协议转换前 · 消息顺序保持不变") : null
+            );
 		}
 
 

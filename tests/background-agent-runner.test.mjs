@@ -1,3 +1,4 @@
+import { sharedWorldbookSearch } from '../tavern-plugin/lib/domain/worldbook-search.js'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
@@ -1443,4 +1444,50 @@ for (const task of ['settlement', 'image']) test(task + ' 已有会话在明确�
     assert.equal(seen[1], seen[2])
     assert.equal(session.events.filter(e => e.data?.source?.cardContextRevision === 1).length, 1)
   } finally { await runner.dispose() }
+})
+
+test('世界书检索在候选、结算、人物设计和筛选复用后台会话，查询始终归属当前前台对话', async () => {
+  const registered = new Map(), calls = [], hooks = new Map()
+  let currentTask
+  const shared = sharedWorldbookSearch(async (sessionId, args) => {
+    calls.push({ sessionId, args, task: currentTask })
+    return { entries: [{ ref: 'entry:62', text: '少林门规' }] }
+  })
+  const runner = createBackgroundAgentRunner({
+    id: () => 'background-worldbook-shared', sharedTools: [shared],
+    agents: {
+      get: () => ({ id: 'parent', session: { header: {} } }),
+      async create(options) {
+        await options.setup({
+          systemPrompt: { section() {}, suppressRuntimeContext() {} },
+          on(name, fn) { hooks.set(name, fn) },
+          tools: { restrict() {}, register(tool) { registered.set(tool.name, tool); return () => registered.delete(tool.name) } }
+        })
+        return { agent: {
+          session: { id: 'background-worldbook-shared', events: [], append() {} }, followup() {},
+          async whenIdle() {
+            const tool = registered.get('worldbook_search')
+            assert.ok(tool, currentTask)
+            assert.equal(tool.parameters.type, 'object')
+            assert.ok(tool.parameters.properties.query)
+            const result = JSON.parse(await tool.execute({ query: '少林' }))
+            assert.equal(result.entries[0].ref, 'entry:62')
+            const read = JSON.parse(await tool.execute({ refs: ['entry:62'] }))
+            assert.equal(read.entries[0].text, '少林门规')
+            const request = await hooks.get('agent/request')({}, async () => ({ tools: [tool] }))
+            assert.equal(request.tools[0].name, 'worldbook_search')
+          }
+        }, async dispose() {} }
+      }
+    }
+  })
+  let traceSessionId
+  for (currentTask of ['worldbook-filter', 'candidate', 'settlement', 'character-design', 'worldbook-filter']) {
+    const result = await runner.run({ sessionId: 'parent', persistent: true, persistentSessionId: traceSessionId,
+      task: currentTask, selection: { provider: 'test', model: 'test' }, messages: [], tools: [], acceptWithoutText: () => true })
+    traceSessionId = result.traceSessionId
+  }
+  assert.equal(calls.length, 10)
+  assert.ok(calls.every(call => call.sessionId === 'parent'))
+  await runner.dispose()
 })

@@ -197,6 +197,8 @@ export function createBackgroundAgentTask(options) {
         for (const dispose of state.stableToolDisposers || []) dispose()
         state.configuredToolsKey = key
         state.stableToolDisposers = stableBackgroundTools.filter(function (tool) {
+          const shared = sharedByName.get(tool.name)
+          if (shared && (state.input.task !== 'character-design' || shared.allowDuringCharacterDesign === true)) return state.input.task !== 'worldbook-filter' || shared.allowDuringWorldbookFilter === true
           if (state.input.task === 'character-design') return tool.name.startsWith('character_design_')
           if (state.input.task === 'worldbook-filter') return tool.name.startsWith('worldbook_')
           if (tool.name.startsWith('worldbook_')) return false
@@ -231,7 +233,7 @@ export function createBackgroundAgentTask(options) {
         const input = state.input || {}
         const inherited = await next()
         const { maxTokens: _oldLimit, ...request } = inherited
-        if (input.task === 'worldbook-filter' && request.tools) request.tools = request.tools.filter(tool => ['worldbook_candidate_read', 'worldbook_filter_submit'].includes(tool.name))
+        if (input.task === 'worldbook-filter' && request.tools) request.tools = request.tools.filter(tool => ['worldbook_candidate_read', 'worldbook_filter_submit'].includes(tool.name) || sharedByName.get(tool.name)?.allowDuringWorldbookFilter === true)
         const limit = Number.isSafeInteger(input.maxTokens) && input.maxTokens > 0 ? input.maxTokens : maximumBackgroundTokens(input.selection)
         if (limit !== undefined) request.maxTokens = limit
         const temperature = state.characterDesignStage
@@ -267,7 +269,8 @@ export function createBackgroundAgentTask(options) {
     if (stableBackgroundTools.length > 0 && input.task !== 'image') {
       state.activeToolTask = {
         async execute(tool, args, execution) {
-          const shared = input.task === 'worldbook-filter' ? undefined : sharedByName.get(tool.name)
+          const registeredShared = sharedByName.get(tool.name)
+          const shared = input.task !== 'worldbook-filter' || registeredShared?.allowDuringWorldbookFilter === true ? registeredShared : undefined
           const current = allowed.get(tool.name) || (shared && shared.tool)
           if (current === undefined) {
             return JSON.stringify({

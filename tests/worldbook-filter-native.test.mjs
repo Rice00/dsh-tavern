@@ -1,3 +1,4 @@
+import { sharedWorldbookSearch } from '../tavern-plugin/lib/domain/worldbook-search.js'
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
@@ -29,18 +30,24 @@ test('原生 DSH 筛选工具、结算与重启恢复使用同一后台 Session 
     (name === 'dsh-session-persistence-jsonl' ? '\n  config:\n    root: ' + join(root, 'sessions') + '\n    compression: none' : '')).join('\n'))
   ctx = await boot('worldbook-filter-native-test', config)
   const requests = []
+  let searchPhase = null
+  const searchCalls = []
   class Model extends LlmAdapter {
     async resolveModel(provider, model) { return { provider, id: model, name: model } }
     async *stream(input) {
       requests.push(structuredClone({ system: input.system, messages: input.messages, tools: input.tools }))
       const current = input.messages.filter(message => message.role === 'user').at(-1)
       const filtering = JSON.stringify(current).includes('任务类型：世界书筛选')
-      const block = filtering
+      const lookup = searchPhase === null ? null : searchPhase++
+      if (lookup !== null) assert.ok(input.tools.some(tool => tool.name === 'worldbook_search' && tool.parameters.properties.query))
+      const block = lookup === 0 || lookup === 1
+        ? { type: 'tool-call', id: 'lookup-' + requests.length, name: 'worldbook_search', arguments: JSON.stringify(lookup === 0 ? { query: '少林' } : { refs: ['entry:62'] }) }
+        : filtering
         ? { type: 'tool-call', id: 'filter-' + requests.length, name: 'worldbook_filter_submit', arguments: JSON.stringify({ selected: ['entry:0'] }) }
         : { type: 'text', text: '结算完成' }
       yield { type: 'block-start', index: 0, blockType: block.type }
       yield { type: 'block-end', index: 0, block }
-      yield { type: 'finish', reason: { kind: filtering ? 'tool-calls' : 'stop' } }
+      yield { type: 'finish', reason: { kind: block.type === 'tool-call' ? 'tool-calls' : 'stop' } }
     }
   }
   ctx.llm.registerAdapter(['filter-fixture'], new Model())
@@ -57,6 +64,7 @@ test('原生 DSH 筛选工具、结算与重启恢复使用同一后台 Session 
     updateChat: async (_id, update) => { chat = update(structuredClone(chat)); return structuredClone(chat) }
   } })
   const makeRunner = () => createBackgroundAgentRunner({ agents: ctx.agents, backgroundTools: WORLD_BOOK_FILTER_TOOLS,
+    sharedTools: [sharedWorldbookSearch(async (sessionId, args) => { searchCalls.push({ sessionId, args }); return { entries: [{ ref: 'entry:62', text: '少林门规原文' }] } })],
     resolveStablePrefix: async () => '固定背景：雨夜旅店', flushSession: session => ctx.sessions.flush(session) })
   runner = makeRunner()
   const filter = createWorldbookFilter({ selection: () => selection, runAgent: input => runner.run(input), beginTask: value => tasks.begin(value, 'worldbook-filter') })
@@ -116,6 +124,15 @@ test('原生 DSH 筛选工具、结算与重启恢复使用同一后台 Session 
   assert.deepEqual(scriptThird.tools, scriptSecond.tools)
   assert.ok(Buffer.byteLength(currentText(scriptSecond)) < 1200)
   console.log('script-window task bytes:', Buffer.byteLength(currentText(scriptFirst)), Buffer.byteLength(currentText(scriptSecond)))
+  for (const task of ['settlement', 'candidate', 'character-design', 'worldbook-filter']) {
+    searchPhase = 0
+    await runner.run({ sessionId: 'parent', task, persistent: true, selection, persistentSessionId: first.traceSessionId,
+      messages: [{ role: 'user', content: [{ type: 'text', text: '读取少林资料' }] }], tools: [] })
+    assert.ok(searchPhase >= 3)
+    assert.match(JSON.stringify(requests.at(-1).messages), /少林门规原文/)
+  }
+  assert.equal(searchCalls.length, 8)
+  assert.ok(searchCalls.every(call => call.sessionId === 'parent'))
   const descriptors = sessionEvents(runner.requestSession(first.traceSessionId)).filter(event => event.type === 'subagent/descriptor')
   assert.equal(descriptors.length, 1)
   assert.equal(descriptors[0].data.label, '酒馆后台 Agent')

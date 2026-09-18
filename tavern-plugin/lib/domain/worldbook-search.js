@@ -59,3 +59,12 @@ export function createWorldbookSearch({ load, render }) {
       message: '片段来自静态文本，动态生成内容可能无法命中；确认标题与片段相关后，用 refs 读取完整正文。' }
   }
 }
+
+export function sharedWorldbookSearch(search) {
+  return {
+    tool: { ...WORLD_BOOK_SEARCH_TOOL, parameters: { type: 'object', properties: WORLD_BOOK_SEARCH_TOOL.parameters, additionalProperties: false } },
+    allowDuringWorldbookFilter: true,
+    allowDuringCharacterDesign: true,
+    async execute({ input, args }) { return JSON.stringify(await search(input.sessionId, args)) }
+  }
+}

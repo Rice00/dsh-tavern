@@ -148,7 +148,7 @@ import { cordisToolNames, createTurnOrchestrator, dshFileToolNames } from './dom
 import { resourceWorkspaceContext } from './domain/workspace-resources.js'
 import { createWorldBookLibrary } from './domain/worldbook-library.js'
 import { createWorldbookRecallLog, compactRecallDiagnostics } from './domain/worldbook-recall-log.js'
-import { createWorldbookSearch, WORLD_BOOK_SEARCH_TOOL } from './domain/worldbook-search.js'
+import { createWorldbookSearch, sharedWorldbookSearch, WORLD_BOOK_SEARCH_TOOL } from './domain/worldbook-search.js'
 import { createForegroundWorldbook } from './domain/foreground-worldbook.js'
 import { prepareTemplateWorldbook, mvuUpdateRulesFromWorldBook, prepareWorldBookRecall, projectWorldBookTemplates } from './domain/worldbook-recall.js'
 import {
@@ -1664,7 +1664,7 @@ export async function apply(ctx) {
     resolveWebSearch: async input => (await chatForSession(input.sessionId))?.webSearchEnabled === true,
     resolveBackgroundTasks: async input => input.backgroundTasks || normalizeBackgroundTasks((await chatForSession(input.sessionId))?.backgroundTasks),
     backgroundTools: [...WORLD_BOOK_FILTER_TOOLS, POSTURE_SUBMIT_TOOL, CHARACTER_DESIGN_READ_TOOL, CHARACTER_DESIGN_SAVE_TOOL, MVU_SUBMIT_UPDATE_TOOL, CANDIDATE_SUBMIT_TOOL, SCRIPT_READ_TOOL, SCRIPT_POINT_TOOL],
-    sharedTools: [{
+    sharedTools: [sharedWorldbookSearch(searchWorldbook), {
       tool: HISTORY_RECALL_TOOL,
       async execute({ input, args }) {
         return renderHistoryRecall(await recallHistoryForSession(input.sessionId, args, input, 'background'))

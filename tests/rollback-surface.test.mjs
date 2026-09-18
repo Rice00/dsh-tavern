@@ -315,3 +315,21 @@ test('摘要之前的输入不能跨越压缩点配对，摘要之后完整的�
   events.push({ seq: 3, type: 'user/message', data: { role: 'user' } }, { seq: 4, type: 'assistant/message', data: { turn: 3, message: { source: modelSource() } } })
   assert.deepEqual(locateRollbackSurface({ events, nodes: [1, 2, 3, 4] }).shadowedSeqs, [3, 4])
 })
+
+test('失败清理只豁免已退役的历史提示词，不放宽跨正文的安全检查', () => {
+  const frame = { seq: 6, type: 'user/message', data: { content: [], source: { kind: 'plugin', plugin: 'dsh-tavern', form: 'foreground-frame' } }, surfaceOp: { op: 'replace', start: 2, end: 2 } }
+  const events = [
+    { seq: 3, type: 'assistant/message', data: { turn: 1 } },
+    { seq: 5, type: 'turn/start', data: { turn: 2 } }, frame,
+    { seq: 7, type: 'user/message', data: {} },
+    { seq: 8, type: 'turn/end', data: { turn: 2, reason: { kind: 'error' } } }
+  ]
+  assert.equal(planFailedTurnSurface({ events, nodes: [6, 3], turn: 2 }), null)
+  for (const replacement of [
+    { ...frame, data: { ...frame.data, content: [{ type: 'text', text: '仍有效的提示词' }] } },
+    { ...frame, data: { ...frame.data, source: { kind: 'user' } } },
+    { ...frame, surfaceOp: 'append' }
+  ]) {
+    assert.throws(() => planFailedTurnSurface({ events: events.map(event => event === frame ? replacement : event), nodes: [6, 3, 7], turn: 2 }), /不是连续区间/)
+  }
+})

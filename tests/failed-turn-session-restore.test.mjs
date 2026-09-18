@@ -85,3 +85,29 @@ test('真实宿主重载后可发现遗漏清理的失败输入，清理后模�
   assert.match(visible, /原正文/)
   assert.ok(sessionEvents(restored).some(event => event.data?.id === 'retry'))
 })
+
+test('新轮退役历史提示词后失败，清理及重载保留上一轮正文和退役标记', async () => {
+  const { retireForegroundFrames } = await import('../tavern-plugin/lib/domain/foreground-frame-retirement.js')
+  for (const traced of [true, false]) {
+    let session = Session.create('retired-frame-failure')
+    session.append('turn/start', { turn: 1 })
+    session.append('user/message', { id: 'old-input', role: 'user', content: [{ type: 'text', text: '上一轮输入' }], source: { kind: 'user' } }, { surfaceOp: 'append' })
+    session.append('user/message', { id: 'frame', role: 'user', content: [{ type: 'text', text: '旧提示词' }], source: { kind: 'plugin', plugin: 'dsh-tavern', form: 'foreground-frame', ...(traced ? { trace: { turn: 1 } } : {}) } }, { surfaceOp: 'append' })
+    appendSessionEvent(session, 'assistant/message', { turn: 1, step: 1, message: { id: 'body', role: 'assistant', content: [{ type: 'text', text: '成功正文' }], source: { kind: 'model', provider: 'test', model: 'test' } } }, { surfaceOp: 'append' })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    for (const turn of [2, 3]) {
+      session.append('turn/start', { turn })
+      retireForegroundFrames(session, { keepTurn: turn })
+      session.append('user/message', { id: 'retry-' + turn, role: 'user', content: [{ type: 'text', text: '失败输入' }], source: { kind: 'user' } }, { surfaceOp: 'append' })
+      session.append('turn/end', { turn, reason: { kind: 'error' } })
+      const status = rollbackAvailability({ messages: [{ role: 'user' }, { role: 'assistant', turn: 1 }] }, { events: sessionEvents(session), nodes: session.surface.nodes })
+      assert.ok(status.unclearedTurns.includes(turn))
+      assert.equal(clearFailedTurnSurface({ session, turn }), 1)
+      assert.equal(clearFailedTurnSurface({ session, turn }), 0)
+      session = Session.create(session.id, JSON.parse(JSON.stringify(sessionEvents(session))), session.header)
+      assert.match(JSON.stringify(session.deriveMessages()), /成功正文/)
+      assert.doesNotMatch(JSON.stringify(session.deriveMessages()), /失败输入|旧提示词/)
+      assert.equal(locateRegenerationSurface({ events: sessionEvents(session), nodes: session.surface.nodes, turn: 1 }).assistantSeq, 3)
+    }
+  }
+})

@@ -279,11 +279,24 @@ export function planFailedTurnSurface(input) {
   }
   if (startSeq < 0 || endSeq <= startSeq) return null
 
+  // Retiring an older frame writes a new event at its historical surface
+  // position. That empty replacement belongs to the old context, not this
+  // failed attempt; including it would span a previously committed reply.
+  function isRetiredHistoricalFrame(seq) {
+    const event = eventAt(events, seq)
+    if (!isForegroundContext(event) || event.data.source.form !== 'foreground-frame' ||
+      !Array.isArray(event.data.content) || event.data.content.length !== 0 || event.surfaceOp?.op !== 'replace') return false
+    const range = surfaceReplacementRange(event.surfaceOp)
+    return Number.isSafeInteger(range.start) && Number.isSafeInteger(range.end) &&
+      range.start < startSeq && range.end < startSeq
+  }
+
   let firstIndex = -1
   let lastIndex = -1
   for (let index = 0; index < nodes.length; index += 1) {
     const seq = Number(nodes[index])
     if (seq <= startSeq || seq >= endSeq) continue
+    if (isRetiredHistoricalFrame(seq)) continue
     if (firstIndex < 0) firstIndex = index
     lastIndex = index
   }

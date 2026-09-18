@@ -2756,6 +2756,8 @@ export async function apply(ctx) {
       case 'initializeOpeningTemplate': return openingPreparation.applyTemplateInitial(args.id, await fullTemplateRuntime.forSession('opening:' + args.id).initializeVariables([]))
       case 'createOpeningPreparation': return await openingPreparation.create(args && args.path)
       case 'getOpeningPreparation': return openingPreparation.get(args && args.id)
+      case 'retainOpeningPreparation': return openingPreparation.retain(args && args.id)
+      case 'releaseOpeningPreparation': return openingPreparation.release(args && args.id)
       case 'replaceOpeningWorldbook': return await openingPreparation.replaceWorldbook(args && args.id, args && args.entries, args && args.expectedEntries)
       case 'getCardOpenings': return await getCardOpenings(args && args.path, args && args.userName, args && args.requestMode)
       case 'preparePlayStart': {

@@ -187,7 +187,7 @@ test('新开游玩在创建 Session 前完成游戏准备，创建后不提供�
   assert.match(sidebar, /dsh-tavern-picker-overlay/)
   assert.match(sidebar, /role: "dialog"/)
 	assert.match(sidebar, /renderTavernProjection\(selectedOpening\.projection/)
-	assert.match(openingChoice, /!busy && selectedOpening \? h\("div"/,
+	assert.match(openingChoice, /selectedOpening \? h\("div"/,
 		'只有一个开场白时也必须在点击开始游戏前持续显示预览')
 	assert.doesNotMatch(openingChoice, /!busy && selectedOpening && openingPicker\.openings\.length > 1/)
 	assert.match(sidebar, /key: selectedOpening\.id/)
@@ -241,7 +241,7 @@ test('Tavern 错误面板只保留最新错误，左侧栏连接恢复后撤销�
   assert.match(clientSource, /const lastReported = React\.useRef\(""\)/)
   assert.match(clientSource, /visible !== lastReported\.current/)
   assert.match(clientSource, /if \(!visible\) tavernErrorHub\.resolve\(source\)/)
-  assert.match(sidebar, /if \(collapsed\) return h\(React\.Fragment, null,\s*h\(TavernErrorCenter\)/)
+  assert.doesNotMatch(sidebar, /if \(collapsed\) return/)
   assert.match(sidebar, /return h\(React\.Fragment, null, h\(TavernErrorCenter\)/)
   assert.match(clientSource, /usePersistentError\("左侧栏操作"\)/)
   assert.match(sidebar, /latest\.message === "DSH Session 列表同步超时，请刷新页面后重试：" \+ current/)

@@ -93,6 +93,8 @@ export function createOpeningPreparation({ readCard, worldBooks, generateRaw, re
       return present(draft)
     },
     get(id) { return present(requireDraft(id)) },
+    retain(id) { requireDraft(id); return { retained: true } },
+    release(id) { return { released: drafts.delete(id) } },
     async callRuntime(id, method, args = {}) {
       const draft = requireDraft(id)
       if (method === 'generateTavernHelperRaw') {

@@ -223,3 +223,18 @@ test('完整模板初始化结果进入私有开场草稿，随后脚本能读�
   assert.equal(service.get(draft.id).runtime.context.chatVariables.hp, 10)
   assert.deepEqual(service.resolve((await service.create('card')).id, 'card', 'primary').variables, {})
 })
+
+test('保留的开局草稿跨过原有效期仍可用，放弃立即释放，失联草稿仍过期', async () => {
+  let now = 0
+  const service = createOpeningPreparation({ now: () => now, readCard: async () => card, worldBooks: { bound: async () => null } })
+  const retained = await service.create('card'), abandoned = await service.create('card')
+  service.select(retained.id, 'alternate:0')
+  now = 90 * 60 * 1000
+  assert.deepEqual(service.retain(retained.id), { retained: true })
+  now = 150 * 60 * 1000
+  assert.equal(service.get(retained.id).openingId, 'alternate:0')
+  assert.throws(() => service.retain(abandoned.id), /过期/)
+  assert.deepEqual(service.release(retained.id), { released: true })
+  assert.throws(() => service.get(retained.id), /过期/)
+  assert.deepEqual(service.release(retained.id), { released: false })
+})

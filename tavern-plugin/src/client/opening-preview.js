@@ -175,3 +175,29 @@ function installSessionOpeningBridge(token, descriptor) {
   };
 
 }
+
+// A retained preview still owns its private host draft while hidden. Renew only
+// its expiry; fetching/projecting the full runtime here would reset card state.
+function retainOpeningPreparation(id, options) {
+  const host = options.window;
+  let stopped = false, pending = false, lastError = "";
+  async function renew() {
+    if (stopped || pending) return;
+    pending = true;
+    try {
+      await options.call("retainOpeningPreparation", { id: id });
+      lastError = "";
+    } catch (error) {
+      const message = String(error && error.message || error);
+      if (!stopped && message !== lastError) { lastError = message; options.onError(error); }
+    } finally { pending = false; }
+  }
+  void renew();
+  const timer = host.setInterval(renew, 60000);
+  host.addEventListener("focus", renew);
+  return function () {
+    stopped = true;
+    host.clearInterval(timer);
+    host.removeEventListener("focus", renew);
+  };
+}

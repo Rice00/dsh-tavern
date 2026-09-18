@@ -14,14 +14,18 @@ function store(value) {
     set(next) { value = next; for (const fn of listeners) fn() } }
 }
 const view = revision => ({ tavernHelperScripts: [{ id: 'companion', content: 'void 0' }], tavernHelper: { stateRevision: revision } })
-function harness({ holdReleases = false, dropSignals = false, claimTimeoutMs, receiptBarrier } = {}) {
+function harness({ holdReleases = false, dropSignals = false, claimTimeoutMs, receiptBarrier, retentionMs = 0 } = {}) {
   const timers = new Map(), events = new Map(), runtimes = [], calls = []
   const heartbeats = new Map()
-  let sequence = 0, descriptor
+  let sequence = 0, descriptor, clock = 0
   let allowRelease
   const releaseBarrier = holdReleases ? new Promise(resolve => { allowRelease = resolve }) : Promise.resolve()
   const window = { crypto: { randomUUID: () => 'lease-' + ++sequence },
-    setTimeout(fn) { timers.set(++sequence, fn); return sequence }, clearTimeout(id) { timers.delete(id) },
+    setTimeout(fn, delay = 0) {
+      const id = ++sequence; timers.set(id, { fn, at: clock + delay });
+      if (delay === 0) queueMicrotask(() => { if (timers.delete(id)) fn() });
+      return id
+    }, clearTimeout(id) { timers.delete(id) },
     setInterval(fn, delay) { heartbeats.set(++sequence, { fn, delay }); return sequence }, clearInterval(id) { heartbeats.delete(id) },
     addEventListener(type, fn) { events.set(type, fn) }, removeEventListener(type) { events.delete(type) },
     __ModuleLoader__: { load(d) { descriptor = d } } }
@@ -40,7 +44,7 @@ function harness({ holdReleases = false, dropSignals = false, claimTimeoutMs, re
   }
   const runtimeWorkListeners = new Map()
   const gate = createTavernScriptDispatch({ claimTimeoutMs, publishSignal(sessionId, signal) { if (!dropSignals && signal.kind === 'runtime-work') runtimeWorkListeners.get(sessionId)?.(signal) } })
-  const options = { window, sessions, liveView, transition,
+  const options = { window, sessions, liveView, transition, retentionMs, now: () => clock,
     signals: { subscribe(sessionId, kind, listener) { if (kind === 'runtime-work') runtimeWorkListeners.set(sessionId, listener); return () => { if (runtimeWorkListeners.get(sessionId) === listener) runtimeWorkListeners.delete(sessionId) } } },
     createExecution: settings => client.createTavernScriptExecutionModule({ ...settings, window,
       rpc: async (method, args, id) => {
@@ -69,6 +73,7 @@ function harness({ holdReleases = false, dropSignals = false, claimTimeoutMs, re
   return { client, options, list, transition, liveView, subscriptions, gate, runtimes, calls, events, uiStops, heartbeats, views,
     heartbeat() { for (const { fn } of heartbeats.values()) fn() },
     allowReleases() { allowRelease?.() },
+    async advance(ms) { clock += ms; for (const [id, timer] of [...timers]) if (timer.at <= clock) { timers.delete(id); timer.fn() }; await new Promise(resolve => setImmediate(resolve)) },
     async poll() { await new Promise(resolve => setImmediate(resolve)); await new Promise(resolve => setImmediate(resolve)) } }
 }
 
@@ -417,5 +422,24 @@ test('retained foreground executor releases after failed generation with no sett
   assert.equal(h.runtimes[0].disposed, 0)
   h.list.set({ current: 'B', byId: { A: { running: false } } }); await h.poll()
   assert.equal(h.runtimes[0].disposed, 1)
+  assert.equal(h.gate.status('A').present, false)
+})
+
+
+test('正式会话默认保留10分钟，返回复用原脚本，第二次离开重新计时', async t => {
+  const h = harness()
+  delete h.options.retentionMs // Exercise the production default, not the short deadline used above.
+  const owner = h.client.createTavernScriptSessionOwner(h.options)
+  t.after(() => owner.dispose())
+  owner.start(); await h.poll()
+  const original = h.runtimes[0]
+  h.list.set({ current: 'B' }); await h.poll()
+  assert.equal(original.disposed, 0)
+  await h.advance(599999); assert.equal(original.disposed, 0)
+  h.list.set({ current: 'A' }); await h.poll()
+  await h.advance(600000); assert.equal(original.disposed, 0)
+  assert.equal(h.runtimes.filter(r => r.syncs.some(s => s.id === 'A')).length, 1)
+  h.list.set({ current: 'B' }); await h.poll()
+  await h.advance(600000); assert.equal(original.disposed, 1)
   assert.equal(h.gate.status('A').present, false)
 })

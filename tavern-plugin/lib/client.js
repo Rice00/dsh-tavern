@@ -1668,27 +1668,41 @@ window.__ModuleLoader__.load({
 		}
 
 		function createTavernHostArtifactScope(options) {
-			const hostDocument = options && options.document;
-			const roots = [hostDocument && hostDocument.head, hostDocument && hostDocument.body].filter(Boolean);
-			const baselines = roots.map(function (root) {
-				return { root: root, nodes: new Set(Array.from(root.childNodes || root.children || [])) };
-			});
-			let disposed = false;
-			return Object.freeze({
-				dispose: function () {
-					if (disposed) return;
-					disposed = true;
-					for (const baseline of baselines) {
-						const current = Array.from(baseline.root.childNodes || baseline.root.children || []);
-						for (const node of current) {
-							if (baseline.nodes.has(node)) continue;
-							if (node && typeof node.remove === "function") node.remove();
-							else if (baseline.root && typeof baseline.root.removeChild === "function") baseline.root.removeChild(node);
-						}
-					}
-				}
-			});
-		}
+            const hostDocument = options && options.document;
+            const roots = [hostDocument && hostDocument.head, hostDocument && hostDocument.body].filter(Boolean);
+            const owned = new Map();
+            let baselines, disposed = false, visible = true;
+            function baseline() { baselines = roots.map(root => ({ root: root, nodes: new Set(Array.from(root.childNodes || root.children || [])) })); }
+            function capture() {
+                for (const entry of baselines) for (const node of Array.from(entry.root.childNodes || entry.root.children || [])) {
+                    if (entry.nodes.has(node) || owned.has(node) || node.hasAttribute?.("data-tavern-retained-frames")) continue;
+                    owned.set(node, { hidden: node.hidden, disabled: node.disabled, body: entry.root === hostDocument.body });
+                }
+            }
+            baseline();
+            return Object.freeze({
+                setVisible: function (next) {
+                    if (disposed || visible === next) return;
+                    if (visible) capture();
+                    visible = next;
+                    for (const [node, previous] of owned) {
+                        if (previous.body) node.hidden = next ? previous.hidden : true;
+                        else if (node.tagName === "STYLE" || node.tagName === "LINK") node.disabled = next ? previous.disabled : true;
+                    }
+                    if (next) baseline();
+                },
+                dispose: function () {
+                    if (disposed) return;
+                    if (visible) capture();
+                    disposed = true;
+                    for (const node of owned.keys()) {
+                        if (typeof node.remove === "function") node.remove();
+                        else if (node.parentNode && typeof node.parentNode.removeChild === "function") node.parentNode.removeChild(node);
+                    }
+                    owned.clear();
+                }
+            });
+        }
 
 		const TAVERN_CARD_PHONE_HOST = '[id^="improved-phone-shadow-host-"]';
 		const TAVERN_CARD_PHONE_BUTTON = '[id^="improved-phone-floating-button-"]';
@@ -4570,10 +4584,14 @@ window.__ModuleLoader__.load({
 				const previous = Object.getOwnPropertyDescriptor(host, name);
 				if (previous && !previous.configurable) throw new Error("宿主接口不可替换：" + name);
 				const binding = { name: name, previous: previous, active: true, priority: Number(priority) || 0, frameWindow: frameWindow, toastr: name === "toastr" ? frameWindow.toastr : undefined, get: function () {
+                    function rank(owner) {
+                        const sessionId = owner.frameWindow.frameElement && owner.frameWindow.frameElement.__dshTavernSessionId;
+                        return owner.priority + (host.__dshTavernSelectedSessionId && sessionId ? (sessionId === host.__dshTavernSelectedSessionId ? 1 : -1) : 0);
+                    }
                     let selected = binding, descriptor = binding.previous;
                     while (descriptor && descriptor.get && descriptor.get.tavernHostBinding) {
                         const older = descriptor.get.tavernHostBinding;
-                        if (older.active && older.priority > selected.priority) selected = older;
+                        if (older.active && rank(older) > rank(selected)) selected = older;
                         descriptor = older.previous;
                     }
                     return name === "toastr" ? selected.toastr : selected.frameWindow[name];
@@ -4685,6 +4703,7 @@ window.__ModuleLoader__.load({
         }
 
 		function createTavernHelperScriptRuntime(options) {
+            let foreground = !options || options.foreground !== false;
 			const hostWindow = options && options.window || window;
 			const hostDocument = options && options.document || document;
 			const releaseHostStylesheetBridge = createTavernHostStylesheetBridge({ window: hostWindow });
@@ -5005,6 +5024,7 @@ window.__ModuleLoader__.load({
 					lastRuntimeError: "",
 					scripts: new Map(scripts.map(function (script) { return [String(script.id), { id: String(script.id), name: String(script.name || script.id), loaded: false, subscriptionsReady: false, initializationFailed: false }]; }))
 				};
+				frame.__dshTavernSessionId = sessionId;
 				frame.title = "人物卡共享脚本沙箱";
 				if (!trustedCardMode) frame.sandbox = "allow-scripts";
 				frame.referrerPolicy = "no-referrer";
@@ -5023,6 +5043,7 @@ window.__ModuleLoader__.load({
 				});
 				container.appendChild(frame);
 				records.set(record.id, record);
+                if (record.hostArtifacts) record.hostArtifacts.setVisible(foreground);
 				return record;
 			}
 			function scriptsForView(view) {
@@ -5287,6 +5308,7 @@ window.__ModuleLoader__.load({
 			hostWindow.addEventListener("message", receive);
 			return Object.freeze({
 				sync: sync,
+                setForeground: function (value) { foreground = value; for (const record of records.values()) if (record.hostArtifacts) record.hostArtifacts.setVisible(value); },
 				emit: emit,
 				retryMvuLoad: function () {
 					const record = records.get("shared");
@@ -5325,6 +5347,7 @@ window.__ModuleLoader__.load({
 			const startHeartbeat = options && options.startHeartbeat || (typeof hostWindow.setInterval === "function" ? function (run, delay) { return hostWindow.setInterval(run, delay); } : null);
 			const stopHeartbeat = options && options.stopHeartbeat || (typeof hostWindow.clearInterval === "function" ? function (timer) { hostWindow.clearInterval(timer); } : function () {});
 			const heartbeatIntervalMs = Math.max(1000, Number(options && options.heartbeatIntervalMs) || 10000);
+			let foreground = true;
 			let runtime = null;
 			let lease = null;
 			let workStop = null;
@@ -5381,7 +5404,7 @@ window.__ModuleLoader__.load({
 				lease = { sessionId: sessionId, id: hostWindow.crypto && typeof hostWindow.crypto.randomUUID === "function" ? hostWindow.crypto.randomUUID() : String(Date.now()) + ":" + String(Math.random()) };
 				const currentLease = lease;
 				runtime = createRuntime({
-					window: hostWindow, rpc: invoke, onMutation: invalidate,
+					window: hostWindow, rpc: invoke, onMutation: invalidate, foreground: foreground,
 					onMvuLoadState: function (state) {
 						if (lease !== currentLease) return;
 						if (options && options.onMvuLoadState) options.onMvuLoadState(state);
@@ -5531,6 +5554,7 @@ window.__ModuleLoader__.load({
 			}
 			return Object.freeze({
 				sync: sync, dispose: dispose,
+                setForeground: function (value) { foreground = value; if (runtime && runtime.setForeground) runtime.setForeground(value); },
 				retryMvuLoad: function () { return Boolean(runtime && active && runtime.retryMvuLoad()); },
 				triggerButton: function (scriptId, name) {
 					if (!runtime || !active) return Promise.reject(new Error("人物卡脚本正在其他窗口运行，或尚未加载完成"));
@@ -5732,11 +5756,85 @@ window.__ModuleLoader__.load({
 		  } finally { executor.dispose(); }
 		}
 
+		// Browser resources share one inactivity deadline per conversation. Navigation
+		// starts the clock; model/settlement work blocks expiry but does not reset it.
+		function createTavernSessionRetention(options) {
+		    const host = options.window;
+		    const now = options.now || Date.now;
+		    const duration = options.durationMs === undefined ? 10 * 60 * 1000 : options.durationMs;
+		    const records = new Map();
+		    let selected = "", managed = false;
+		    function record(id) {
+		        if (!records.has(id)) records.set(id, { id: id, resources: new Map(), mounts: 0, busy: false, leftAt: now(), timer: null });
+		        return records.get(id);
+		    }
+		    function busy(item) { return typeof item.busy === "function" ? item.busy() : item.busy; }
+		    function active(item) { return managed ? selected === item.id : item.mounts > 0; }
+		    function cancel(item) {
+		        if (item.timer !== null) host.clearTimeout(item.timer);
+		        item.timer = null;
+		    }
+		    function release(id) {
+		        const item = records.get(id);
+		        if (!item) return;
+		        records.delete(id); cancel(item);
+		        for (const dispose of item.resources.values()) dispose();
+		        item.resources.clear();
+		    }
+		    function schedule(item) {
+		        cancel(item);
+		        if (active(item) || busy(item) || !item.resources.size) return;
+		        const remaining = Math.max(0, duration - (now() - item.leftAt));
+		        item.timer = host.setTimeout(function () {
+		            item.timer = null;
+		            if (records.get(item.id) !== item || active(item) || busy(item)) return;
+		            if (now() - item.leftAt < duration) { schedule(item); return; }
+		            release(item.id);
+		        }, remaining);
+		    }
+		    return {
+		        hold: function (id, key, dispose) {
+		            const item = record(id);
+		            item.resources.set(key, dispose); schedule(item);
+		            return function () {
+		                if (records.get(id) !== item || item.resources.get(key) !== dispose) return;
+		                item.resources.delete(key);
+		                if (!item.resources.size) { cancel(item); records.delete(id); }
+		            };
+		        },
+		        mount: function (id) {
+		            const item = record(id);
+		            item.mounts++; cancel(item);
+		            return function () {
+		                if (records.get(id) !== item) return;
+		                item.mounts--;
+		                if (!managed && item.mounts === 0) item.leftAt = now();
+		                schedule(item);
+		            };
+		        },
+		        select: function (id) {
+		            if (managed && selected === id) return;
+		            const previous = selected;
+		            selected = id; managed = true;
+		            for (const item of records.values()) {
+		                if (item.id === previous || item.id === selected) item.leftAt = now();
+		                schedule(item);
+		            }
+		        },
+		        busy: function (id, value) { const item = records.get(id); if (item) { item.busy = value; schedule(item); } },
+		        release: release,
+		        clear: function () { for (const id of Array.from(records.keys())) release(id); },
+		        inspect: function () { return Array.from(records.values()).map(item => ({ sessionId: item.id, active: active(item), busy: Boolean(busy(item)), resources: item.resources.size })); }
+		    };
+		}
+		const tavernSessionRetention = createTavernSessionRetention({ window: window });
+
 		function createTavernScriptSessionOwner(options) {
 			const hostWindow = options.window || window;
 			const sessions = options.sessions;
 			const views = options.liveView || liveTavernView;
 			const transition = options.transition || tavernSessionTransition;
+			const retention = options.retention || (options.window ? createTavernSessionRetention({ window: hostWindow, now: options.now, durationMs: options.retentionMs }) : tavernSessionRetention);
 			const listeners = new Set(), records = new Map();
 			let snapshot = { sessionId: "", loadState: null };
 			let current = null, stopSessions = null, stopTransition = null;
@@ -5761,25 +5859,21 @@ window.__ModuleLoader__.load({
 			function release(record) {
 				if (records.get(record.sessionId) !== record) return;
 				records.delete(record.sessionId);
+				if (record.stopRetention) record.stopRetention();
 				if (record.stopView) record.stopView();
 				record.execution.dispose();
 				record.template.dispose();
 			}
 			function retire(record) {
-				if (current === record || records.get(record.sessionId) !== record || !record.fresh) return;
-				if (sessions.list.getSnapshot().byId?.[record.sessionId]?.running === true) return;
-				const state = record.viewState;
-				if (!state || state.phase !== "ready") {
-					if (state && state.phase === "unavailable") release(record);
-					return;
-				}
-				const view = state.view || {}, activity = view.activity || {};
-				// The model can still be preparing its MVU submission before a script
-				// event exists. Keep the owner through the whole background operation.
-				if (activity.busy || activity.phase === "pending" || activity.phase === "running" || view.settleStatus === "running") return;
-				if (record.execution.inspect().busy) return;
-				release(record);
-			}
+                if (records.get(record.sessionId) !== record) return;
+                retention.busy(record.sessionId, function () {
+                    const state = record.viewState, view = state && state.view || {}, activity = view.activity || {};
+                    return !record.fresh || !state || (state.phase !== "ready" && state.phase !== "unavailable")
+                        || sessions.list.getSnapshot().byId?.[record.sessionId]?.running === true
+                        || activity.busy || activity.phase === "pending" || activity.phase === "running"
+                        || view.settleStatus === "running" || record.execution.inspect().busy;
+                });
+            }
 			function syncView(record) {
 				if (records.get(record.sessionId) !== record) return;
 				if (current === record && transition.getSnapshot()) return;
@@ -5804,6 +5898,7 @@ window.__ModuleLoader__.load({
 					}
 				});
 				records.set(sessionId, record);
+				record.stopRetention = retention.hold(sessionId, record, function () { release(record); });
 				return record;
 			}
 			function select() {
@@ -5818,14 +5913,20 @@ window.__ModuleLoader__.load({
 						views.invalidate(record.sessionId);
 					}
 					record.foregroundRunning = running;
+					retire(record);
 				});
 				if ((current ? current.sessionId : "") === sessionId) return;
 				const previous = current;
+                if (previous && previous.execution.setForeground) previous.execution.setForeground(false);
+				retention.select(sessionId);
+				hostWindow.__dshTavernSelectedSessionId = sessionId;
 				current = sessionId ? records.get(sessionId) || createRecord(sessionId) : null;
+                if (current && current.execution.setForeground) current.execution.setForeground(true);
 				if (previous) {
 					// Do not retire from a cached idle view: the settlement-start
 					// notification may still be in flight when navigation happens.
 					previous.fresh = false;
+					retire(previous);
 					views.invalidate(previous.sessionId);
 				}
 				if (current && !current.stopView) {
@@ -5852,6 +5953,9 @@ window.__ModuleLoader__.load({
 				if (stopTransition) stopTransition();
 				stopSessions = stopTransition = null;
 				current = null;
+				retention.select("");
+				hostWindow.__dshTavernSelectedSessionId = "";
+				retention.clear();
 				records.forEach(release);
 				publish();
 			}
@@ -6383,7 +6487,162 @@ window.__ModuleLoader__.load({
 		}
 		const enqueueTavernFrameActivation = createTavernFrameActivationQueue(window);
 
+		// React owns only the placement slot. The conversation owns its iframe DOM and
+		// authenticated bridge, so unmounting a message cannot reset a card wizard.
+		function createRetainedTavernFrames(options) {
+		    const host = options.window, document = host.document, retention = options.retention;
+		    const records = new Map();
+		    let parking = null;
+		    function parked() {
+		        if (!parking) {
+		            parking = document.createElement("div");
+		            parking.hidden = true;
+		            parking.setAttribute("data-tavern-retained-frames", "");
+		            document.body.appendChild(parking);
+		        }
+		        return parking;
+		    }
+		    function key(props) {
+		        return JSON.stringify([props.sessionId, props.persistent ? "status" : "message", props.persistent ? props.panelId : props.turn, props.partIndex]);
+		    }
+		    function move(node, target) {
+		        if (node.parentNode !== target) target.moveBefore(node, null);
+		    }
+		    function release(record) {
+		        if (records.get(record.key) !== record) return;
+		        records.delete(record.key);
+		        if (record.unmount) record.unmount();
+		        if (record.forget) record.forget();
+		        if (record.stop) record.stop();
+		        if (record.unpin) record.unpin();
+		        for (const item of record.frames.values()) item.descriptor.ref(null);
+		        record.frames.clear();
+		        record.node.remove();
+		        if (!records.size && parking) { parking.remove(); parking = null; }
+		    }
+		    function paint(record, state) {
+		        record.node.style.height = state.height + "px";
+		        const wanted = [state.visibleDocument, state.pendingDocument].filter(Boolean);
+		        for (const [token, item] of record.frames) if (!wanted.some(value => value.token === token)) {
+		            item.descriptor.ref(null); item.node.remove(); record.frames.delete(token);
+		        }
+		        for (const descriptor of wanted) {
+		            const hidden = descriptor === state.pendingDocument;
+		            let item = record.frames.get(descriptor.token);
+		            if (!item) {
+		                const frame = document.createElement("iframe");
+		                frame.className = "dsh-tavern-message-frame";
+		                frame.__dshTavernSessionId = record.sessionId;
+		                frame.referrerPolicy = "no-referrer";
+		                if (!descriptor.trustedCardMode) frame.setAttribute("sandbox", "allow-scripts");
+		                frame.srcdoc = descriptor.html;
+		                item = { node: frame, descriptor: descriptor };
+		                record.frames.set(descriptor.token, item);
+		                record.node.appendChild(frame);
+		                descriptor.ref(frame);
+		            }
+		            const frame = item.node;
+		            frame.title = hidden ? "正在准备人物卡消息界面" : "人物卡消息界面";
+		            if (hidden) frame.setAttribute("aria-hidden", "true"); else frame.removeAttribute("aria-hidden");
+		            Object.assign(frame.style, { height: (hidden ? descriptor.height || state.height : state.height) + "px",
+		                position: hidden ? "absolute" : "", left: hidden ? "0" : "", top: hidden ? "0" : "",
+		                width: "100%", opacity: hidden ? "0" : "", pointerEvents: hidden ? "none" : "",
+		                overflow: state.height >= 1200 ? "auto" : "hidden" });
+		        }
+		    }
+		    function get(props) {
+		        const id = key(props);
+		        let record = records.get(id);
+		        if (!record) {
+		            const node = document.createElement("div");
+		            node.className = "dsh-tavern-message-frame-slot";
+		            node.style.position = "relative";
+		            parked().appendChild(node);
+		            record = { key: id, sessionId: props.sessionId, panelId: props.panelId, persistent: props.persistent, node: node, frames: new Map(), unmount: null, unpin: null };
+		            records.set(id, record);
+		            record.lifecycle = options.createLifecycle(props);
+		            paint(record, record.lifecycle.snapshot());
+		            record.stop = record.lifecycle.start(function (state) { paint(record, state); });
+		            record.forget = retention.hold(props.sessionId, record, function () { release(record); });
+		        }
+		        record.lifecycle.update(props);
+		        return record;
+		    }
+		    return {
+		        key: key,
+		        mount: function (props, home) {
+		            const record = get(props);
+		            move(record.node, home);
+		            record.unmount = retention.mount(props.sessionId);
+		            const movable = !props.persistent && /<(?:script|iframe|object|embed)\b/i.test(String(props.content || ""));
+		            if (movable && options.panels) {
+		                record.panel = Object.assign(record.panel || {}, { id: "retained:" + record.key,
+		                    sessionId: props.sessionId, title: "第 " + props.turn + " 轮 · 面板 " + (Number(props.partIndex) + 1),
+		                    node: record.node, home: home, pinned: Boolean(record.panel && record.panel.pinned) });
+		                record.unpin = options.panels.register(record.panel);
+		            }
+		            let attached = true;
+		            return {
+		                update: function (next) { if (attached && records.get(record.key) === record) record.lifecycle.update(next); },
+		                detach: function () {
+		                    if (!attached) return;
+		                    attached = false;
+		                    if (records.get(record.key) !== record) return;
+		                    if (record.unpin) { record.unpin(); record.unpin = null; }
+		                    move(record.node, parked());
+		                    if (record.unmount) { record.unmount(); record.unmount = null; }
+		                }
+		            };
+		        },
+		        invalidatePanel: function (sessionId, panelId) {
+		            for (const record of Array.from(records.values())) if (record.sessionId === sessionId && record.persistent && record.panelId === panelId) release(record);
+		        },
+		        clear: function () { for (const record of Array.from(records.values())) release(record); }
+		    };
+		}
+
+		function TavernRetainedMessageFrame(props) {
+		    const home = React.useRef(null), lease = React.useRef(null);
+		    const [activated, setActivated] = React.useState(props.eager === true);
+		    const panels = React.useSyncExternalStore(tavernPanelRegistry.subscribe, tavernPanelRegistry.inspect);
+		    const key = tavernRetainedFrames.key(props), panelId = "retained:" + key;
+		    const pinned = panels.some(entry => entry.id === panelId && entry.pinned);
+		    const frameProps = Object.assign({}, props, { panelId: props.panelId || "message-" + props.turn + "-" + props.partIndex,
+		        placement: props.persistent || pinned ? "sidebar" : "message" });
+		    React.useEffect(function () {
+		        if (activated) return;
+		        if (props.eager || typeof window.IntersectionObserver !== "function") { setActivated(true); return; }
+		        let cancel = null;
+		        const observer = new window.IntersectionObserver(function (entries) {
+		            if (entries[entries.length - 1]?.isIntersecting && !cancel) cancel = enqueueTavernFrameActivation(function () { setActivated(true); });
+		            else if (!entries[entries.length - 1]?.isIntersecting && cancel) { cancel(); cancel = null; }
+		        }, { rootMargin: "240px 0px" });
+		        observer.observe(home.current);
+		        return function () { observer.disconnect(); if (cancel) cancel(); };
+		    }, [activated, props.eager]);
+		    React.useLayoutEffect(function () {
+		        if (!activated) return;
+		        const mounted = tavernRetainedFrames.mount(frameProps, home.current);
+		        lease.current = mounted;
+		        return function () { lease.current = null; mounted.detach(); };
+		    }, [activated, key]);
+		    React.useLayoutEffect(function () { if (lease.current) lease.current.update(frameProps); });
+		    const movable = !props.persistent && /<(?:script|iframe|object|embed)\b/i.test(String(props.content || ""));
+		    return React.createElement("div", null,
+		        movable ? React.createElement("button", { type: "button", className: "dsh-tavern-btn", onClick: function () {
+		            if (!activated) { setActivated(true); return; }
+		            try { tavernPanelRegistry.pin(panelId, !pinned); }
+		            catch (error) { tavernErrorHub.report("固定面板", error); }
+		        } }, pinned ? "返回原消息" : "固定到右侧") : null,
+		        React.createElement("div", { ref: home, style: { minHeight: activated ? undefined : estimatedTavernFrameHeight(props.content) + "px" } }));
+		}
+        const tavernRetainedFrames = createRetainedTavernFrames({ window: window, retention: tavernSessionRetention,
+            panels: tavernPanelRegistry, createLifecycle: function (props) { return createTavernMessageFrameLifecycle(props); } });
+
 		function TavernMessageFrame(props) {
+            if (props.sessionId && window.document?.body && typeof window.document.body.moveBefore === "function") {
+                return React.createElement(TavernRetainedMessageFrame, props);
+            }
 			const homeRef = React.useRef(null);
 			const panelKey = React.useRef(null);
 			if (!panelKey.current) panelKey.current = "manual-" + Math.random().toString(36).slice(2);
@@ -10087,7 +10346,7 @@ window.__ModuleLoader__.load({
 						return h("button", { key: panel.viewId, role: "tab", type: "button", "aria-selected": active === panel.viewId,
 							className: "dsh-tavern-panel-tab", onClick: function () { setSelected(panel.viewId); } }, panel.title || "角色状态");
 					})),
-                    statuses.some(panel => panel.viewId === active) ? h("button", { type: "button", className: "dsh-tavern-panel-refresh", title: "重新加载此面板，未保存的输入会清空", onClick: function () { setRefreshes(function (previous) { return Object.assign({}, previous, { [active]: (previous[active] || 0) + 1 }); }); } }, "↻ 刷新") : null),
+                    statuses.some(panel => panel.viewId === active) ? h("button", { type: "button", className: "dsh-tavern-panel-refresh", title: "重新加载此面板，未保存的输入会清空", onClick: function () { tavernRetainedFrames.invalidatePanel(props.sessionId, active); setRefreshes(function (previous) { return Object.assign({}, previous, { [active]: (previous[active] || 0) + 1 }); }); } }, "↻ 刷新") : null),
 				statuses.map(function (statusView) { return h("div", { key: props.sessionId + statusView.viewId, role: "tabpanel", hidden: active !== statusView.viewId,
 					"data-status-view-id": statusView.viewId, "data-template-revision": statusView.templateRevision },
 					h(TavernMessageFrame, {
@@ -12318,6 +12577,8 @@ window.__ModuleLoader__.load({
 		exports.createTavernMessageFrameLifecycle = createTavernMessageFrameLifecycle;
 		exports.createTavernScriptExecutionModule = createTavernScriptExecutionModule;
 		exports.createTavernScriptSessionOwner = createTavernScriptSessionOwner;
+		exports.createTavernSessionRetention = createTavernSessionRetention;
+		exports.createRetainedTavernFrames = createRetainedTavernFrames;
 		exports.createMvuBundleLoader = createMvuBundleLoader;
 		exports.TavernMvuLoadRecovery = TavernMvuLoadRecovery;
 		exports.findTavernQuoteRanges = findTavernQuoteRanges;

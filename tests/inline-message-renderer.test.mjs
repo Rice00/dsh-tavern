@@ -2251,3 +2251,16 @@ test('unsupported card pipelines fail before draft mutation or generation', asyn
   await assert.rejects(execute('/cut 0', 'game'), /未发送消息/ )
   assert.deepEqual(calls, [])
 })
+
+test('保留多个正式会话时，parent.Mvu 随当前会话切换而不是最后创建的沙箱', () => {
+  const host = { __dshTavernSelectedSessionId: 'A' }
+  const a = { frameElement: { __dshTavernSessionId: 'A' }, Mvu: { owner: 'A' } }
+  const b = { frameElement: { __dshTavernSessionId: 'B' }, Mvu: { owner: 'B' } }
+  const releaseA = client.installTavernTrustedHostFacade(host, a)
+  const releaseB = client.installTavernTrustedHostFacade(host, b)
+  assert.equal(host.Mvu, a.Mvu)
+  host.__dshTavernSelectedSessionId = 'B'; assert.equal(host.Mvu, b.Mvu)
+  host.__dshTavernSelectedSessionId = 'A'; assert.equal(host.Mvu, a.Mvu)
+  releaseB(); assert.equal(host.Mvu, a.Mvu)
+  releaseA(); assert.equal(host.Mvu, undefined)
+})

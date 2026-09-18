@@ -8,7 +8,10 @@ import { readTavernRuntimeAsset, TAVERN_RUNTIME_ASSET_PREFIX } from '../../taver
 let shared, cleanup
 after(async () => { if (cleanup) await cleanup() })
 export class UpstreamTemplateRuntime {
-  static async create() { return shared ||= process.env.TEMPLATE_EXECUTOR === 'server' ? createServerTemplateFixture() : createRuntime() }
+  static async create() {
+    if (!shared && process.env.TEMPLATE_EXECUTOR === 'server') { shared = createServerTemplateFixture(); cleanup = () => shared.dispose() }
+    return shared ||= createRuntime()
+  }
 }
 async function createRuntime() {
   const server = createServer(async (req, res) => {

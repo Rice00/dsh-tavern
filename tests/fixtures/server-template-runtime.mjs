@@ -1,4 +1,3 @@
-import { after } from 'node:test'
 import { createServerTemplateRuntime } from '../../tavern-plugin/lib/domain/server-template-runtime.js'
 
 export function createServerTemplateFixture() {
@@ -17,13 +16,13 @@ export function createServerTemplateFixture() {
     if(method==='countFullTemplateTokens')return {tokens:args.text.length}
     throw Error('Unexpected fixture RPC '+method)
   }})
-  after(()=>runtime.dispose())
   const engine=runtime.forSession('fixture')
   function run(method,args,context={}) {
     const next=tail.then(async()=>{current=snapshot(context);return method(...args)})
     tail=next.catch(()=>{});return next
   }
   return {
+    dispose: () => runtime.dispose(),
     renderInput:(text,context={})=>run(engine.renderInput,[text,context],context),
     prepareWorldbook:(entries,context={})=>run(engine.prepareWorldbook,[entries,context],context),
     command:(text,context={})=>run(engine.command,[text],context),

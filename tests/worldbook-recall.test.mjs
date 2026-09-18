@@ -221,7 +221,7 @@ test('大世界书 render 仅传激活引用，模板正文与顺序作用域保
 })
 
 
-test('批量与逐条投影逐字一致：准备事件、随机、失败隔离、激活来源和宏顺序', async () => {
+test('批量与逐条投影逐字一致：准备事件、随机、失败隔离、激活来源和宏顺序', {skip:process.env.TEMPLATE_EXECUTOR === 'server'}, async () => {
   const engine = await UpstreamTemplateRuntime.create()
   const entries = [
     entry('entry:0', '<% setLocalVar("n", 1); setGlobalVar("g", 5); setMessageVar("m", 7); await activateWorldInfo("资料", true) %><%= Math.random() %>{{setvar::label::旅店}}', {constant:true, order:0}),

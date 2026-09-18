@@ -133,3 +133,24 @@ test('cancellation drains an admitted save before a new explicit run can observe
  release();await rejected
  assert.equal((await next).text,'7')
 })
+
+test('JSON transport preserves seeded random evaluation while omitting host callbacks',async t=>{
+ const {engine}=fixture(t)
+ const context={random:()=>0,randomSeed:'stable',randomRef:'entry'}
+ const first=await engine.renderProjection('<%= Math.random() %>',context)
+ const second=await engine.renderProjection('<%= Math.random() %>',context)
+ assert.equal(first.ok,true,first.error);assert.equal(first.text,second.text)
+ assert.equal(first.randomCalls,1)
+})
+
+test('batch prepares each entry, isolates failed scopes, and returns compact receipts',async t=>{
+ const {engine}=fixture(t)
+ await engine.command('/ejs <% window.prepareCount=0; window.SillyTavern.getContext().eventSource.on("prompt_template_prepare",ctx=>{ctx.preparedMarker=++window.prepareCount}) %>')
+ const results=await engine.renderProjections([
+  {template:'<% setLocalVar("n",1) %><%= preparedMarker %>'},
+  {template:'<% setLocalVar("n",999); throw Error("failed") %>'},
+  {template:'<%= preparedMarker %>|<%= getLocalVar("n") %>'}
+ ],{scopes:{global:{},local:{},message:{},initial:{}}})
+ assert.equal(results[0].text,'1');assert.equal(results[1].ok,false);assert.equal(results[2].text,'3|1')
+ assert.ok(results.every(result=>!Object.hasOwn(result,'scopes')))
+})

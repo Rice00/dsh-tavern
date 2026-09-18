@@ -11989,7 +11989,7 @@ window.__ModuleLoader__.load({
                 const link = document.createElement("a"); link.href = url; link.download = "request-context.json";
                 document.body.appendChild(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
             }
-			return h("div", { style: { height: "100%", overflow: "auto", padding: "16px", boxSizing: "border-box" } },
+			return h("div", { style: { width: "100%", minWidth: 0, padding: "16px", boxSizing: "border-box", overflowWrap: "anywhere" } },
 				h("h3", null, "完整上下文"),
 				h("p", null, "最近一次前台调用的完整上下文，包含全部历史和工具。取自发送时记录（供应商协议转换前）。"),
 				h("button", { onClick: () => setRefresh(value => value + 1) }, "刷新"),

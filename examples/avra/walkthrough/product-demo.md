@@ -2,7 +2,7 @@
 
 ## 1. 人物卡导入
 
-导入 `demo/cards/avra-before.json`，确认卡片库出现“阿芙拉”。
+导入 `examples/avra/cards/avra-before.json`，确认卡片库出现“阿芙拉”。
 
 截图：卡片选择器、导入按钮、阿芙拉卡片行。
 
@@ -58,7 +58,7 @@
 - 持续指令：新增“阿芙拉只在看到黑蜡信封或其他可信凭证时才谈论银铃商队；拿不出凭证时，她只会否认、反问、岔开话题，绝不主动接茬”。
 - 角色描述、性格、场景和开场白全部保持原样。
 
-结果卡：`demo/cards/avra-after-dialogue.json`。
+结果卡：`examples/avra/cards/avra-after-dialogue.json`。
 
 截图顺序：
 
@@ -70,8 +70,8 @@
 
 导入并勾选：
 
-- `demo/sources/01-avra-character.md`
-- `demo/sources/02-blackwheat-town.md`
+- `examples/avra/sources/01-avra-character.md`
+- `examples/avra/sources/02-blackwheat-town.md`
 
 玩家身份填写：
 
@@ -85,7 +85,7 @@
 
 ## 4. 世界书与剧本绑定
 
-为清晰、稳定的演示，可导入 `demo/cards/avra-complete.json`。展开高级字段，展示六条世界书；再绑定 `demo/scripts/the-missing-silver-bell-caravan.md`。
+为清晰、稳定的演示，可导入 `examples/avra/cards/avra-complete.json`。展开高级字段，展示六条世界书；再绑定 `examples/avra/scripts/the-missing-silver-bell-caravan.md`。
 
 截图：世界书条目；剧本名称、字数和分块数量。
 
@@ -154,7 +154,7 @@
 
 ## 11. 正则美化与正文内前端
 
-导入 `demo/cards/avra-complete.json` 后，以默认开场白新建自由故事。开场白末尾的 `<avra_status>` 原始状态文本会被人物卡内置的 `markdownOnly` 正则替换为“金麦穗酒馆”HTML 状态面板。
+导入 `examples/avra/cards/avra-complete.json` 后，以默认开场白新建自由故事。开场白末尾的 `<avra_status>` 原始状态文本会被人物卡内置的 `markdownOnly` 正则替换为“金麦穗酒馆”HTML 状态面板。
 
 演示重点：
 

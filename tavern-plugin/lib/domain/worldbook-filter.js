@@ -15,7 +15,8 @@ export function createWorldbookFilter({ runAgent, selection, beginTask }) {
     const started = Date.now()
     const originalCandidates = candidates
     const latestBody = (chat.messages || []).findLast(message => message.role === 'assistant')
-    const coarse = shortlist({ candidates, corpus, query: latestBody?.sourceText ?? latestBody?.text ?? '' })
+    const query = [latestBody?.sourceText ?? latestBody?.text ?? '', userText ?? ''].join('\n')
+    const coarse = shortlist({ candidates, corpus, query })
     candidates = coarse.candidates
     metrics.bm25 = coarse.diagnostics
     const retainedRefs = new Set(candidates.map(item => item.ref))

@@ -3,7 +3,7 @@ import { createTavernScriptDispatch } from './tavern-script-dispatch.js'
 
 /** Transport only. All template semantics are executed by the upstream browser plugin. */
 export function createFullTemplateRuntime({ publishSignal, claimTimeoutMs = 30000, readyTimeoutMs = 60000, executionTimeoutMs = 60000, store }) {
-  const dispatch = createTavernScriptDispatch({ renewableExecution: false, publishSignal, presenceTtlMs: 60000, claimTimeoutMs, executionTimeoutMs })
+  const dispatch = createTavernScriptDispatch({ renewableExecution: false, preservePresenceOnClaimTimeout: true, publishSignal, presenceTtlMs: 60000, claimTimeoutMs, executionTimeoutMs })
   let disposed = false
   const jobs = new Map()
   // Projection receipts are useful only while their caller is alive. Retain
@@ -25,7 +25,7 @@ export function createFullTemplateRuntime({ publishSignal, claimTimeoutMs = 3000
         const status = health.get(sessionId)
         const error = new Error(state.present
           ? '完整提示词模板尚未就绪（' + (status?.phase || '初始化中') + '），请检查模板初始化状态后重试'
-          : '完整提示词模板执行器未响应；页面可能已关闭、正在重载或卡顿，请检查酒馆页面后重试')
+          : '完整提示词模板等待就绪超时；未收到有效就绪心跳，尚不能确认连接已断开，请检查酒馆页面后重试')
         error.code = 'FULL_TEMPLATE_UNAVAILABLE'
         reject(error)
       }, readyTimeoutMs)
@@ -61,11 +61,16 @@ export function createFullTemplateRuntime({ publishSignal, claimTimeoutMs = 3000
         await waitUntilReady(sessionId)
         const result = await dispatch.dispatch(sessionId, operation, [input], null, { eventId: job.id })
         if (result.handled) return result.args[0]
+        if (result.claimTimedOut && dispatch.status(sessionId).present) {
+          const error = new Error('完整提示词模板任务领取超时；执行器仍有有效心跳，但未确认领取任务，本轮已停止。这不代表模型生成超时或连接断开。')
+          error.code = 'FULL_TEMPLATE_CLAIM_TIMEOUT'
+          throw error
+        }
         // Only unstarted work can be safely retried: templates may mutate variables.
         if (!disposed && attempt === 0 && (result.unavailable || result.disposed) && !result.timedOut && (!result.phase || ['queued', 'offered'].includes(result.phase))) continue
         const error = new Error(result.error || (result.timedOut
           ? '完整提示词模板执行超时，本轮已停止。请检查页面后手动重试。'
-          : '完整提示词模板执行器连接中断，请刷新酒馆页面后重试。'))
+          : result.disposed ? '完整提示词模板执行器已释放，任务已停止，请刷新酒馆页面后重试。' : '完整提示词模板任务未完成，未能确认执行器状态，请检查酒馆页面后重试。'))
         error.code = 'FULL_TEMPLATE_UNAVAILABLE'
         throw error
       }

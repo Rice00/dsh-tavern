@@ -19,12 +19,12 @@ test('前后台模板任务按会话串行，返回浏览器结果并支持释�
   assert.equal(runtime.dispatch.status('session').present, false)
 })
 
-test('同步期间首次领取超时，执行器恢复后重派未开始的任务', async () => {
+test('执行器显式释放后，恢复时重派未开始的任务', async () => {
   let offers = 0, executions = 0
   const runtime = createFullTemplateRuntime({ claimTimeoutMs: 100, readyTimeoutMs: 500,
     publishSignal(id) {
       offers++
-      if (offers === 1) { setTimeout(() => runtime.dispatch.touch(id, 'page', true), 140); return }
+      if (offers === 1) { runtime.dispatch.dispose(id, 'page'); setTimeout(() => runtime.dispatch.touch(id, 'page', true), 140); return }
       const work = runtime.dispatch.claim(id, 'page', true)
       assert.equal(runtime.dispatch.start(id, work.event.id, work.leaseToken, 'page').started, true)
       executions++
@@ -180,9 +180,9 @@ test('未就绪的排队任务失败仍保留取消诊断', async () => {
   const runtime = createFullTemplateRuntime({ readyTimeoutMs: 5, publishSignal() {}, store: {
     readJson: async () => record, writeJson: async (_path, value) => { record = structuredClone(value) }
   } })
-  await assert.rejects(runtime.forSession('s').render('test'), /未响应/)
+  await assert.rejects(runtime.forSession('s').render('test'), /等待就绪超时/)
   assert.equal(record.phase, 'cancelled')
-  assert.match(record.error, /未响应/)
+  assert.match(record.error, /等待就绪超时/)
   runtime.dispose()
 })
 
@@ -301,4 +301,16 @@ test('durable completion stores a small receipt without result bodies and preser
   assert.equal(await resumed.complete('s', work.event.id, [result], 'page', 'wrong'), false)
   resumed.dispose()
   assert.ok(writes.every(size => size < 2000), 'completion must not persist the megabyte result')
+})
+
+test('领取超时不清除在线心跳，不误报断连或重复派发', async () => {
+  let offers = 0
+  const runtime = createFullTemplateRuntime({ claimTimeoutMs: 100, publishSignal() { offers++ } })
+  runtime.heartbeat('s', 'page', 'ready')
+  const pulse = setInterval(() => runtime.heartbeat('s', 'page', 'ready'), 20)
+  try {
+    await assert.rejects(runtime.forSession('s').render('x'), error => error.code === 'FULL_TEMPLATE_CLAIM_TIMEOUT' && /仍有有效心跳/.test(error.message))
+    assert.equal(runtime.dispatch.status('s').present, true)
+    assert.equal(offers, 1)
+  } finally { clearInterval(pulse); runtime.dispose() }
 })

@@ -120,7 +120,7 @@ export function createTavernScriptDispatch(options = {}) {
         record.leaseToken = ''
         record.offerTimer = null
         record.claimTimer = setTimeout(function () {
-          if (records.get(id) === record && record.phase === 'queued') presence.delete(id)
+          if (options.preservePresenceOnClaimTimeout !== true && records.get(id) === record && record.phase === 'queued') presence.delete(id)
           resolveRecord(id, record, { handled: false, unavailable: true, claimTimedOut: true, phase: 'queued', args: clone(record.event.args) })
         }, claimTimeoutMs)
         publishSignal(id, { kind: 'runtime-work', version: record.event.id })
@@ -182,7 +182,7 @@ export function createTavernScriptDispatch(options = {}) {
         // longer a usable lease. Keeping that stale presence makes settlement
         // immediately redispatch forever. Its next real claim/heartbeat will
         // register a fresh ready transition and resume the deferred work once.
-        if (records.get(id) === record && record.phase === 'queued') presence.delete(id)
+        if (options.preservePresenceOnClaimTimeout !== true && records.get(id) === record && record.phase === 'queued') presence.delete(id)
         resolveRecord(id, record, { handled: false, unavailable: true, claimTimedOut: true, phase: 'queued', args: clone(event.args) })
       }, claimTimeoutMs)
       records.set(id, record)

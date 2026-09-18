@@ -148,6 +148,7 @@ import { cordisToolNames, createTurnOrchestrator, dshFileToolNames } from './dom
 import { resourceWorkspaceContext } from './domain/workspace-resources.js'
 import { createWorldBookLibrary } from './domain/worldbook-library.js'
 import { createWorldbookRecallLog, compactRecallDiagnostics } from './domain/worldbook-recall-log.js'
+import { foregroundWorldbookReads } from './domain/worldbook-read-handoff.js'
 import { createWorldbookSearch, sharedWorldbookSearch, WORLD_BOOK_SEARCH_TOOL } from './domain/worldbook-search.js'
 import { createForegroundWorldbook } from './domain/foreground-worldbook.js'
 import { prepareTemplateWorldbook, mvuUpdateRulesFromWorldBook, prepareWorldBookRecall, projectWorldBookTemplates } from './domain/worldbook-recall.js'
@@ -1676,6 +1677,12 @@ export async function apply(ctx) {
     needsNewBackgroundSession: async sessionId => {
       const chat = await chatForSession(sessionId)
       return chat?.timeline?.participants?.background?.status === 'needs-session'
+    },
+    resolveForegroundWorldbookReads: async input => {
+      if (!['settlement', 'candidate', 'character-design'].includes(input.task)) return ''
+      const chat = await chatForSession(input.sessionId)
+      const session = agentRegistry.get(input.sessionId)?.session || sessionStore.get(input.sessionId)
+      return foregroundWorldbookReads(chat, session)
     },
     resolveCurrentWorldbook: async function (input) {
       if (input.task === 'worldbook-filter') return ''

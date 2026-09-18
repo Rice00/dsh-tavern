@@ -65,6 +65,7 @@ test('原生 DSH 筛选工具、结算与重启恢复使用同一后台 Session 
   } })
   const makeRunner = () => createBackgroundAgentRunner({ agents: ctx.agents, backgroundTools: WORLD_BOOK_FILTER_TOOLS,
     sharedTools: [sharedWorldbookSearch(async (sessionId, args) => { searchCalls.push({ sessionId, args }); return { entries: [{ ref: 'entry:62', text: '少林门规原文' }] } })],
+    resolveForegroundWorldbookReads: async input => input.task === 'settlement' ? '【前台本轮完整查阅的世界书资料】\n少林门规只读快照' : '',
     resolveStablePrefix: async () => '固定背景：雨夜旅店', flushSession: session => ctx.sessions.flush(session) })
   runner = makeRunner()
   const filter = createWorldbookFilter({ selection: () => selection, runAgent: input => runner.run(input), beginTask: value => tasks.begin(value, 'worldbook-filter') })
@@ -75,6 +76,8 @@ test('原生 DSH 筛选工具、结算与重启恢复使用同一后台 Session 
     persistentSessionId: settlement.participantRequest.sessionId, onPersistentSessionReady: id => settlement.bindSession(id),
     messages: [], tools: [] })
   await settlement.commit({ participant: settlement.participant(second) })
+  assert.match(JSON.stringify(requests.at(-1).messages.at(-1)), /少林门规只读快照/)
+  assert.ok(!requests.at(-1).system.includes('少林门规只读快照'))
   assert.equal(second.traceSessionId, first.traceSessionId)
   await ctx.sessions.flush(runner.requestSession(first.traceSessionId))
   await runner.dispose()

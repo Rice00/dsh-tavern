@@ -378,7 +378,9 @@ export function createBackgroundAgentTask(options) {
       const eventStart = sessionEvents(agent.session).length
       const filterContext = projectWorldbookFilterContext(agent.session, input)
       const scriptContext = projectCandidateScriptContext(agent.session, input)
-      const taskText = [turnWorldbook ? '【本轮世界书上下文】\n' + turnWorldbook : '',
+      const foregroundReads = typeof options.resolveForegroundWorldbookReads === 'function'
+        ? await options.resolveForegroundWorldbookReads(input) : ''
+      const taskText = [foregroundReads, turnWorldbook ? '【本轮世界书上下文】\n' + turnWorldbook : '',
         backgroundPrompt(filterContext?.messages || input.messages, scriptContext?.turnContext ?? input.turnContext, input.task, input.system, input)].filter(Boolean).join('\n\n')
       agent.followup({
         id: randomUUID(),

@@ -1491,3 +1491,24 @@ test('世界书检索在候选、结算、人物设计和筛选复用后台会�
   assert.ok(calls.every(call => call.sessionId === 'parent'))
   await runner.dispose()
 })
+
+test('后台压缩从匹配的命令日志恢复具体原因，不误用旧失败', async () => {
+  const { compactionFailureMessage } = await import('../tavern-plugin/lib/domain/compaction-failure.js')
+  const text = 'Compaction could not produce a useful summary.'
+  const events = [
+    { type: 'compaction/end', data: { sourceCommandId: 'old', error: '400: user message must have content' } },
+    { type: 'compaction/end', data: { sourceCommandId: 'current', error: 'summary is not smaller than the shadowed content (1931 estimated framed tokens >= 1612)' } }
+  ]
+  let commandId = 'current'
+  const agent = { session: { snapshotEvents: () => events }, ctx: { get: () => ({ execute: async () => ({ commandId, result: { kind: 'error', text } }) }) } }
+  await assert.rejects(executeBackgroundCompaction(agent), error => {
+    assert.match(compactionFailureMessage(error), /摘要未缩短内容/)
+    return true
+  })
+  commandId = 'unmatched'
+  await assert.rejects(executeBackgroundCompaction(agent), error => {
+    assert.equal(error.cause, undefined)
+    assert.equal(compactionFailureMessage(error), text)
+    return true
+  })
+})

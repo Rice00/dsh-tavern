@@ -93,6 +93,7 @@ export function createModelRequestLog(options = {}) {
         }])
       }
     })
+    if (record.sessionId) await writeJson('model-request-sessions/' + encodeURIComponent(record.sessionId) + '.json', { chatId: chat.id });
     return evidenceRecord(record)
   }
 
@@ -147,14 +148,20 @@ export function createModelRequestLog(options = {}) {
     if (!record) throw new Error('请求记录已缺失')
     return evidenceRecord(record, await readJson(base + id + '.result.json'))
   }
-  async function latest(chatId, knownId) {
+  async function latest(chatId, knownId, sessionId) {
     const entries = await list(chatId)
-    const entry = entries.findLast(item => item.scope === 'foreground')
+    const entry = entries.findLast(item => sessionId ? item.sessionId === sessionId : item.scope === 'foreground')
     if (!entry) return null
     if (knownId === entry.id) return { unchanged: true, id: entry.id }
     const base = 'model-requests/' + chatId + '/'
     const record = await readJson(base + entry.id + '.json')
     return record ? evidenceRecord(record, await readJson(base + entry.id + '.result.json')) : null
   }
-  return Object.freeze({ record, complete, evidence, list, detail, latest })
+  async function latestForSession(sessionId, knownId, fallbackChatId) {
+    if (!sessionId) return null;
+    const owner = await readJson('model-request-sessions/' + encodeURIComponent(sessionId) + '.json');
+    const chatId = owner?.chatId || fallbackChatId;
+    return chatId ? latest(chatId, knownId, sessionId) : null;
+  }
+  return Object.freeze({ record, complete, evidence, list, detail, latest, latestForSession })
 }

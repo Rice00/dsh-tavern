@@ -2917,8 +2917,12 @@ export async function apply(ctx) {
         return { saved: true }
       }
       case 'getLatestRequestContext': {
-        const chat = await chatForSession(str(args?.sessionId))
-        return { record: chat ? await modelRequestLog.latest(chat.id, str(args?.knownId)) : null }
+        const sessionId = str(args?.sessionId)
+        const background = backgroundAgentRunner.requestContext(sessionId)
+        const session = sessionStore.get(sessionId) || agentRegistry.get(sessionId)?.session
+        const ownerId = background?.parentSessionId || session?.header?.parentSession || sessionId
+        const chat = await chatForSession(ownerId)
+        return { record: await modelRequestLog.latestForSession(sessionId, str(args?.knownId), chat?.id) }
       }
       case 'listSkills': return { skills: (await tavernSkills.list()).map(({ content, path, ...summary }) => summary) }
       case 'editSkill': return { skill: await tavernSkills.edit(args) }

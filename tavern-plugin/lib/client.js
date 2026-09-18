@@ -11941,8 +11941,11 @@ window.__ModuleLoader__.load({
         function requestContextSections(request) {
             if (!request) return [];
             const sections = [];
-            // Walk the captured object and arrays in place: labels never determine order.
-            for (const [key, value] of Object.entries(request)) {
+            // System and tool declarations are independent request fields, not trailing messages.
+            const keys = ['system', 'tools', 'messages'].filter(key => Object.hasOwn(request, key))
+                .concat(Object.keys(request).filter(key => !['system', 'tools', 'messages'].includes(key)));
+            for (const key of keys) {
+                const value = request[key];
                 if (key === "messages" && Array.isArray(value) && value.length) {
                     value.forEach((message, index) => {
                         const labels = { "tavern:runtime-preset-front": "前段预设", "tavern:runtime-preset-middle": "中段预设", "tavern:runtime-preset-back": "末尾预设投影" };
@@ -11956,14 +11959,6 @@ window.__ModuleLoader__.load({
             }
             return sections.map(section => ({ ...section, text: typeof section.value === "string" ? section.value : JSON.stringify(section.value, null, 2) }));
         }
-        function FullRequestProjection(props) {
-            const [open, setOpen] = React.useState(false);
-            const text = React.useMemo(() => open ? JSON.stringify(props.request, null, 2) : "", [open, props.request]);
-            return React.createElement("details", { onToggle: event => setOpen(event.currentTarget.open) },
-                React.createElement("summary", null, "完整投影 JSON（原始顺序）"),
-                open ? React.createElement("pre", { style: { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } }, text) : null);
-        }
-
 		function FullRequestContextView(props) {
 			const h = React.createElement;
             const [record, setRecord] = React.useState(null);
@@ -12002,8 +11997,7 @@ window.__ModuleLoader__.load({
                 request ? h("button", { onClick: downloadJson }, "下载 JSON") : null,
                 sections.filter(section => !query || (section.title + section.text).toLowerCase().includes(query.toLowerCase())).map((section, index) => h("details", { key: record.id + ":" + section.title, open: !!query },
                     h("summary", null, section.title + " · " + section.text.length + " 字符"),
-                    h("pre", { style: { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } }, section.text))),
-                request ? h(FullRequestProjection, { key: record.id, request }) : null
+                    h("pre", { style: { whiteSpace: "pre-wrap", overflowWrap: "anywhere" } }, section.text)))
 			);
 		}
 

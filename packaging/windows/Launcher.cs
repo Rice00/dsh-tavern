@@ -121,6 +121,7 @@ class Launcher : Form {
  static string Quote(string s) {return "\""+Regex.Replace(s,@"(\\*)""", "$1$1\\\"").TrimEnd('\\')+new string('\\',(s.Length-s.TrimEnd('\\').Length)*2)+"\"";}
  void Run() {
   Directory.CreateDirectory(root);
+  File.SetAttributes(root,File.GetAttributes(root)&~FileAttributes.Hidden);
   using(var mutex=new Mutex(false,"Local\\DSHTavernPrepare-Online")) {
    Status("正在等待运行文件准备完成…"); bool locked=false;
    try {try {locked=mutex.WaitOne();}catch(AbandonedMutexException){locked=true;}

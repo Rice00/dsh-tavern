@@ -52,10 +52,13 @@ try {
     $sentinel = Join-Path $install 'data/用户存档.txt'
     Set-Content -LiteralPath $sentinel -Value 'Existing card and chat sentinel'
     $before = (Get-FileHash -LiteralPath $sentinel).Hash
+    $installFolder = Get-Item -LiteralPath $install
+    $installFolder.Attributes = $installFolder.Attributes -bor [IO.FileAttributes]::Hidden
     # Moving away the original download must not break the installed entry.
     Move-Item -LiteralPath $download -Destination (Join-Path $downloads 'removed-download.exe')
     Remove-Item -LiteralPath (Join-Path $install 'Desktop/DSH Tavern.lnk')
     Assert-True ((Run-Launcher $stable) -eq 0) 'installed entry runs after download is moved'
+    Assert-True (((Get-Item -LiteralPath $install -Force).Attributes -band [IO.FileAttributes]::Hidden) -eq 0) 'legacy hidden installation becomes visible'
     Assert-True (Test-Path -LiteralPath (Join-Path $install 'Desktop/DSH Tavern.lnk')) 'missing shortcut is repaired'
     Assert-True ((Get-FileHash -LiteralPath $sentinel).Hash -eq $before) 'existing data is preserved'
 

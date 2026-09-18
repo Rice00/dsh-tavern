@@ -1,3 +1,4 @@
+import { worldbookSnapshot } from './domain/worldbook-snapshot.js'
 import { projectCandidateScriptContext } from './domain/candidate-script-context.js'
 import { projectWorldbookFilterContext } from './domain/worldbook-filter-context.js'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
@@ -380,13 +381,15 @@ export function createBackgroundAgentTask(options) {
       const scriptContext = projectCandidateScriptContext(agent.session, input)
       const foregroundReads = typeof options.resolveForegroundWorldbookReads === 'function'
         ? await options.resolveForegroundWorldbookReads(input) : ''
-      const taskText = [foregroundReads, turnWorldbook ? '【本轮世界书上下文】\n' + turnWorldbook : '',
+      const snapshot = worldbook && typeof worldbook === 'object'
+        ? worldbookSnapshot(agent.session, turnWorldbook) : null
+      const taskText = [foregroundReads, snapshot?.rendered,
         backgroundPrompt(filterContext?.messages || input.messages, scriptContext?.turnContext ?? input.turnContext, input.task, input.system, input)].filter(Boolean).join('\n\n')
       agent.followup({
         id: randomUUID(),
         role: 'user',
         content: [{ type: 'text', text: taskText }],
-        source: { kind: 'plugin', plugin: 'dsh-tavern', ...(scriptContext?.body ? {
+        source: { kind: 'plugin', plugin: 'dsh-tavern', ...(snapshot ? { worldbookSnapshot: snapshot } : {}), ...(scriptContext?.body ? {
           candidateScriptWindow: { version: 1, start: taskText.indexOf(scriptContext.body), length: scriptContext.body.length, digest: scriptContext.digest }
         } : {}), ...(filterContext ? {
           worldbookFilterPayload: { version: 1, start: taskText.indexOf(filterContext.payloadText), length: filterContext.payloadText.length }

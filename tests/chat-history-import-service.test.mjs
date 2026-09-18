@@ -99,7 +99,7 @@ test('import rebuilds card instructions and worldbook context against each histo
   return await projectWorldBookTemplates({chat, card:await h.options.cards.read(), worldBook:await h.options.worldBooks.bound(), runtime})
  }
  await createChatHistoryImportService(h.options).import(input)
- const frames=h.session.deriveMessages().filter(m=>m.source?.form==='foreground-frame').map(m=>m.content[0].text)
+ const frames=foregroundContexts(h.session)
  assert.equal(frames.length,2)
  assert.match(frames[0],/Opening worldbook rule/)
  assert.doesNotMatch(frames[0],/Walked worldbook rule/)
@@ -124,7 +124,7 @@ test('历史导入复用正式世界书投影，当前输入不重复占用扫�
  h.options.worldBooks.bound=async()=>worldBook
  h.options.projectForegroundWorldbook=createForegroundWorldbook({bound:async()=>worldBook,runtime:async()=>runtime,globalVariables:async()=>({})})
  await createChatHistoryImportService(h.options).import(input)
- const frames=h.session.deriveMessages().filter(m=>m.source?.form==='foreground-frame').map(m=>m.content[0].text)
+ const frames=foregroundContexts(h.session)
  assert.match(frames[0],/<角色库>\n\n开场角色\n\n<\/角色库>/)
  assert.doesNotMatch(frames[1],/开场角色/)
  assert.match(frames[1],/<角色库>\n\n<\/角色库>/)
@@ -141,7 +141,7 @@ for (const textOnly of [false,true]) test(`历史导入装配真实筛选器仍�
  h.options.worldBooks.bound=async()=>worldBook;h.options.projectForegroundWorldbook=project
  await createChatHistoryImportService(h.options).import({...input,textOnly})
  assert.equal(calls,0)
- const frames=h.session.deriveMessages().filter(m=>m.source?.form==='foreground-frame').map(m=>m.content[0].text)
+ const frames=foregroundContexts(h.session)
  assert.match(frames[0],/walk rule/);assert.match(frames[1],/rest rule/)
  await project({chat:{id:'live',sessionId:'session',messages:[]},card:{},userText:'walk',worldBook})
  assert.equal(calls,1,'正常生成仍走真实模型筛选器')
@@ -166,3 +166,13 @@ test('条目模板报错不能无提示丢弃历史上下文',async()=>{
  await assert.rejects(createChatHistoryImportService(h.options).import(input),/第 2 轮.*broken/)
  assert.equal(h.publishes,0)
 })
+
+function foregroundContexts(session) {
+ const rounds = new Map()
+ for (const message of session.deriveMessages()) {
+  if (!['foreground-frame', 'worldbook-snapshot'].includes(message.source?.form)) continue
+  const turn = message.source.trace.turn
+  rounds.set(turn, [rounds.get(turn), ...message.content.map(block => block.text)].filter(Boolean).join('\n\n'))
+ }
+ return [...rounds.values()]
+}

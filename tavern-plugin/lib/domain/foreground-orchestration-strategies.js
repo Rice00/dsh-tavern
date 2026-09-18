@@ -255,7 +255,7 @@ export function createNativePlayOrchestrationStrategy(options) {
       if (prepared && prepared.duplicate) throw new Error('该消息已由酒馆处理，请勿重复发送')
       if (mode === 'story' || mode === 'script') {
         agentMessages = replaceTurnInput(agentMessages, prepared.frame.userInput.projectedText)
-        const adapted = options.appendFrame({ messages: agentMessages, frame: prepared.frame, step: payload.step })
+        const adapted = options.appendFrame({ messages: agentMessages, frame: prepared.frame, step: payload.step, session: payload.agent?.session })
         agentMessages = adapted.messages
         options.recordFrame(sessionId, prepared.frame, adapted.receipt)
       } else if (str(prepared.text).trim() !== '') {

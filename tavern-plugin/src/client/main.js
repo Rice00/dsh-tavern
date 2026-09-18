@@ -9814,15 +9814,19 @@ window.__ModuleLoader__.load({
         function requestContextSections(request) {
             if (!request) return [];
             const sections = [];
-            if (request.system !== undefined && request.system !== "" && request.system !== null) sections.push({ title: "系统提示词", value: request.system });
-            (request.messages || []).forEach((message, index) => {
-                const names = (message.source?.sections || []).map(section => section.name);
-                const phases = [["front", "前段预设"], ["middle", "中段预设"], ["back", "末尾预设投影"]]
-                    .filter(([phase]) => names.includes("tavern:runtime-preset-" + phase)).map(([, label]) => label);
-                sections.push({ title: (index + 1) + ". " + message.role + (phases.length ? " · " + phases.join("、") : ""), value: message });
-            });
-            if (request.tools !== undefined) sections.push({ title: "工具定义（独立请求字段）", value: request.tools });
-            sections.push({ title: "其他调用参数", value: Object.fromEntries(Object.entries(request).filter(([key]) => !["system", "messages", "tools"].includes(key))) });
+            // Walk the captured object and arrays in place: labels never determine order.
+            for (const [key, value] of Object.entries(request)) {
+                if (key === "messages" && Array.isArray(value) && value.length) {
+                    value.forEach((message, index) => {
+                        const labels = { "tavern:runtime-preset-front": "前段预设", "tavern:runtime-preset-middle": "中段预设", "tavern:runtime-preset-back": "末尾预设投影" };
+                        const phases = (message?.source?.sections || []).map(section => labels[section.name]).filter(Boolean);
+                        sections.push({ title: "messages[" + index + "] · " + (message?.role || "消息") + (phases.length ? " · " + phases.join("、") : ""), value: message });
+                    });
+                } else {
+                    const labels = { system: "系统提示词", tools: "工具定义", messages: "消息" };
+                    sections.push({ title: key + (labels[key] ? " · " + labels[key] : ""), value });
+                }
+            }
             return sections.map(section => ({ ...section, text: typeof section.value === "string" ? section.value : JSON.stringify(section.value, null, 2) }));
         }
         function FullRequestProjection(props) {

@@ -88,7 +88,7 @@ export function presentTavernSettings(document, defaults) {
     contextCompaction: compactionPolicy(object(document).contextCompaction),
     compatibilityMode: true,
     webSearchEnabled: object(document).webSearchEnabled === true,
-    systemAppendEnabled: object(document).systemAppendEnabled !== false,
+    systemAppendEnabled: object(document).systemAppendEnabled === true,
     backgroundModel: normalizeBackgroundModel(object(document).backgroundModel),
     backgroundTasks: normalizeBackgroundTasks(object(document).backgroundTasks),
     // Card rendering uses a fixed trusted policy; legacy preferences are no longer applied.

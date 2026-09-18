@@ -377,3 +377,45 @@ test('failed background settlement releases its retained executor', async t => {
   assert.equal(h.runtimes[0].disposed, 1)
   assert.equal(h.subscriptions.some(s => s.id === 'A' && s.active), false)
 })
+
+test('foreground generation keeps both executors after navigation until fresh idle confirmation', async t => {
+  const { createFullTemplateRuntime } = await import('../tavern-plugin/lib/domain/full-template-runtime.js')
+  const h = harness()
+  const runtime = createFullTemplateRuntime({ readyTimeoutMs: 20, publishSignal(id) {
+    const work = runtime.dispatch.claim(id, 'page', true)
+    runtime.dispatch.start(id, work.event.id, work.leaseToken, 'page')
+    runtime.dispatch.complete(id, work.event.id, ['rendered'], 'page', work.leaseToken)
+  } })
+  t.after(() => runtime.dispose())
+  h.options.window.document = { body: { appendChild() {} }, createElement() { return { setAttribute() {}, remove() {}, contentWindow: { postMessage() {} } } } }
+  h.options.rpc = async (method, args, id) => {
+    if (method === 'releaseFullTemplateRuntime') runtime.dispatch.dispose(id)
+    return {}
+  }
+  h.views.set('A', { ...view(1), chatId: 'chat-A', mode: 'story' })
+  const owner = h.client.createTavernScriptSessionOwner(h.options)
+  t.after(() => owner.dispose())
+  h.list.set({ current: 'A', byId: { A: { running: true } } })
+  owner.start(); await h.poll()
+  runtime.heartbeat('A', 'page', 'ready')
+  h.list.set({ current: 'B', byId: { A: { running: true } } }); await h.poll()
+  assert.equal(await runtime.forSession('A').render('foreground request'), 'rendered')
+  assert.equal(h.runtimes[0].disposed, 0)
+  h.views.set('A', { ...view(2), chatId: 'chat-A', activity: { phase: 'pending', busy: true } })
+  h.list.set({ current: 'B', byId: { A: { running: false } } }); await h.poll()
+  assert.equal(h.runtimes[0].disposed, 0, 'fresh settlement state must win over stale idle state')
+  h.liveView.update('A', { ...view(3), chatId: 'chat-A', activity: { phase: 'idle', busy: false } }); await h.poll()
+  assert.equal(h.runtimes[0].disposed, 1)
+})
+
+test('retained foreground executor releases after failed generation with no settlement', async t => {
+  const h = harness(), owner = h.client.createTavernScriptSessionOwner(h.options)
+  t.after(() => owner.dispose())
+  h.list.set({ current: 'A', byId: { A: { running: true } } })
+  owner.start(); await h.poll()
+  h.list.set({ current: 'B', byId: { A: { running: true } } }); await h.poll()
+  assert.equal(h.runtimes[0].disposed, 0)
+  h.list.set({ current: 'B', byId: { A: { running: false } } }); await h.poll()
+  assert.equal(h.runtimes[0].disposed, 1)
+  assert.equal(h.gate.status('A').present, false)
+})

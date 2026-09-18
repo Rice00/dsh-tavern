@@ -5733,6 +5733,7 @@ window.__ModuleLoader__.load({
 			}
 			function retire(record) {
 				if (current === record || records.get(record.sessionId) !== record || !record.fresh) return;
+				if (sessions.list.getSnapshot().byId?.[record.sessionId]?.running === true) return;
 				const state = record.viewState;
 				if (!state || state.phase !== "ready") {
 					if (state && state.phase === "unavailable") release(record);
@@ -5756,7 +5757,7 @@ window.__ModuleLoader__.load({
 				retire(record);
 			}
 			function createRecord(sessionId) {
-				const record = { sessionId: sessionId, viewState: null, loadState: null, fresh: false, stopView: null };
+				const record = { sessionId: sessionId, viewState: null, loadState: null, fresh: false, foregroundRunning: sessions.list.getSnapshot().byId?.[sessionId]?.running === true, stopView: null };
 				record.template = createFullTemplateExecutor({ window: hostWindow, rpc: options.rpc || rpc, executeSlash: options.executeSlash });
 				record.execution = (options.createExecution || createTavernScriptExecutionModule)({
 					window: hostWindow, rpc: options.rpc || rpc,
@@ -5774,6 +5775,16 @@ window.__ModuleLoader__.load({
 			function select() {
 				if (!observing) return;
 				const sessionId = selectedOwner();
+				// Foreground completion can start settlement before its view signal
+				// arrives. Refresh before retiring a retained executor.
+				records.forEach(function (record) {
+					const running = sessions.list.getSnapshot().byId?.[record.sessionId]?.running === true;
+					if (record.foregroundRunning && !running && record !== current) {
+						record.fresh = false;
+						views.invalidate(record.sessionId);
+					}
+					record.foregroundRunning = running;
+				});
 				if ((current ? current.sessionId : "") === sessionId) return;
 				const previous = current;
 				current = sessionId ? records.get(sessionId) || createRecord(sessionId) : null;

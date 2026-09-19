@@ -1062,3 +1062,6 @@ body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
 .dsh-template-panel summary { cursor:pointer; margin:12px 0; font-size:13px; }
 .dsh-template-actions { display:flex; gap:8px; }
 .dsh-template-panel .dsh-template-feedback { white-space:pre-wrap; overflow-wrap:anywhere; margin-top:10px; }
+
+/* Keep the existing browsing context when presenting a card at screen size. */
+.dsh-tavern-message-frame-slot > iframe.dsh-tavern-message-frame:fullscreen { width: 100vw !important; height: 100vh !important; max-height: none !important; background: var(--dsw-alias-bg-base, Canvas); }

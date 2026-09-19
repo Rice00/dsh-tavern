@@ -12227,11 +12227,15 @@ window.__ModuleLoader__.load({
 		}
 		function CandidateQuestion(props) {
 			const panel = useCandidatePanel();
+            const draft = props.useInput(snapshot => snapshot.draft);
+            const draftRef = React.useRef(draft);
+            draftRef.current = draft;
 			const sessionMode = useTavernSessionMode(props.sessionId);
 			const running = props.useSession(function (snapshot) { return snapshot.running; });
 			const latestMessageId = props.useChat(latestTavernAssistantMessageId);
 			const [selected, setSelected] = React.useState(-1);
 			const [expanded, setExpanded] = React.useState(false);
+            React.useEffect(() => { if (running) setExpanded(false); }, [running]);
 			React.useEffect(function () {
 				setSelected(sessionMode === "script" && panel && Array.isArray(panel.choices) && panel.choices.length === 1 ? 0 : -1);
 				setExpanded(panel !== null && panel.phase === "error");
@@ -12284,9 +12288,12 @@ window.__ModuleLoader__.load({
 						const item = panel.choices[selected];
 						const choice = item !== null && typeof item === "object" ? item : { type: "action", text: String(item) };
 						const marked = choice.type === "scene" ? "【场景变化】" + choice.text : choice.text;
-						props.inputActions.setDraft(marked);
-						setCandidatePanel(null);
-					} }, "填入输入框")
+						const current = String(draftRef.current || "");
+                        const next = current + (current && !current.endsWith("\n") ? "\n" : "") + marked;
+                        draftRef.current = next;
+                        props.inputActions.setDraft(next);
+                        setSelected(-1);
+					} }, "追加到输入框")
 				) : null
 			);
 		}

@@ -1,4 +1,3 @@
-import { isDeepStrictEqual } from 'node:util'
 import { sessionEvents } from './session-events.js'
 import { clearRegenerationAttemptSurface, regenerationAttemptTurns, locateRegenerationSurface } from './rollback-surface.js'
 
@@ -34,17 +33,20 @@ export function createRegenerationRecovery({ chats, sessions, timeline, isActive
   }
 
   async function abort({ chatId, originalChat, session, eventStart, operationId }) {
-    const expected = await chats.read(chatId)
-    if (!expected || expected.regenInProgress !== true ||
-        (operationId && expected.regenRecovery?.id !== operationId) ||
-        Number(expected.tavernHelperLifecycleRevision || 0) > Number(originalChat.tavernHelperLifecycleRevision || 0) + 1) return
-    const abortedTurns = regenerationAttemptTurns({ events: sessionEvents(session), eventStart })
-    // Keep the durable recovery point until the native projection is saved too.
-    // A crash or flush failure can then safely retry the entire abort.
-    clearRegenerationAttemptSurface({ session, eventStart })
-    if (typeof sessions.flush === 'function') await sessions.flush(session)
-    return await chats.update(chatId, current => {
-      if (!isDeepStrictEqual(current, expected)) throw new Error('恢复重新生成期间对话已变化，请重试')
+    // Hold the Chat store transaction across projection cleanup and flush. A
+    // concurrent observer must not invalidate restoration after cleanup succeeds.
+    return await chats.update(chatId, async current => {
+      if (!current || current.regenInProgress !== true ||
+          (operationId && current.regenRecovery?.id !== operationId) ||
+          Number(current.tavernHelperLifecycleRevision || 0) > Number(originalChat.tavernHelperLifecycleRevision || 0) + 1) return
+      const events = sessionEvents(session)
+      if (events.some(event => event.seq >= eventStart && event.type === 'user/message' && event.data?.source?.kind === 'user')) {
+        throw new Error('重新生成后已有新的玩家输入，未清理或覆盖后续对话')
+      }
+      const abortedTurns = regenerationAttemptTurns({ events, eventStart })
+      // Retain the durable recovery point if the native flush fails.
+      clearRegenerationAttemptSurface({ session, eventStart })
+      if (typeof sessions.flush === 'function') await sessions.flush(session)
       const next = timeline.apply({ chat: current, intent: { kind: 'replacement.abort', restoreChat: originalChat } }).chat
       delete next.regenInProgress
       delete next.regenRecovery

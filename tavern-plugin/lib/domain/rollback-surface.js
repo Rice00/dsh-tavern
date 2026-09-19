@@ -339,7 +339,22 @@ export function clearRegenerationAttemptSurface(input) {
   if (!session || typeof session.append !== 'function') return 0
   const nodes = session.surface && Array.isArray(session.surface.nodes) ? session.surface.nodes : []
   const eventStart = Math.max(0, Number(input && input.eventStart) || 0)
-  const temporary = nodes.filter(function (seq) { return Number(seq) >= eventStart }).map(Number)
+  const events = sessionEvents(session)
+  // A replacement has a new seq but keeps its historical position. Ownership
+  // follows displaced nodes; event time alone cannot identify temporary input.
+  const end = events.find(event => event.seq >= eventStart && (event.type === 'turn/end' ||
+    (event.type === 'user/message' && event.data?.source?.kind === 'user')))?.seq ?? Infinity
+  const owned = new Set()
+  for (const event of events) {
+    if (event.seq < eventStart) continue
+    if (event.surfaceOp?.op === 'replace') {
+      const refs = event.sourceEventSeqs
+      if (Array.isArray(refs) && refs.length > 0 && refs.every(seq => owned.has(seq))) owned.add(event.seq)
+    } else if (event.seq < end && event.surfaceOp === 'append') {
+      owned.add(event.seq)
+    }
+  }
+  const temporary = nodes.filter(seq => owned.has(Number(seq))).map(Number)
   if (temporary.length === 0) return 0
   const firstIndex = nodes.indexOf(temporary[0])
   const lastIndex = nodes.indexOf(temporary[temporary.length - 1])

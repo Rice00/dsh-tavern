@@ -65,7 +65,7 @@ function harness({ checkpoint = false, mode = 'story', journal = false } = {}) {
     read: async () => structuredClone(chat), forSession: async () => structuredClone(chat), readCard: async () => ({ name: '角色' }),
     readRevision: async (_id, revision) => { calls.push('readRevision'); return revisions.get(revision) },
     write: async (value, metadata) => { calls.push(metadata.source); chat = structuredClone(value); return structuredClone(chat) },
-    update: async (_id, mutate, metadata) => { calls.push(metadata.source); const revision = chat._storageRevision; if (journal) revisions.set(revision, structuredClone(chat)); chat = mutate(structuredClone(chat)); if (journal) chat._storageRevision = revision + 1; return structuredClone(chat) }
+    update: async (_id, mutate, metadata) => { calls.push(metadata.source); const revision = chat._storageRevision; if (journal) revisions.set(revision, structuredClone(chat)); chat = await mutate(structuredClone(chat)) ?? chat; if (journal) chat._storageRevision = revision + 1; return structuredClone(chat) }
   }
   const options = { chats, sessions: { get: () => agent }, timeline, scripts: {
     read: async () => ({ chunks: ['一', '二'] }), continuity: { transition: () => { calls.push('script.restore'); return { state: { cursor: 0 } } } },

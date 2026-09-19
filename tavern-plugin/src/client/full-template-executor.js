@@ -1,6 +1,6 @@
 // This panel only edits settings. Template code executes in the service.
 function createServerTemplatePanel({ window: hostWindow, rpc: invoke, isActive = () => true }) {
-  let sessionId = '', panel = null;
+  let sessionId = '', panel = null, returnFocus = null;
   const names = {
     enabled: '启用提示词模板', generate_enabled: '生成时执行模板', generate_loader_enabled: '生成时加载世界书',
     render_enabled: '显示时执行模板', render_loader_enabled: '显示时加载世界书', with_context_disabled: '禁用 with 上下文',
@@ -10,18 +10,21 @@ function createServerTemplatePanel({ window: hostWindow, rpc: invoke, isActive =
     inject_loader_enabled: '注入加载器', invert_enabled: '反转处理', depth_limit: '聊天处理深度',
     compile_workers: '异步编译', sandbox: '模板兼容沙箱', preload_only: '仅预加载条目'
   };
-  function close() { panel?.remove(); panel = null; }
+  function close() { panel?.remove(); panel = null; if (returnFocus?.isConnected) returnFocus.focus(); returnFocus = null; }
   async function open(event) {
     if (!sessionId || !isActive() || event?.detail?.handled) return;
     if (event?.detail) event.detail.handled = true;
     close();
     const document = hostWindow.document, owner = sessionId;
     const dialog = document.createElement('dialog'); panel = dialog;
-    dialog.style.cssText = 'width:min(800px,90vw);max-height:85vh;overflow:auto;padding:24px;border-radius:12px';
+    returnFocus = document.activeElement;
+    dialog.className = 'dsh-template-dialog';
+    dialog.setAttribute('aria-label', '提示词模板');
     const title = document.createElement('h2'); title.textContent = '提示词模板';
-    const exit = document.createElement('button'); exit.textContent = '关闭'; exit.onclick = close;
+    const exit = document.createElement('button'); exit.textContent = '关闭'; exit.className = 'dsh-tavern-btn'; exit.onclick = close;
     const content = document.createElement('div'), feedback = document.createElement('p'); feedback.setAttribute('role','status');
-    dialog.append(title, exit, content, feedback); document.body.appendChild(dialog);
+    const header = document.createElement('div'); header.className = 'dsh-tavern-status-head'; header.append(title, exit);
+    dialog.append(header, content, feedback); document.body.appendChild(dialog);
     dialog.addEventListener('cancel', close); dialog.showModal();
     try {
       const state = await invoke('getFullPromptTemplateState', {}, owner);
@@ -31,12 +34,12 @@ function createServerTemplatePanel({ window: hostWindow, rpc: invoke, isActive =
       for (const [key, label] of Object.entries(names)) {
         if (settings[key] === undefined) continue;
         const row = document.createElement('label'), input = document.createElement('input');
-        row.style.cssText = 'display:block;margin:10px 0'; row.append(document.createTextNode(label + ' '));
+        row.className = 'dsh-template-field'; row.append(document.createTextNode(label + ' '));
         input.type = typeof settings[key] === 'boolean' ? 'checkbox' : typeof settings[key] === 'number' ? 'number' : 'text';
-        if (input.type === 'checkbox') input.checked = settings[key]; else input.value = settings[key];
+        if (input.type === 'checkbox') { input.checked = settings[key]; input.setAttribute('role', 'switch'); } else input.value = settings[key];
         row.append(input); content.append(row); fields.push({ key, input });
       }
-      const save = document.createElement('button'); save.textContent = '保存设置'; content.append(save);
+      const save = document.createElement('button'); save.textContent = '保存设置'; save.className = 'dsh-tavern-btn'; content.append(save);
       save.onclick = async () => {
         save.disabled = true;
         try {
@@ -45,12 +48,13 @@ function createServerTemplatePanel({ window: hostWindow, rpc: invoke, isActive =
           const result = await invoke('saveFullPromptTemplateSettings', { settings: next, expectedSettings: settings }, owner);
           if (!result.updated) throw new Error('设置未保存');
           settings = result.settings; feedback.textContent = '已保存';
+          hostWindow.dispatchEvent(new hostWindow.CustomEvent('dsh-template-settings-saved'));
         } catch (error) { feedback.textContent = String(error.message || error); }
         finally { save.disabled = false; }
       };
       const command = document.createElement('textarea'); command.setAttribute('aria-label', '模板命令'); command.placeholder = '/ejs <%= 1 + 1 %>';
       command.style.cssText = 'display:block;width:100%;min-height:100px;margin-top:20px';
-      const run = document.createElement('button'); run.textContent = '执行模板命令'; content.append(command, run);
+      const run = document.createElement('button'); run.textContent = '执行模板命令'; run.className = 'dsh-tavern-btn'; content.append(command, run);
       run.onclick = async () => {
         run.disabled = true;
         try { const result = await invoke('executeFullTemplateCommand', { text: command.value }, owner); feedback.textContent = String(result.pipe || '已执行'); }
@@ -62,7 +66,7 @@ function createServerTemplatePanel({ window: hostWindow, rpc: invoke, isActive =
       let book = bookResult.worldbook;
       const select = document.createElement('select'), editor = document.createElement('textarea'), saveEntry = document.createElement('button');
       select.setAttribute('aria-label', '世界书条目'); editor.setAttribute('aria-label', '条目正文');
-      editor.style.cssText = 'display:block;width:100%;min-height:200px;margin:12px 0'; saveEntry.textContent = '保存条目';
+      editor.style.cssText = 'display:block;width:100%;min-height:200px;margin:12px 0'; saveEntry.className = 'dsh-tavern-btn'; saveEntry.textContent = '保存条目';
       for (const [index, entry] of book.entries.entries()) {
         const option = document.createElement('option'); option.value = index; option.textContent = entry.name || entry.comment || String(entry.uid); select.append(option);
       }
@@ -82,7 +86,7 @@ function createServerTemplatePanel({ window: hostWindow, rpc: invoke, isActive =
     } catch (error) { feedback.textContent = String(error.message || error); }
   }
   hostWindow.addEventListener('dsh-template-settings', open);
-  return { sync(id, view) { sessionId = view?.chatId && isPlayMode(view.mode || 'story') ? id : ''; },
+  return { sync(id, view) { if (id !== sessionId || !isActive()) close(); sessionId = view?.chatId && isPlayMode(view.mode || 'story') ? id : ''; },
     dispose() { sessionId = ''; close(); hostWindow.removeEventListener('dsh-template-settings', open); } };
 }
 

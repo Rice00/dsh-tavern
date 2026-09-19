@@ -33,5 +33,15 @@ export function createTavernExtensionSettings(profileData) {
     return project(saved)
   }
 
-  return Object.freeze({ read, save })
+  async function setTemplateEnabled(enabled) {
+    if (typeof enabled !== 'boolean') throw new Error('模板开关必须为布尔值')
+    const saved = await profileData.updateJson(settingsPath, current => {
+      const next = writable(current ?? {})
+      next.EjsTemplate = { ...next.EjsTemplate, enabled }
+      return next
+    })
+    return { enabled: saved.EjsTemplate.enabled }
+  }
+
+  return Object.freeze({ read, save, setTemplateEnabled })
 }

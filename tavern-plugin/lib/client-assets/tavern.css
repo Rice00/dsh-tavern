@@ -1031,3 +1031,37 @@ body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
 .dsh-tavern-writing-skill > .dsh-tavern-writing-skill-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0; cursor: pointer; }
 .dsh-tavern-writing-skill-heading > span { min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
 .dsh-tavern-writing-skill > .dsh-tavern-settings-desc { margin: 6px 0 0; }
+
+.dsh-template-settings > .dsh-tavern-btn { align-self: flex-start; }
+.dsh-template-dialog {
+  box-sizing: border-box; width: min(760px, calc(100vw - 32px)); max-height: 85vh;
+  padding: 24px; overflow: auto; border-radius: 14px;
+  border: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-base); box-shadow: 0 18px 54px rgba(0,0,0,.3);
+}
+.dsh-template-dialog::backdrop { background: rgba(0,0,0,.48); }
+.dsh-template-dialog h2 { margin: 0; font-size: 17px; }
+.dsh-template-dialog .dsh-tavern-status-head { padding: 0 0 16px; }
+.dsh-template-field { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--dsw-alias-border-l2); }
+.dsh-template-field input:not([type=checkbox]) { width: min(180px, 45%); }
+.dsh-template-dialog input:not([type=checkbox]), .dsh-template-dialog textarea, .dsh-template-dialog select {
+  box-sizing: border-box; padding: 7px 10px; border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 7px; background: var(--dsw-specific-sidebar-fill); color: inherit; font: inherit;
+}
+.dsh-template-dialog button { margin-top: 12px; }
+.dsh-template-dialog [role=status] { margin-top: 12px; color: var(--dsw-alias-label-secondary); }
+.dsh-template-dialog .dsh-tavern-status-head { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.dsh-template-dialog .dsh-tavern-status-head button { margin: 0; }
+.dsh-template-settings input[role=switch], .dsh-template-dialog input[role=switch] {
+  appearance: none; position: relative; width: 34px; height: 20px; flex-shrink: 0;
+  border: 1px solid var(--dsw-alias-border-l2); border-radius: 12px;
+  background: var(--dsw-specific-sidebar-fill); cursor: pointer; transition: background .15s;
+}
+.dsh-template-settings input[role=switch]::after, .dsh-template-dialog input[role=switch]::after {
+  content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px;
+  border-radius: 50%; background: var(--dsw-alias-label-secondary); transition: transform .15s;
+}
+.dsh-template-settings input[role=switch]:checked, .dsh-template-dialog input[role=switch]:checked { background: #5267b8; border-color: #5267b8; }
+.dsh-template-settings input[role=switch]:checked::after, .dsh-template-dialog input[role=switch]:checked::after { transform: translateX(14px); background: #fff; }
+.dsh-template-settings input[role=switch]:focus-visible, .dsh-template-dialog input[role=switch]:focus-visible { outline: 2px solid #8095e5; outline-offset: 3px; }
+.dsh-template-settings input[role=switch]:disabled { opacity: .5; cursor: wait; }

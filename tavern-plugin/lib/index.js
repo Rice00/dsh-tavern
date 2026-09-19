@@ -3041,6 +3041,8 @@ export async function apply(ctx) {
       case 'cancelSceneImage': return { illustration: await enabledSceneIllustrations().cancel(args.sessionId, args.turn, args.key, args.requestId) }
       case 'removeSceneImage': return { illustration: await enabledSceneIllustrations().removeImage(args.sessionId, args.turn, args.key, args.versionId) }
       case 'setSceneImageReference': return { illustration: await enabledSceneIllustrations().setReference(args.sessionId, args.turn, args.key, args.versionId, args.consent, args.enabled !== false, args.personId) }
+      case 'getPromptTemplateSettings': return { enabled: (await tavernExtensionSettings.read()).EjsTemplate?.enabled !== false }
+      case 'setPromptTemplateEnabled': return await tavernExtensionSettings.setTemplateEnabled(args?.enabled)
       case 'updateTavernSettings': return { settings: await updateTavernSettings(args && args.patch) }
       case 'getSystemPrompts': return { systemPrompts: presentSystemPrompts(await readTavernSettings()) }
       case 'updateSystemPrompt': {

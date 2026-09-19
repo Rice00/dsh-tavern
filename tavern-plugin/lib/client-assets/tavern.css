@@ -1042,5 +1042,16 @@ body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
 .dsh-ejs-editor-footer { border-top:1px solid var(--dsw-alias-border-l2); font-size:12px; }
 .dsh-ejs-editor-footer .dsh-tavern-btn { flex-shrink:0; }
 
-.dsh-template-library-body { flex:1; min-height:0; overflow:auto; }
-.dsh-template-library-dialog .dsh-tavern-library { min-height:100%; }
+.dsh-template-panel-body { flex:1; min-height:0; overflow:auto; padding:20px; }
+.dsh-template-section + .dsh-template-section { margin-top:24px; padding-top:20px; border-top:1px solid var(--dsw-alias-border-l2); }
+.dsh-template-section h3 { margin:0 0 8px; font-size:15px; }
+.dsh-template-panel .dsh-template-help { margin:0 0 16px; line-height:1.6; }
+.dsh-template-settings-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:8px 24px; margin-bottom:16px; }
+.dsh-template-setting { display:flex; justify-content:space-between; align-items:center; gap:12px; font-size:13px; min-height:32px; }
+.dsh-template-setting input[type=checkbox] { accent-color:#9a622f; }
+.dsh-template-panel input[type=number] { width:80px; }
+.dsh-template-panel textarea,.dsh-template-panel select,.dsh-template-panel input[type=number] { box-sizing:border-box; padding:8px; border:1px solid var(--dsw-alias-border-l2); border-radius:8px; background:var(--dsw-specific-input-major); color:inherit; font:inherit; }
+.dsh-template-panel textarea { display:block; width:100%; min-height:120px; margin:12px 0; resize:vertical; }
+.dsh-template-panel summary { cursor:pointer; margin:12px 0; font-size:13px; }
+.dsh-template-actions { display:flex; gap:8px; }
+.dsh-template-panel .dsh-template-feedback { white-space:pre-wrap; overflow-wrap:anywhere; margin-top:10px; }

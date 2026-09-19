@@ -1,5 +1,5 @@
 // A disposable editor frame: template code is text, never evaluated here.
-function EjsCodeEditor({ value, title, onApply, onClose }) {
+function EjsCodeEditor({ value, title, onApply, onClose, applyHint }) {
   const h = React.createElement;
   const dialogRef = React.useRef(null), frameRef = React.useRef(null);
   const [ready, setReady] = React.useState(false), [error, setError] = React.useState('');
@@ -46,6 +46,6 @@ function EjsCodeEditor({ value, title, onApply, onClose }) {
   return h('dialog', { ref: dialogRef, className: 'dsh-ejs-editor', 'aria-label': 'EJS 代码编辑器', onCancel: event => { event.preventDefault(); event.stopPropagation(); onClose(); } },
     h('div', { className: 'dsh-ejs-editor-head' }, h('div', null, h('h2', null, 'EJS 代码编辑'), h('p', null, title || '世界书条目')), h('button', { type: 'button', className: 'dsh-tavern-btn', onClick: onClose }, '取消')),
     h('iframe', { ref: frameRef, title: 'EJS 模板代码', sandbox: 'allow-scripts allow-same-origin' }),
-    h('div', { className: 'dsh-ejs-editor-footer' }, h('span', { role: error ? 'alert' : 'status' }, error || (ready ? '应用后写回条目草稿；保存世界书后生效。' : '正在加载代码编辑器…')),
+    h('div', { className: 'dsh-ejs-editor-footer' }, h('span', { role: error ? 'alert' : 'status' }, error || (ready ? (applyHint || '应用后写回条目草稿；保存世界书后生效。') : '正在加载代码编辑器…')),
       h('button', { type: 'button', className: 'dsh-tavern-btn', disabled: !ready || Boolean(error), onClick: () => frameRef.current.contentWindow.postMessage({ type: 'read', nonce: frameRef.current.dataset.nonce }, '*') }, '应用到条目')));
 }

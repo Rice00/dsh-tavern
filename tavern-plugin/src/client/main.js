@@ -4246,6 +4246,7 @@ window.__ModuleLoader__.load({
 				});
 				if ((current ? current.sessionId : "") === sessionId) return;
 				const previous = current;
+                if (previous) previous.templatePanel.close();
                 if (previous && previous.execution.setForeground) previous.execution.setForeground(false);
 				retention.select(sessionId);
 				hostWindow.__dshTavernSelectedSessionId = sessionId;
@@ -6818,15 +6819,25 @@ window.__ModuleLoader__.load({
         }
 
         function PromptTemplateSettingsEntry() {
-            const [open, setOpen] = React.useState(false);
+            const [code, setCode] = React.useState(null), [error, setError] = React.useState("");
+            const request = React.useRef(null);
+            React.useEffect(() => () => { request.current?.close?.(); }, []);
+            function open() {
+                setError("");
+                const detail = { handled: false, openCodeEditor: setCode, onClose: () => setCode(null) };
+                request.current = detail;
+                window.dispatchEvent(new CustomEvent("dsh-template-settings", { detail }));
+                if (!detail.handled) setError("请先打开一局游戏，等待加载完成后再进入模板设置。");
+            }
             const h = React.createElement;
             return h("section", { className: "dsh-tavern-settings-group" },
                 h("div", { className: "dsh-tavern-settings-row" },
                     h("div", { className: "dsh-tavern-settings-copy" },
                         h("strong", null, "提示词模板"),
-                        h("p", { className: "dsh-tavern-settings-desc" }, "编辑人物卡内置世界书或独立世界书中的 EJS 模板代码。")),
-                    h("button", { type: "button", className: "dsh-tavern-btn", onClick: () => setOpen(true) }, "提示词模板设置与编辑器")),
-                open ? h(worldBookLibraryFeature.TemplateEditorDialog, { onClose: () => setOpen(false) }) : null);
+                        h("p", { className: "dsh-tavern-settings-desc" }, "调整 EJS 模板运行设置、编辑当前游戏的世界书模板，并测试模板命令。")),
+                    h("button", { type: "button", className: "dsh-tavern-btn", onClick: open }, "提示词模板设置与编辑器")),
+                error ? h("p", { className: "dsh-tavern-settings-error", role: "alert" }, error) : null,
+                code ? h(EjsCodeEditor, { ...code, applyHint: "应用后写回条目草稿；点击「保存条目」后生效。", onClose: () => setCode(null), onApply: value => { code.onApply(value); setCode(null); } }) : null);
         }
 
 		function TavernSettingsSection() {
@@ -7844,19 +7855,6 @@ window.__ModuleLoader__.load({
 				catalog ? group("独立世界书", catalog.standalone || []) : null,
 				catalog ? group("人物卡内置世界书", catalog.embedded || []) : null));
 		}
-        function TemplateEditorDialog({ onClose }) {
-            const ref = React.useRef(null);
-            React.useEffect(() => {
-                const dialog = ref.current, previous = document.activeElement;
-                dialog.showModal();
-                return () => { dialog.close(); if (previous?.isConnected) previous.focus(); };
-            }, []);
-            return React.createElement("dialog", { ref, className: "dsh-ejs-editor dsh-template-library-dialog", "aria-label": "提示词模板设置与编辑器", onCancel: event => { event.preventDefault(); event.stopPropagation(); onClose(); } },
-                React.createElement("div", { className: "dsh-ejs-editor-head" },
-                    React.createElement("div", null, React.createElement("h2", null, "提示词模板设置与编辑器"), React.createElement("p", null, "选择世界书和条目，点击「EJS 代码编辑」；应用后保存世界书。")),
-                    React.createElement("button", { type: "button", className: "dsh-tavern-btn", onClick: onClose }, "关闭编辑器")),
-                React.createElement("div", { className: "dsh-template-library-body" }, React.createElement(WorldBookLibraryTab, { scope: { sessionId: "" } })));
-        }
 		function register(input) {
 			const ctx = input.ctx;
 			const appendMention = input.appendMention;
@@ -7868,7 +7866,7 @@ window.__ModuleLoader__.load({
 				component: function (props) { return React.createElement(WorldBookLibraryTab, Object.assign({}, props, { appendMention: function (kind, path, label) { appendMention(props.scope.sessionId, kind, path, label); } })); }
 			}), "dsh-tavern: Better Sidebar worldbook library tab");
 		}
-		return Object.freeze({ register: register, TemplateEditorDialog: TemplateEditorDialog });
+		return Object.freeze({ register: register });
 		}
 		const worldBookLibraryFeature = createWorldBookLibraryFeatureModule();
 

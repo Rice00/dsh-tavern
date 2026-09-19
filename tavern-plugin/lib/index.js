@@ -35,7 +35,7 @@ import { createPerformanceDiagnostics } from './domain/performance-diagnostics.j
 import { createBackgroundSuppressionReader } from './domain/background-surface.js'
 import { ensureCardWorkspaceMessage } from './domain/card-workspace-message.js'
 import { createPromptTemplateGlobalVariables } from './domain/prompt-template-global-variables.js'
-import { FULL_PROMPT_TEMPLATE_ASSET_PREFIX, readFullPromptTemplateAsset } from './domain/full-prompt-template-assets.js'
+import { FULL_PROMPT_TEMPLATE_ASSET_PREFIX, readFullPromptTemplateAsset, fullPromptTemplateRuntimeInfo } from './domain/full-prompt-template-assets.js'
 import { createTavernApiDiagnostics } from './domain/tavern-api-diagnostics.js'
 import { generateHelperRaw } from './domain/helper-generation.js'
 import { createBodyEditor, synchronizeBodyEdits } from './domain/body-editor.js'
@@ -3041,8 +3041,6 @@ export async function apply(ctx) {
       case 'cancelSceneImage': return { illustration: await enabledSceneIllustrations().cancel(args.sessionId, args.turn, args.key, args.requestId) }
       case 'removeSceneImage': return { illustration: await enabledSceneIllustrations().removeImage(args.sessionId, args.turn, args.key, args.versionId) }
       case 'setSceneImageReference': return { illustration: await enabledSceneIllustrations().setReference(args.sessionId, args.turn, args.key, args.versionId, args.consent, args.enabled !== false, args.personId) }
-      case 'getPromptTemplateSettings': return { enabled: (await tavernExtensionSettings.read()).EjsTemplate?.enabled !== false }
-      case 'setPromptTemplateEnabled': return await tavernExtensionSettings.setTemplateEnabled(args?.enabled)
       case 'updateTavernSettings': return { settings: await updateTavernSettings(args && args.patch) }
       case 'getSystemPrompts': return { systemPrompts: presentSystemPrompts(await readTavernSettings()) }
       case 'updateSystemPrompt': {
@@ -3194,6 +3192,7 @@ export async function apply(ctx) {
         }, { source: 'card-context.apply-update' })
         return { view: await view(saved, card) }
       }
+      case 'getEjsEditorInfo': return await fullPromptTemplateRuntimeInfo()
       case 'getFullTemplateRuntimeInfo': throw new Error('提示词模板已迁移到服务端，请刷新页面');
       case 'getSession': {
         const view = await sessionView(args && args.sessionId)

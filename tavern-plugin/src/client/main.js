@@ -6817,36 +6817,6 @@ window.__ModuleLoader__.load({
                 key && reasoning.key === key && reasoning.error ? h("p", { role: "alert" }, reasoning.error) : null);
         }
 
-        function TavernPromptTemplateSettings() {
-            const h = React.createElement;
-            const [state, setState] = React.useState({ loading: true, busy: false, enabled: true, error: "", notice: "" });
-            React.useEffect(() => {
-                let active = true;
-                function refresh() { rpc("getPromptTemplateSettings").then(result => { if (active) setState({ loading: false, busy: false, enabled: result.enabled, error: "", notice: "" }); }, error => { if (active) setState(current => ({ ...current, loading: false, error: String(error.message || error) })); }); }
-                refresh();
-                window.addEventListener("dsh-template-settings-saved", refresh);
-                return () => { active = false; window.removeEventListener("dsh-template-settings-saved", refresh); };
-            }, []);
-            async function change(enabled) {
-                setState(current => ({ ...current, busy: true, notice: "", error: "" }));
-                try { const result = await rpc("setPromptTemplateEnabled", { enabled }); setState(current => ({ ...current, enabled: result.enabled, busy: false, notice: "已保存，后续模板处理生效" })); }
-                catch (error) { setState(current => ({ ...current, busy: false, error: String(error.message || error) })); }
-            }
-            function open() {
-                const detail = { handled: false };
-                window.dispatchEvent(new CustomEvent("dsh-template-settings", { detail }));
-                setState(current => ({ ...current, notice: detail.handled ? "" : "请先打开一个游玩对话，再查看详细模板设置。" }));
-            }
-            return h("section", { className: "dsh-local-section dsh-template-settings", "aria-label": "提示词模板" },
-                h("h3", null, "提示词模板"),
-                h("p", { className: "dsh-local-help" }, "控制人物卡和世界书中的模板处理，对所有游戏生效。"),
-                h("label", { className: "dsh-tavern-background-task" }, h("span", null, "启用提示词模板"), h("input", { type: "checkbox", role: "switch", checked: state.enabled, disabled: state.loading || state.busy, onChange: event => change(event.target.checked) })),
-                h("button", { type: "button", className: "dsh-tavern-btn", onClick: open }, "打开模板设置"),
-                h("p", { className: "dsh-local-help" }, "详细设置基于当前游玩对话；模板内容可在世界书编辑器中修改。"),
-                state.error ? h("p", { role: "alert", className: "dsh-tavern-settings-error" }, state.error) : null,
-                h("span", { role: "status" }, state.loading ? "正在读取…" : state.busy ? "保存中…" : state.notice));
-        }
-
 		function TavernSettingsSection() {
 			const [state, setState] = React.useState({ loading: true, busy: false, defaultForegroundModel: null, defaultBackgroundModel: null, notice: "", webSearchEnabled: false, backgroundModel: null, backgroundTasks: { posture: true, characterDesign: false, variables: true, ledger: false }, modelCatalog: [], sceneImages: false, error: "" });
 			React.useEffect(function () {
@@ -6873,7 +6843,6 @@ window.__ModuleLoader__.load({
                 React.createElement(TavernDefaultModelSetting, { label: "默认后台模型", fallback: "跟随前台", selection: state.defaultBackgroundModel, catalog: state.modelCatalog, disabled: state.loading || state.busy, onChange: selection => saveDefault("defaultBackgroundModel", selection) }),
                 state.notice ? React.createElement("p", { role: "status" }, state.notice) : null,
                 React.createElement(TavernConversationWritingSkills, { globalDefaults: true }),
-                React.createElement(TavernPromptTemplateSettings),
                 React.createElement(TavernTextColorSettings),
                 React.createElement(ContextCompactionSettings),
 				state.sceneImages ? React.createElement(SceneImageSettings, null) : null,
@@ -7570,6 +7539,8 @@ window.__ModuleLoader__.load({
 			}
 			const presetLibraryFeature = createExternalPresetAndBypassPlanFeatureModule();
 
+		// @include ejs-code-editor.js
+
 		function groupWorldBookEditorEntries(entries, query) {
 			const groups = { constant: [], dynamic: [] };
 			const needle = String(query || "").trim().toLocaleLowerCase();
@@ -7588,7 +7559,8 @@ window.__ModuleLoader__.load({
 			const [busy, setBusy] = React.useState(false);
 			const [error, setError] = usePersistentError("世界书编辑");
 			const [query, setQuery] = React.useState("");
-			React.useEffect(function () { setDraft(JSON.parse(JSON.stringify(initial))); }, [props.record]);
+            const [codeEntry, setCodeEntry] = React.useState(null);
+			React.useEffect(function () { setDraft(JSON.parse(JSON.stringify(initial))); setCodeEntry(null); }, [props.record]);
 			const h = React.createElement;
 			function updateEntry(index, patch) {
 				const entries = (draft.entries || []).slice();
@@ -7657,7 +7629,7 @@ window.__ModuleLoader__.load({
 						),
 						h("div", { className: "dsh-tavern-card-field" }, h("label", null, "标题 / 备注"), h("input", { value: entry.comment || "", onChange: function (event) { updateEntry(index, { comment: event.target.value, title: event.target.value }); } })),
 						entry.constant ? null : h("div", { className: "dsh-tavern-card-field" }, h("label", null, "主触发词"), h("input", { value: textList(entry.primaryKeys), placeholder: "逗号分隔；支持 /pattern/flags", onChange: function (event) { updateEntry(index, { primaryKeys: parseList(event.target.value) }); } })),
-						h("div", { className: "dsh-tavern-card-field" }, h("label", null, "内容"), h("textarea", { className: "large", value: entry.content || "", onChange: function (event) { updateEntry(index, { content: event.target.value }); } })),
+						h("div", { className: "dsh-tavern-card-field" }, h("label", null, "内容"), h("button", { type: "button", className: "dsh-tavern-btn", disabled: busy, onClick: () => setCodeEntry({ ref: entry.ref, value: entry.content || "", title: entry.comment || entry.title }) }, "EJS 代码编辑"), codeEntry?.ref === entry.ref ? h(EjsCodeEditor, { value: codeEntry.value, title: codeEntry.title, onClose: () => setCodeEntry(null), onApply: content => { updateEntry(index, { content }); setCodeEntry(null); } }) : null, h("textarea", { className: "large", value: entry.content || "", onChange: function (event) { updateEntry(index, { content: event.target.value }); } })),
 							entry.constant ? null : h("div", { className: "dsh-tavern-card-field" }, h("label", null, "二级触发词"), h("input", { value: textList(entry.secondaryKeys), placeholder: "逗号分隔", onChange: function (event) { updateEntry(index, { secondaryKeys: parseList(event.target.value) }); } })),
 							h("div", { className: "dsh-tavern-worldbook-checks" },
 							h("label", null, h("input", { type: "checkbox", checked: entry.enabled !== false, onChange: function (event) { updateEntry(index, { enabled: event.target.checked }); } }), "启用"),

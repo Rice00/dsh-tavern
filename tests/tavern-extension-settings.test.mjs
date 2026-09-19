@@ -95,16 +95,3 @@ test('模板启用设置属于用户偏好，保存和重新加载保留原值',
   assert.deepEqual(await data.readJson('tavern-extension-settings.json'), saved)
   assert.equal((await createTavernExtensionSettings(data).read()).EjsTemplate.enabled, false)
 })
-
-test('全局模板开关恢复旧版关闭状态，保留其他模板和插件设置', async t => {
-  const { store, open } = await fixture(t)
-  const original = { EjsTemplate: { enabled: false, render_enabled: false, cache_size: 23 }, phone: { enabled: true } }
-  await store.save(original, {})
-  assert.deepEqual(await store.setTemplateEnabled(true), { enabled: true })
-  assert.deepEqual(await open().read(), { ...original, EjsTemplate: { ...original.EjsTemplate, enabled: true } })
-  await assert.rejects(store.save({ ...original, EjsTemplate: { ...original.EjsTemplate, cache_size: 24 } }, original), /其他窗口修改/)
-  await assert.rejects(store.setTemplateEnabled('true'), /布尔值/)
-  const fresh = open('fresh')
-  await fresh.setTemplateEnabled(false)
-  assert.deepEqual(await fresh.read(), { EjsTemplate: { enabled: false } })
-})

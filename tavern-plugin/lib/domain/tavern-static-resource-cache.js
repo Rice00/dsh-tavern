@@ -1,3 +1,4 @@
+import { createPublicResourceRequest, verifyPublicResourceUrl } from './public-resource-request.js'
 import { projectTavernHostScript } from './tavern-host-script-projection.js'
 import { createHash } from 'node:crypto'
 import { mkdir, readFile, readdir, rename, stat, unlink, utimes, writeFile } from 'node:fs/promises'
@@ -142,10 +143,10 @@ async function quietlyDelete(file) {
 
 export function createTavernStaticResourceCache(options = {}) {
   const rootDir = path.resolve(str(options.rootDir) || '.dsh-tavern-static-assets')
-  const request = options.fetch || globalThis.fetch
   const maxEntryBytes = Math.max(1, Number(options.maxEntryBytes) || DEFAULT_MAX_ENTRY_BYTES)
+  const request = options.fetch || createPublicResourceRequest({ maxBytes: maxEntryBytes })
   const maxTotalBytes = Math.max(maxEntryBytes, Number(options.maxTotalBytes) || DEFAULT_MAX_TOTAL_BYTES)
-  const verifyHostname = typeof options.verifyHostname === 'function' ? options.verifyHostname : async function () {}
+  const verifyHostname = typeof options.verifyHostname === 'function' ? options.verifyHostname : verifyPublicResourceUrl
   const inflight = new Map()
 
   function paths(url) {

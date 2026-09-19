@@ -114,25 +114,18 @@ test('静态缓存允许本机、内网与 Fake-IP 地址，仍要求 HTTPS 且�
   }
 })
 
-test('默认下载链路不预先拒绝 DNS 或私网地址，重定向后仍可加载', async t => {
+test('静态缓存拒绝直接内网地址及重定向到内网', async t => {
   const rootDir = await mkdtemp(path.join(os.tmpdir(), 'dsh-tavern-private-cache-'))
-  t.after(() => rm(rootDir, {recursive:true, force:true}))
-  const calls = [], originalFetch = globalThis.fetch
-  let cache
-  try {
-    globalThis.fetch = async url => {
-      calls.push(url)
-      if (url === 'https://cdn.invalid/module.js') return {status:302,headers:{get:()=> 'https://[fdfe:dcba:9876::52]/module.js'}}
-      return response('export const ready=true;', 'application/javascript', url)
-    }
-    // Use the production default fetch path: no test-only DNS verifier bypass.
-    cache = createTavernStaticResourceCache({rootDir})
-  } finally { globalThis.fetch = originalFetch }
-  const result = await cache.get('https://cdn.invalid/module.js')
-  assert.match(result.body.toString(), /ready=true/)
-  assert.deepEqual(calls, ['https://cdn.invalid/module.js', 'https://[fdfe:dcba:9876::52]/module.js'])
-  await cache.get('https://192.168.1.2/module.js')
-  assert.equal(calls.at(-1), 'https://192.168.1.2/module.js')
+  t.after(() => rm(rootDir, { recursive: true, force: true }))
+  const calls = []
+  const cache = createTavernStaticResourceCache({ rootDir, fetch: async url => {
+    calls.push(url)
+    return { status: 302, headers: { get: () => 'https://[fdfe:dcba:9876::52]/module.js' } }
+  } })
+  await assert.rejects(cache.get('https://cdn.invalid/module.js'), /公共 HTTPS/)
+  assert.deepEqual(calls, ['https://cdn.invalid/module.js'])
+  await assert.rejects(cache.get('https://192.168.1.2/module.js'), /公共 HTTPS/)
+  assert.equal(calls.length, 1)
 })
 
 test('超出单文件上限或不支持的响应不会写入缓存', async function (t) {

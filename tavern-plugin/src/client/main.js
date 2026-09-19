@@ -6947,13 +6947,15 @@ window.__ModuleLoader__.load({
             }
             const h = React.createElement;
             return h("section", { className: "dsh-tavern-settings-group" },
-                h("h3", { className: "dsh-tavern-settings-title" }, "候选项"),
-                h("label", { className: "dsh-tavern-compaction-field" }, "候选项收起时机",
-                    h("select", { className: "dsh-tavern-settings-select", value: mode, disabled: busy, onChange: event => save(event.target.value) },
-                        h("option", { value: "after-fill" }, "填入后隐藏（默认）"),
-                        h("option", { value: "after-send" }, "发送后收起"))),
-                h("p", { className: "dsh-tavern-settings-desc" }, "填入后隐藏：候选内容加入输入框后隐藏列表。发送后收起：保留列表，可连续追加多个候选。"),
-                notice ? h("p", { role: "status", className: "dsh-tavern-settings-desc" }, notice) : null);
+                h("label", { className: "dsh-tavern-settings-row" },
+                    h("span", { className: "dsh-tavern-settings-copy" },
+                        h("strong", null, "候选项"),
+                        h("p", { className: "dsh-tavern-settings-desc" }, "设置候选项的隐藏时机。")),
+                    h("select", { className: "dsh-tavern-settings-select", "aria-label": "候选项收起时机", value: mode, disabled: busy, onChange: event => save(event.target.value) },
+                        h("option", { value: "after-fill" }, "选择一项后即隐藏"),
+                        h("option", { value: "after-send" }, "可选择多项发送后才隐藏"))),
+                notice ? h("div", { className: "dsh-tavern-settings-row", role: "status" },
+                    h("span", { className: "dsh-tavern-settings-desc" }, notice)) : null);
         }
 
 		function TavernSettingsSection() {

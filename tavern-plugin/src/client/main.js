@@ -6148,6 +6148,28 @@ window.__ModuleLoader__.load({
 				} catch (err) { setError("切换对话列表失败：" + String(err && err.message || err)); }
 				finally { setBusy(false); }
 			}
+            async function rescueConversation(item) {
+                if (busy || !await askConfirm("坏档救援：仅在旧对话无法继续使用时操作。\n\n只迁移玩家输入和剧情正文到新对话，不恢复旧变量、物品、任务状态或剧本进度；新对话按故事模式继续，MVU 状态更新关闭。导入的历史不能回退或重新生成。原存档保留。\n\n确定迁移剧情到新对话？")) return;
+                setBusy(true); setError(""); setMenuSession(null);
+                const key = "dsh-tavern:rescue:" + item.chatId;
+                try {
+                    await playPrewarmRef.current.cancel();
+                    let attempt;
+                    try { attempt = JSON.parse(localStorage.getItem(key) || "null"); } catch (_) {}
+                    if (!attempt) {
+                        const workspaceId = await playWorkspaceResolverRef.current();
+                        attempt = { operationId: window.crypto.randomUUID(), sessionId: await props.conversationHost.connectWorkspace(workspaceId) };
+                        localStorage.setItem(key, JSON.stringify(attempt));
+                    }
+                    await waitForSessionSummary(attempt.sessionId);
+                    await ensureTavernPreset(attempt.sessionId, { kind: "play" });
+                    const result = await call("rescueChatHistory", { ...attempt, sourceChatId: item.chatId });
+                    const pending = { sessionId: result.sessionId, targetMode: result.mode || "story" };
+                    setPendingOpen(pending); localStorage.removeItem(key);
+                    await finishPendingOpen(pending);
+                } catch (err) { setError("坏档救援未完成，旧存档未修改：" + String(err.message || err)); }
+                finally { setBusy(false); }
+            }
 			async function renameConversation(item, currentTitle) {
 				setMenuSession(null);
 				const title = await askTavernText({ title: "重命名对话", initialValue: currentTitle || item.cardName + "的新对话", maxLength: 80 });
@@ -6277,6 +6299,7 @@ window.__ModuleLoader__.load({
 					!managing ? h("button", { className: "dsh-tavern-side-row-more", title: "对话操作", "aria-expanded": menuSession === item.sessionId ? "true" : "false", onClick: function () { setMenuSession(menuSession === item.sessionId ? null : item.sessionId); } }, "⋯") : null,
 					!managing && menuSession === item.sessionId ? h("div", { className: "dsh-tavern-side-row-menu" },
 						h("button", { disabled: busy, onClick: function () { renameConversation(item, title); } }, "重命名"),
+                        isPlayMode(item.mode || "story") ? h("button", { disabled: busy, onClick: () => rescueConversation(item) }, "坏档救援") : null,
 						h("button", { className: "danger", disabled: busy, onClick: function () { deleteConversation(item, title); } }, "删除")
 					) : null
 				);

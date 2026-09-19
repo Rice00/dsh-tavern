@@ -1,3 +1,4 @@
+import { isRescuedHistoryMessage } from './chat-history-rescue.js'
 import { replaceSessionSurface } from './session-surface-mutations.js'
 import { restoredSurfaceSeqs } from './surface-restoration.js'
 import { sessionEvents, appendSessionEvent, surfaceReplacementRange } from './session-events.js'
@@ -428,6 +429,7 @@ export function rollbackAvailability(chat, { events = [], nodes = [] } = {}) {
   const target = locateRollbackSurface({ events, nodes })
   const messages = Array.isArray(chat.messages) ? chat.messages : []
   const latest = messages.findLast(message => message?.role === 'assistant' && message.greeting !== true)
+  if (isRescuedHistoryMessage(chat, latest)) return { canRollback: false, canClearIncompleteReply: false, failedTurns, target: null, reason: '坏档救援导入的历史不可回退，请发送新消息继续' }
   const turn = Number(latest?.turn)
   const matches = target && (!(turn > 0) || target.turn === turn || target.turn === Number(chat.regeneratedDshTurns?.[String(turn)]))
   const hasMessages = hasRollbackMessages(messages)

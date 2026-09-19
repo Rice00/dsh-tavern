@@ -1,3 +1,4 @@
+import { assertRescueHistoryEditable } from './chat-history-rescue.js'
 import { replaceSessionSurface } from './session-surface-mutations.js'
 import { canUndoRollback, restoreSurface, preflightSurfaceRestore, unchangedSinceRollback } from './surface-restoration.js'
 import { rewindBackgroundSurface } from './background-surface.js'
@@ -96,6 +97,7 @@ export function createRoundHistory({ chats, sessions, scripts, timeline, queueSe
   async function regenBody(chatId, guidance, sessionId) {
     let chat = str(chatId) === '' ? await chatForSession(sessionId) : await readChat(chatId)
     if (chat === undefined) throw new Error('聊天不存在: ' + chatId)
+    assertRescueHistoryEditable(chat)
     const activeRound = Object.values(storyTimeline.inspect({ chat }).operations || {}).find(function (operation) {
       return operation && operation.kind === 'body' && operation.status === 'completed' &&
         operation.background && ['pending', 'running'].includes(str(operation.background.phase))

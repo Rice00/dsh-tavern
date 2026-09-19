@@ -1001,3 +1001,13 @@ test('rollback cannot cancel and consume an active regeneration',async()=>{
  await assert.rejects(live.rollback('session','chat'),/重新生成/)
  assert.deepEqual(h.chat,before)
 })
+
+test('rescued history blocks regeneration and rollback without modifying old text', async()=>{
+ const h=harness()
+ h.chat.importHistory={operationId:'rescue-1234',rescue:{sourceChatId:'broken'}}
+ h.chat.messages.at(-1).importSource={operationId:'rescue-1234'}
+ const before=structuredClone(h.chat)
+ await assert.rejects(h.create().regenerate('chat','','session'),/救援/)
+ await assert.rejects(h.create().rollback('session','chat'),/救援/)
+ assert.deepEqual(h.chat,before)
+})

@@ -1,3 +1,4 @@
+import { isRescuedHistoryMessage } from './domain/chat-history-rescue.js'
 import { readHostCompatibility } from './domain/host-compatibility.js'
 import { measureForegroundPressure } from './domain/foreground-context-pressure.js'
 import { replaceSessionSurface } from './domain/session-surface-mutations.js'
@@ -1385,7 +1386,7 @@ export async function apply(ctx) {
       canClearIncompleteReply: rollbackState.canClearIncompleteReply,
       canRollback: rollbackState.canRollback,
       rollbackUnavailableReason: hasRollbackMessages(chat.messages) ? rollbackState.reason : '',
-      canRegenerate: hasRollbackMessages(chat.messages),
+      canRegenerate: hasRollbackMessages(chat.messages) && !isRescuedHistoryMessage(chat, chat.messages?.findLast(m => m.role === 'assistant')),
       canEditBody: hasRollbackMessages(chat.messages),
       rollbackTargetTurn: latestStoryTurn,
       undoRollbackTurn: canUndoRollback(chat, liveSession) ? chat.rollbackUndo.turn : null,
@@ -1416,6 +1417,7 @@ export async function apply(ctx) {
       tavernRuntimePolicy: { trustedCardMode: runtimeSettings.trustedCardMode },
       releaseCapabilities: TAVERN_RELEASE_CAPABILITIES,
       presentationWarnings: (Array.isArray(chat.presentationWarnings) ? chat.presentationWarnings : []).concat(
+        chat.importHistory?.rescue ? ['坏档文字救援：仅迁移剧情，未恢复旧变量或任务状态；导入历史不可回退或重新生成。当前按故事模式继续，MVU 状态更新关闭。'] : [],
         chat.importHistory?.contextPreparation?.status === 'trimmed'
           ? ['导入记录较长：已保留开头和最近完整轮次，中间 ' + chat.importHistory.contextPreparation.droppedRounds + ' 轮暂不随模型请求发送，历史正文仍可召回。'] : []),
       worldBookError: chat.worldBookError || null,
@@ -3160,6 +3162,7 @@ export async function apply(ctx) {
 	  case 'completeTavernHelperEvent': return { completed: tavernScriptHostAdapter.completeEvent(args && args.sessionId, args && args.eventId, args && args.args, args && args.runtimeId, args && args.leaseToken, args && args.error, sanitizeRuntimeDiagnostics(args && args.diagnostics)) }
 	  case 'releaseTavernHelperRuntime': return { released: tavernScriptHostAdapter.releaseRuntime(args && args.sessionId, args && args.runtimeId) }
       case 'previewChatImport': return await chatHistoryImporter.preview(args || {})
+      case 'rescueChatHistory': return await chatHistoryImporter.rescue(args || {})
       case 'importChatHistory': return await chatHistoryImporter.import(args || {})
       case 'startChat': {
         try {

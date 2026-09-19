@@ -165,7 +165,7 @@ export const CANDIDATE_SUBMIT_TOOL_NAME = 'candidate_submit_choices'
 
 export const CANDIDATE_SUBMIT_TOOL = Object.freeze({
   name: CANDIDATE_SUBMIT_TOOL_NAME,
-  description: '提交本轮候选项。自由故事必须提交 4 个行动候选和 1 个场景候选；剧本模式恰好提交 1 个候选：人物行为填入 actions（1 项）且 scene 留空，或场景变化填入 scene 且 actions 为空数组。',
+  description: '提交本轮候选项。自由故事必须提交 4 个行动候选和 1 个场景候选；剧本模式只提交 1 项变化，填入 actions 或 scene，另一项留空。',
   parameters: Object.freeze({
     type: 'object',
     additionalProperties: false,

@@ -1,4 +1,4 @@
-import { rescueHistoryInput } from './chat-history-rescue.js'
+import { rescueHistoryInput, rescueHistoryNotice } from './chat-history-rescue.js'
 import { prepareWorldBookRecall } from './worldbook-recall.js'
 import { createHash } from 'node:crypto'
 import { parse as parseYaml } from 'yaml'
@@ -77,18 +77,18 @@ export function createChatHistoryImportService({ initialization, cards, worldBoo
     if (!journal) {
       const chat = await initialization.prepareImport({ cardPath: input.cardPath, sessionId: input.sessionId, userName: input.userName || parsed.userName })
       if (input.rescue) {
-        chat.mvu = { enabled: false }
+        chat.mvu = input.rescue.mvuSnapshot ? { ...chat.mvu, enabled: true, owner: 'official', runtime: 'magvarupdate' } : { enabled: false }
         chat.variables = {}
         chat.macroState = { userName: input.userName || parsed.userName, local: {}, global: {} }
         chat.mode = 'story'
         chat.scriptState = null
-        chat.backgroundTasks = { ...chat.backgroundTasks, variables: false }
+        chat.backgroundTasks = { ...chat.backgroundTasks, variables: Boolean(input.rescue.mvuSnapshot) }
       }
-      if (chat.mvu?.enabled && (input.textOnly || parsed.messages.some(m => !m.variables)) && !initialVariables) throw new Error(initialError || '无法读取这张 MVU 卡的初始变量，请补充有效快照后重试')
+      if (!input.rescue && chat.mvu?.enabled && (input.textOnly || parsed.messages.some(m => !m.variables)) && !initialVariables) throw new Error(initialError || '无法读取这张 MVU 卡的初始变量，请补充有效快照后重试')
       const plan = await buildImportedConversation(chat, parsed, {
         operationId: input.operationId, fileName: input.fileName, initialVariables, textOnly: input.textOnly === true,
         prepareFrame: async ({ chat, turn, userText }) => {
-          if (input.rescue) return { text: '以下是从损坏存档迁入的剧情文字，仅作为历史参考，不含可恢复的状态。' }
+          if (input.rescue) return { text: '以下是从损坏存档迁入的剧情文字，仅作为历史参考。' + rescueHistoryNotice(input.rescue) }
 
           if (projectForegroundWorldbook) {
             let projected
@@ -120,7 +120,7 @@ export function createChatHistoryImportService({ initialization, cards, worldBoo
       if (input.rescue) {
         plan.chat.timeline.checkpoints = []
         plan.chat.importHistory.rescue = input.rescue
-        plan.chat.importHistory.warnings.push('坏档文字救援：不恢复旧变量、物品或任务状态；导入历史不可回退或重新生成。MVU 状态更新已关闭。')
+        plan.chat.importHistory.warnings.push(rescueHistoryNotice(input.rescue))
       }
       const checkpointInputs = plan.chat.timeline.checkpoints.map(c => ({ id: c.id, messageCount: c.importMessageCount, before: c.importBefore }))
       journal = { version: 1, identity, sessionId: input.sessionId, status: 'writing', plan, checkpointInputs }

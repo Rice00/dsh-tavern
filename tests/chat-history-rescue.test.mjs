@@ -15,3 +15,9 @@ test('new rounds remain editable, rescued historical forks are blocked',async()=
  chat.messages.push({role:'user',text:'continue'},{role:'assistant',text:'new',turn:2})
  assert.doesNotThrow(()=>assertRescueHistoryEditable(chat))
 })
+test('MVU rescue refuses absent or invalid selected snapshots instead of silently resetting state',()=>{
+ const source={id:'old',cardPath:'card',mvu:{enabled:true},messages:[{role:'assistant',text:'story',swipeId:1,variables:[{stat_data:{hp:5},schema:{}}]}]}
+ assert.throws(()=>rescueHistoryInput(source),/没有.*可用 MVU 快照/)
+ source.messages[0].variables.push({stat_data:{hp:6}})
+ assert.throws(()=>rescueHistoryInput(source),/没有.*可用 MVU 快照/)
+})

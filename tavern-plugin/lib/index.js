@@ -1,4 +1,4 @@
-import { isRescuedHistoryMessage } from './domain/chat-history-rescue.js'
+import { isRescuedHistoryMessage, rescueHistoryNotice } from './domain/chat-history-rescue.js'
 import { readHostCompatibility } from './domain/host-compatibility.js'
 import { measureForegroundPressure } from './domain/foreground-context-pressure.js'
 import { replaceSessionSurface } from './domain/session-surface-mutations.js'
@@ -1417,7 +1417,7 @@ export async function apply(ctx) {
       tavernRuntimePolicy: { trustedCardMode: runtimeSettings.trustedCardMode },
       releaseCapabilities: TAVERN_RELEASE_CAPABILITIES,
       presentationWarnings: (Array.isArray(chat.presentationWarnings) ? chat.presentationWarnings : []).concat(
-        chat.importHistory?.rescue ? ['坏档文字救援：仅迁移剧情，未恢复旧变量或任务状态；导入历史不可回退或重新生成。当前按故事模式继续，MVU 状态更新关闭。'] : [],
+        chat.importHistory?.rescue ? [rescueHistoryNotice(chat.importHistory.rescue)] : [],
         chat.importHistory?.contextPreparation?.status === 'trimmed'
           ? ['导入记录较长：已保留开头和最近完整轮次，中间 ' + chat.importHistory.contextPreparation.droppedRounds + ' 轮暂不随模型请求发送，历史正文仍可召回。'] : []),
       worldBookError: chat.worldBookError || null,

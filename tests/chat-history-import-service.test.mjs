@@ -204,3 +204,25 @@ test('bad-save rescue uses stored text without source Session or template execut
  await service.rescue(request)
  assert.equal(sessionEvents(h.session).length,count)
 })
+
+test('rescue carries the selected last valid MVU snapshot, reenables settlement and labels stale state',async()=>{
+ const h=fixture()
+ const snapshot={stat_data:{hp:7,inventory:['key']},schema:{type:'object'},initialized_lorebooks:{book:true}}
+ const source={id:'broken-mvu',sessionId:'missing',cardPath:'card.json',mode:'story',mvu:{enabled:true},messages:[
+  {role:'assistant',turn:1,text:'Opening'},
+  {role:'assistant',turn:2,text:'State saved',swipeId:1,variables:[{stat_data:{hp:999},schema:{}},snapshot]},
+  {role:'user',text:'Continue'}, {role:'assistant',turn:3,text:'Later text without state'}, {role:'user',text:'Pending'}]}
+ h.records.set(source.id,structuredClone(source))
+ const service=createChatHistoryImportService(h.options)
+ await service.rescue({sourceChatId:source.id,operationId:'mvu-rescue-123',sessionId:'session'})
+ const chat=await h.chats.resolve('session')
+ assert.equal(chat.mvu.enabled,true);assert.equal(chat.mvu.owner,'official')
+ assert.equal(chat.mvu.openingInitialization.status,'complete')
+ assert.equal(chat.backgroundTasks.variables,true)
+ assert.deepEqual(chat.messages.findLast(m=>m.role==='assistant').variables[0],snapshot)
+ assert.equal(chat.importHistory.rescue.mvuSnapshot.sourceTurn,2)
+ assert.equal(chat.importHistory.rescue.mvuSnapshot.laterAssistantMessages,1)
+ assert.match(chat.importHistory.warnings.join(''),/数值可能滞后/)
+ assert.equal(chat.timeline.checkpoints.length,0)
+ assert.deepEqual(h.records.get(source.id),source)
+})

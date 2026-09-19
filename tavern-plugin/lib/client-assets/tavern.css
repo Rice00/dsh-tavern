@@ -535,6 +535,12 @@ body.dsh-tavern-shell-active [data-ref-chip="file"] { max-width: calc(100% - 4px
 .dsh-tavern-card-field textarea.large { min-height: 130px; }
 .dsh-tavern-card-advanced { margin: 10px 0; }
 .dsh-tavern-card-advanced summary { cursor: pointer; color: var(--dsw-alias-label-secondary); font-size: 11px; font-weight: 700; }
+.dsh-tavern-card-worldbook { margin: 0 0 14px; padding: 12px; border: 1px solid rgba(166,107,53,.48); border-radius: 11px; background: rgba(166,107,53,.10); }
+.dsh-tavern-card-worldbook > summary { color: #9a622f; font-size: 13px; font-weight: 800; cursor: pointer; }
+.dsh-tavern-card-worldbook > summary:focus-visible { outline: 2px solid #a66b35; outline-offset: 4px; border-radius: 4px; }
+.dsh-tavern-card-worldbook > .dsh-tavern-worldbook { margin: 12px 0 0; padding: 12px 0 0; border: 0; border-top: 1px solid rgba(166,107,53,.28); border-radius: 0; }
+
+
 .dsh-tavern-worldbook { margin-bottom: 14px; padding: 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; }
 .dsh-tavern-worldbook-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .dsh-tavern-worldbook-title { color: var(--dsw-alias-label-secondary); font-size: 10px; font-weight: 700; }

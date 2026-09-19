@@ -19,7 +19,7 @@ export function rescueHistoryInput(source) {
   } : null
   return {
     cardPath: source.cardPath, userName: source.macroState?.userName || '你',
-    fileName: (source.title || source.cardName || '旧对话') + ' · 坏档救援',
+    fileName: (source.title || source.cardName || '旧对话') + ' · 存档救援',
     textOnly: !snapshot, rescue: { sourceChatId: source.id, sourceRevision: source._storageRevision || 0, mvuSnapshot },
     text: [JSON.stringify({ user_name: source.macroState?.userName || '你', chat_metadata: {} }),
       ...rows.map((m, index) => JSON.stringify({ is_user: m.role === 'user', mes: m.text, ...(snapshot && index === snapshotTarget ? { variables: [snapshot] } : {}) }))].join('\n')
@@ -30,7 +30,7 @@ export function isRescuedHistoryMessage(chat, message) {
 }
 export function assertRescueHistoryEditable(chat) {
   if (isRescuedHistoryMessage(chat, (chat.messages || []).findLast(m => m.role === 'assistant'))) {
-    throw new Error('坏档救援导入的历史仅供接续剧情，不能回退或重新生成；请发送新消息继续')
+    throw new Error('存档救援导入的历史仅供接续剧情，不能回退或重新生成；请发送新消息继续')
   }
 }
 
@@ -39,5 +39,5 @@ export function rescueHistoryNotice(rescue) {
   const state = snapshot
     ? '已携带最后可用 MVU 快照（' + (snapshot.sourceTurn ? '旧第 ' + snapshot.sourceTurn + ' 轮' : '旧第 ' + (snapshot.sourceMessageIndex + 1) + ' 条消息') + '），继续更新状态。' + (snapshot.laterAssistantMessages ? '快照之后还有 ' + snapshot.laterAssistantMessages + ' 条正文，数值可能滞后，请先核对。' : '')
     : '未携带 MVU 状态。'
-  return '坏档救援：' + state + '按故事模式接续，不恢复旧剧本进度；导入历史不能回退或重新生成。'
+  return '存档救援：' + state + '按故事模式接续，不恢复旧剧本进度；导入历史不能回退或重新生成。'
 }

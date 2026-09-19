@@ -3,12 +3,12 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 const source = await readFile(new URL('../tavern-plugin/src/client/main.js', import.meta.url), 'utf8')
 const code = source.slice(source.indexOf('function CandidateQuestion(props)'), source.indexOf('function CandidateGuidePanel(props)'))
-function harness(initial = '') {
+function harness(initial = '', mode = 'after-send') {
   let draft = initial, cursor, running = false
   const states = [0, true], refs = [], effects = []
-  const panel = { sessionId: 's', messageId: 'm', phase: 'ready', choices: [{ type: 'action', text: '走近窗边' }, { type: 'scene', text: '雨停了' }] }
+  let panel = { sessionId: 's', messageId: 'm', phase: 'ready', choices: [{ type: 'action', text: '走近窗边' }, { type: 'scene', text: '雨停了' }] }
   const React = { createElement: (type, props, ...children) => ({ type, props: props || {}, children }), useRef: () => refs[0] ||= {}, useState: () => { const i = cursor++; return [states[i], value => { states[i] = value }] }, useEffect: (fn, deps) => effects.push({ fn, deps }) }
-  const Component = new Function('React', 'useCandidatePanel', 'useTavernSessionMode', 'latestTavernAssistantMessageId', 'isPlayMode', code + ';return CandidateQuestion')(React, () => panel, () => 'story', () => 'm', () => true)
+  const Component = new Function('React', 'useCandidatePanel', 'useTavernSessionMode', 'latestTavernAssistantMessageId', 'isPlayMode', 'useCandidatePreferences', 'setCandidatePanel', code + ';return CandidateQuestion')(React, () => panel, () => 'story', () => 'm', () => true, () => mode, value => { panel = value })
   const props = { sessionId: 's', useInput: fn => fn({ draft }), useSession: fn => fn({ running }), useChat: () => 'm', inputActions: { setDraft: value => { draft = value } } }
   const render = () => { cursor = 0; effects.length = 0; return Component(props) }
   function buttons(node) { if (!node || typeof node !== 'object') return []; if (Array.isArray(node)) return node.flatMap(buttons); return [...(node.type === 'button' ? [node] : []), ...buttons(node.children)] }
@@ -34,4 +34,32 @@ test('空输入不加前导换行，已有换行不重复；发送中隐藏并�
     h.effects.find(effect => effect.deps.length === 1 && effect.deps[0] === true).fn()
     assert.equal(h.states[1], false)
   }
+})
+
+test('默认填入后隐藏，切换为发送后收起才保留列表', () => {
+  for (const mode of ['after-fill', undefined, 'after-send']) {
+    const h = harness('草稿', mode === undefined ? 'unknown' : mode)
+    h.buttons(h.render()).find(node => node.children.includes('追加到输入框')).props.onClick()
+    assert.equal(h.draft(), '草稿\n走近窗边')
+    assert.equal(h.render() === null, mode !== 'after-send')
+  }
+})
+
+test('保存设置立即通知已挂载的候选列表，旧读取结果不会覆盖新设置', async () => {
+  const hook = source.slice(source.indexOf('function useCandidatePreferences()'), source.indexOf('function CandidatePreferencesSettings()'))
+  const window = new EventTarget()
+  let mode, effect, resolve
+  const React = { useState: initial => { mode = initial; return [mode, value => { mode = value }] }, useEffect: fn => { effect = fn } }
+  const usePreferences = new Function('React', 'window', 'rpc', hook + '; return useCandidatePreferences')(React, window, () => new Promise(done => { resolve = done }))
+  usePreferences()
+  const cleanup = effect()
+  const event = new Event('dsh-tavern-candidate-preferences'); event.detail = 'after-send'
+  window.dispatchEvent(event)
+  assert.equal(mode, 'after-send')
+  resolve({ candidateDismissMode: 'after-fill' }); await Promise.resolve()
+  assert.equal(mode, 'after-send')
+  cleanup()
+  const late = new Event('dsh-tavern-candidate-preferences'); late.detail = 'after-fill'
+  window.dispatchEvent(late)
+  assert.equal(mode, 'after-send')
 })

@@ -8931,6 +8931,46 @@ window.__ModuleLoader__.load({
                 error ? h("p", { className: "dsh-tavern-settings-error", role: "alert" }, error) : null);
         }
 
+        function useCandidatePreferences() {
+            const [mode, setMode] = React.useState("after-fill");
+            React.useEffect(function () {
+                let active = true;
+                let changed = false;
+                function update(event) { changed = true; setMode(event.detail); }
+                window.addEventListener("dsh-tavern-candidate-preferences", update);
+                rpc("getCandidatePreferences").then(result => {
+                    if (active && !changed) setMode(result.candidateDismissMode);
+                }, () => {});
+                return () => { active = false; window.removeEventListener("dsh-tavern-candidate-preferences", update); };
+            }, []);
+            return mode;
+        }
+
+        function CandidatePreferencesSettings() {
+            const mode = useCandidatePreferences();
+            const [busy, setBusy] = React.useState(false);
+            const [notice, setNotice] = React.useState("");
+            async function save(value) {
+                if (busy) return;
+                setBusy(true); setNotice("");
+                try {
+                    const result = await rpc("updateTavernSettings", { patch: { candidateDismissMode: value } });
+                    window.dispatchEvent(new CustomEvent("dsh-tavern-candidate-preferences", { detail: result.settings.candidateDismissMode }));
+                    setNotice("已保存，对所有游戏生效");
+                } catch (error) { setNotice("保存失败：" + String(error.message || error)); }
+                finally { setBusy(false); }
+            }
+            const h = React.createElement;
+            return h("section", { className: "dsh-tavern-settings-group" },
+                h("h3", { className: "dsh-tavern-settings-title" }, "候选项"),
+                h("label", { className: "dsh-tavern-compaction-field" }, "候选项收起时机",
+                    h("select", { className: "dsh-tavern-settings-select", value: mode, disabled: busy, onChange: event => save(event.target.value) },
+                        h("option", { value: "after-fill" }, "填入后隐藏（默认）"),
+                        h("option", { value: "after-send" }, "发送后收起"))),
+                h("p", { className: "dsh-tavern-settings-desc" }, "填入后隐藏：候选内容加入输入框后隐藏列表。发送后收起：保留列表，可连续追加多个候选。"),
+                notice ? h("p", { role: "status", className: "dsh-tavern-settings-desc" }, notice) : null);
+        }
+
 		function TavernSettingsSection() {
 			const [state, setState] = React.useState({ loading: true, busy: false, defaultForegroundModel: null, defaultBackgroundModel: null, notice: "", webSearchEnabled: false, backgroundModel: null, backgroundTasks: { posture: true, characterDesign: false, variables: true, ledger: false }, modelCatalog: [], sceneImages: false, error: "" });
 			React.useEffect(function () {
@@ -8957,6 +8997,7 @@ window.__ModuleLoader__.load({
                 React.createElement(TavernDefaultModelSetting, { label: "默认后台模型", fallback: "跟随前台", selection: state.defaultBackgroundModel, catalog: state.modelCatalog, disabled: state.loading || state.busy, onChange: selection => saveDefault("defaultBackgroundModel", selection) }),
                 state.notice ? React.createElement("p", { role: "status" }, state.notice) : null,
                 React.createElement(TavernConversationWritingSkills, { globalDefaults: true }),
+                React.createElement(CandidatePreferencesSettings),
                 React.createElement(PromptTemplateSettingsEntry),
                 React.createElement(TavernTextColorSettings),
                 React.createElement(ContextCompactionSettings),
@@ -12226,6 +12267,7 @@ window.__ModuleLoader__.load({
 			return null;
 		}
 		function CandidateQuestion(props) {
+            const dismissMode = useCandidatePreferences();
 			const panel = useCandidatePanel();
             const draft = props.useInput(snapshot => snapshot.draft);
             const draftRef = React.useRef(draft);
@@ -12292,6 +12334,7 @@ window.__ModuleLoader__.load({
                         const next = current + (current && !current.endsWith("\n") ? "\n" : "") + marked;
                         draftRef.current = next;
                         props.inputActions.setDraft(next);
+                        if (dismissMode !== "after-send") setCandidatePanel(null);
                         setSelected(-1);
 					} }, "追加到输入框")
 				) : null

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "e7556ab98e1db42378d346063bed13bc2c1f4fa3",
-  "releaseSequence": 291,
+  "revision": "8a552ba3037d31662aeb10e74e6f1a936dfdc11b",
+  "releaseSequence": 292,
   "version": "2.0.0",
   "files": [
     {
@@ -326,8 +326,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/candidate-generation.js",
-      "sha256": "5bb96e4c3d093e22ef2e45ba52a777e182a501522a859b667fb36034713991ea",
-      "size": 25696
+      "sha256": "93c5f4e54e781b3a86d3956b9aaee569658a07a04bdbc46a278b70e0b46e9ca3",
+      "size": 25722
     },
     {
       "path": "tavern-plugin/lib/domain/candidate-script-context.js",
@@ -3606,8 +3606,8 @@
     },
     {
       "path": "tavern-plugin/prompts/candidate-script.md",
-      "sha256": "9897255fcd41429a9cc21b6e9f575d4bafeb9819a01842a98f8d0ce5e25d843d",
-      "size": 784
+      "sha256": "d079a7db4bca35e89baf94fe9caf1c4c30d019ebd04509ec29f4f75471da5cf9",
+      "size": 788
     },
     {
       "path": "tavern-plugin/prompts/candidate-story.md",

@@ -4796,6 +4796,44 @@ window.__ModuleLoader__.load({
         const tavernRetainedFrames = createRetainedTavernFrames({ window: window, retention: tavernSessionRetention,
             panels: tavernPanelRegistry, createLifecycle: function (props) { return createTavernMessageFrameLifecycle(props); } });
 
+        function installTavernImmersiveMode(button) {
+            const header = button?.closest("header");
+            if (!header) return { enter() {}, dispose() {} };
+            const restore = header.ownerDocument.createElement("button");
+            restore.type = "button";
+            restore.className = "dsh-tavern-restore-header";
+            restore.textContent = "⌄ 显示顶部栏";
+            restore.setAttribute("aria-label", "退出沉浸模式，显示顶部栏");
+            restore.hidden = true;
+            header.before(restore);
+            function leave() {
+                header.classList.remove("dsh-tavern-immersive-header");
+                restore.hidden = true;
+                button.focus();
+            }
+            restore.addEventListener("click", leave);
+            return {
+                enter() {
+                    header.classList.add("dsh-tavern-immersive-header");
+                    restore.hidden = false;
+                    restore.focus();
+                },
+                dispose() {
+                    header.classList.remove("dsh-tavern-immersive-header");
+                    restore.removeEventListener("click", leave);
+                    restore.remove();
+                }
+            };
+        }
+        function TavernImmersiveAction() {
+            const button = React.useRef(null), controller = React.useRef(null);
+            React.useEffect(() => {
+                controller.current = installTavernImmersiveMode(button.current);
+                return () => { controller.current.dispose(); controller.current = null; };
+            }, []);
+            return React.createElement("button", { ref: button, type: "button", className: "dsh-tavern-btn", title: "隐藏顶部标题和标签栏，可随时恢复", onClick: () => controller.current?.enter() }, "沉浸模式");
+        }
+
 		async function expandTavernFrame(root) {
             const frame = root?.querySelector('iframe:not([aria-hidden="true"])');
             try {
@@ -9941,6 +9979,10 @@ window.__ModuleLoader__.load({
                 createTab: () => ({ tab: { id: "dsh-tavern:conversation-settings", type: "dsh-tavern:conversation-settings", title: "本局设置" }, patch: { panelOpen: true } }),
                 component: props => React.createElement(TavernConversationSettingsTab, { sessionId: props.scope.sessionId, sessions: ctx.sessions })
             }), "dsh-tavern: conversation settings tab");
+            ctx.effect(() => slots.inject("conversation.session.header.utilities", () => slots.register(
+                { name: "conversation.session.header.utilities", id: "dsh-tavern-immersive", order: 85 },
+                () => React.createElement(TavernImmersiveAction)
+            )), "dsh-tavern: immersive header action");
             ctx.effect(() => slots.inject("conversation.session.header.utilities", () => slots.register(
                 { name: "conversation.session.header.utilities", id: "dsh-tavern-conversation-settings", order: 80 },
                 props => React.createElement(TavernConversationSettingsAction, { ...props, sessions: ctx.sessions, open: sessionId => ctx.betterSidebar.openTab({ type: "dsh-tavern:conversation-settings" }, { sessionId }) })

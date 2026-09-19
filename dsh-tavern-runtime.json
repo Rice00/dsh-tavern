@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "cdc8c8d3f9c585dcab278c9bd427e3931d5ce9d0",
-  "releaseSequence": 287,
+  "revision": "c6e23fe0305825fd23008d8671ec6fedf071680b",
+  "releaseSequence": 288,
   "version": "1.9.0",
   "files": [
     {
@@ -251,8 +251,8 @@
     },
     {
       "path": "tavern-plugin/lib/background-agent-sessions.js",
-      "sha256": "f74bf4e29a0c36d1e2c3a2ae4f676efd4f4b8bfb5f62b8c71582f3d42e95f416",
-      "size": 17418
+      "sha256": "75799c8253909a6a94878205e1f599ae1b77431956c20794d66d7ce245165b7d",
+      "size": 17858
     },
     {
       "path": "tavern-plugin/lib/background-agent-task.js",
@@ -286,8 +286,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/auto-compaction.js",
-      "sha256": "dfb1ad4505b1d0dca5407bfad517d7aad85e503074c1e3a666b6bfc7eb09b07b",
-      "size": 11223
+      "sha256": "df5899cd6dfcaea1fbb37d4d9990be9679b7395f8a507aa6a7dfe99af28aba60",
+      "size": 11209
     },
     {
       "path": "tavern-plugin/lib/domain/background-compaction.js",
@@ -436,8 +436,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/compaction-failure.js",
-      "sha256": "8d898c4c3dcdeb03637dc68e19079ebcb8670cd9b8e60ea4de7c46d198c0fefd",
-      "size": 1376
+      "sha256": "c553e6400dcc8d63fc16e56f4828d0da3e4732118cd9a0bac3ee7abd08648b72",
+      "size": 1628
     },
     {
       "path": "tavern-plugin/lib/domain/compaction-request.js",

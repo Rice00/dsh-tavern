@@ -1096,7 +1096,7 @@ for (const rewindFails of [false, true]) test('后台 Surface 回退失败时停
   ]
   const appendCalls = []
   let createCalls = 0
-  let resumeCalls = 0
+  let resumeCalls = 0, followups = 0
   const agents = {
     get(id) { return id === parent.id ? parent : undefined },
     async resume(options) {
@@ -1121,6 +1121,7 @@ for (const rewindFails of [false, true]) test('后台 Surface 回退失败时停
           }
         },
         followup() {
+          followups++
           work = Promise.resolve().then(function () {
             events.push({ seq: events.length, type: 'assistant/message', data: { message: { content: [{ type: 'text', text: '回退后候选' }] } } })
             events.push({ seq: events.length, type: 'turn/end', data: {} })
@@ -1143,7 +1144,7 @@ for (const rewindFails of [false, true]) test('后台 Surface 回退失败时停
     persistentSessionId: 'old-candidate', rewindTo: 2
   })
 
-  if (rewindFails) { await assert.rejects(pending, /后台历史回退失败/); assert.equal(appendCalls.length, 0); assert.equal(createCalls, 0); return }
+  if (rewindFails) { await assert.rejects(pending, /后台历史回退失败/); assert.equal(appendCalls.length, 0); assert.equal(createCalls, 0); assert.equal(followups, 0); return }
   const result = await pending
   assert.equal(result.traceSessionId, 'old-candidate')
   assert.equal(result.traceBoundary, rewindFails ? 7 : 8)

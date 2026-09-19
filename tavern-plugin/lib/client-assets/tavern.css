@@ -723,8 +723,9 @@ body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
 .dsh-tavern-preset-drag { cursor: grab; flex: none; padding: 4px 8px; border: 0; background: transparent; color: inherit; font-size: 20px; }
 .dsh-tavern-preset-drag:active { cursor: grabbing; }
 .dsh-tavern-preset-drop { height: 4px; overflow: hidden; line-height: 18px; box-sizing: border-box; border: 1px solid transparent; border-radius: 6px; text-align: center; font-size: 12px; color: var(--dsw-alias-label-secondary); }
-.dsh-tavern-preset-drop.active { height: 20px; border: 1px dashed #a66b35; }
-.dsh-tavern-preset-drop.over { background: rgba(166,107,53,.18); }
+.dsh-tavern-presets.is-dragging .dsh-tavern-preset-drop { border: 1px dashed #a66b35; }
+.dsh-tavern-presets.is-dragging .is-drop-target { outline: 2px solid #a66b35; outline-offset: -2px; }
+.dsh-tavern-presets.is-dragging .dsh-tavern-prompt-row.is-drop-target { outline: none; box-shadow: 0 -3px #a66b35; }
 
 .dsh-tavern-preset-entry-head.has-drag { grid-template-columns: auto minmax(0, 1fr) auto; }
 

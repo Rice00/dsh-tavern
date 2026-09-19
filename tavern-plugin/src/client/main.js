@@ -7441,13 +7441,20 @@ window.__ModuleLoader__.load({
 					} catch (error) { setError(String(error?.message || error)); }
 					finally { movingEntry.current = false; setBusy(false); dragEntry.current = null; setDragging(false); }
 				}
+				function presetDropHandlers(phase, beforeEntryKey = "") {
+					return {
+						onDragOver: function (event) { if (dragEntry.current && !busy) { event.preventDefault(); event.stopPropagation(); event.dataTransfer.dropEffect = "move"; event.currentTarget.classList.add("is-drop-target"); } },
+						onDragLeave: function (event) { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.classList.remove("is-drop-target"); },
+						onDrop: function (event) {
+							if (!dragEntry.current || busy) return;
+							event.preventDefault(); event.stopPropagation(); event.currentTarget.classList.remove("is-drop-target");
+							const key = dragEntry.current; dragEntry.current = null; setDragging(false);
+							void movePresetEntry(key, phase, beforeEntryKey);
+						}
+					};
+				}
 				function dropZone(phase, beforeEntryKey = "") {
-					return h("div", { className: "dsh-tavern-preset-drop" + (dragging ? " active" : ""), "data-drop-phase": phase, "data-drop-before": beforeEntryKey,
-						onDragOver: function (event) { if (dragEntry.current && !busy) { event.preventDefault(); event.dataTransfer.dropEffect = "move"; } },
-						onDragEnter: function (event) { if (dragEntry.current) event.currentTarget.classList.add("over"); },
-						onDragLeave: function (event) { event.currentTarget.classList.remove("over"); },
-						onDrop: function (event) { event.preventDefault(); event.stopPropagation(); event.currentTarget.classList.remove("over"); const key = dragEntry.current; dragEntry.current = null; setDragging(false); if (key) void movePresetEntry(key, phase, beforeEntryKey); }
-					}, dragging ? "放到这里" : "");
+					return h("div", { className: "dsh-tavern-preset-drop", "data-drop-phase": phase, "data-drop-before": beforeEntryKey, ...presetDropHandlers(phase, beforeEntryKey) });
 				}
 				async function savePresetEntry(entry) {
 					if (!preset) return; setBusy(true); setError("");
@@ -7507,12 +7514,12 @@ window.__ModuleLoader__.load({
 					const index = phase ? groups[phase].findIndex(item => item.entryKey === entry.entryKey) : -1;
 					const handle = phase ? h("button", { type: "button", className: "dsh-tavern-preset-drag", disabled: busy, draggable: !busy, "aria-label": "拖动条目：" + entry.name, title: "拖动排序或移到其他分段",
 						onClick: event => { event.preventDefault(); event.stopPropagation(); },
-						onDragStart: event => { dragEntry.current = entry.entryKey; event.dataTransfer.setData("text/plain", entry.entryKey); event.dataTransfer.effectAllowed = "move"; setDragging(true); },
-						onDragEnd: () => { dragEntry.current = null; setDragging(false); }
+						onDragStart: event => { event.stopPropagation(); dragEntry.current = entry.entryKey; event.dataTransfer.setData("text/plain", entry.entryKey); event.dataTransfer.effectAllowed = "move"; setDragging(true); },
+						onDragEnd: event => { event.stopPropagation(); dragEntry.current = null; setDragging(false); event.currentTarget.closest(".dsh-tavern-presets")?.querySelectorAll(".is-drop-target").forEach(node => node.classList.remove("is-drop-target")); }
 					}, "⠿") : null;
 					const draft = entryDraft(entry); const editable = entry.marker !== true && entry.edit && entry.edit.promptPath; const toggleable = entry.marker !== true && entry.edit && Array.isArray(entry.edit.enabledPaths) && entry.edit.enabledPaths.length > 0; const dirty = JSON.stringify(draft) !== JSON.stringify(entryValue(entry));
 					const state = toggleable ? h("button", { type: "button", role: "switch", className: "dsh-tavern-prompt-state is-toggle " + (entry.enabled ? "on" : "off"), disabled: busy, title: entry.enabled ? "点击停用此条目" : "点击启用此条目", "aria-label": entry.name + "启用状态", "aria-checked": entry.enabled === true, onClick: function (event) { event.preventDefault(); event.stopPropagation(); togglePresetEntry(entry); } }) : h("span", { className: "dsh-tavern-prompt-state " + (entry.enabled ? "on" : "off"), title: "系统占位状态只读" }, entry.enabled ? "启用" : "停用");
-					return h("details", { key: entry.entryKey, className: "dsh-tavern-prompt-row role-" + String(entry.role || "system") },
+					return h("details", { key: entry.entryKey, className: "dsh-tavern-prompt-row role-" + String(entry.role || "system"), ...(phase ? presetDropHandlers(phase, entry.entryKey) : {}) },
 						h("summary", { className: "dsh-tavern-prompt-head dsh-tavern-preset-entry-head" + (phase ? " has-drag" : "") }, handle, h("span", { className: "dsh-tavern-prompt-title" }, h("b", null, entry.name), h("span", null, String(entry.content || "").replace(/\s+/g, " ").trim() || (entry.marker ? "系统占位" : "空条目"))), state),
 						editable ? h("div", { className: "dsh-tavern-prompt-editor" },
 							phase ? h("div", { className: "dsh-tavern-prompt-editor-actions" },
@@ -7539,13 +7546,13 @@ window.__ModuleLoader__.load({
 							h("div", { className: "dsh-tavern-prompt-editor-actions" }, h("button", { className: "dsh-tavern-btn", disabled: busy || !dirty, onClick: function () { savePresetRegex(script); } }, "保存此正则"))));
 				}
 				function phaseSection(phase, title, description, entries) {
-					return h("section", { className: "dsh-tavern-preset-phase phase-" + phase, "aria-label": title },
+					return h("section", { className: "dsh-tavern-preset-phase phase-" + phase, "aria-label": title, ...presetDropHandlers(phase) },
 						h("div", { className: "dsh-tavern-preset-phase-head" }, h("div", null, h("div", { className: "dsh-tavern-preset-phase-title" }, title), h("div", { className: "dsh-tavern-preset-phase-description" }, description)), h("span", { className: "dsh-tavern-preset-phase-count" }, entries.length + " 项")),
 						entries.map(entry => h(React.Fragment, { key: entry.entryKey }, dropZone(phase, entry.entryKey), entryRow(entry))), dropZone(phase), entries.length ? null : h("div", { className: "dsh-tavern-preset-phase-empty" }, "此段暂无提示词，可将条目拖到这里"));
 				}
 				if (preset && preset.path === detailPath) {
 					const entryGroups = groupPresetEntriesByPhase(preset);
-					return h("div", { className: "dsh-tavern-presets" },
+					return h("div", { className: "dsh-tavern-presets" + (dragging ? " is-dragging" : "") },
 					h("div", { className: "dsh-tavern-status-head" }, h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: function () { setDetailPath(""); setPreset(null); } }, "← 返回预设库"), h("div", { className: "dsh-tavern-status-title" }, preset.title)),
 					h("div", { className: "dsh-tavern-preset-detail" }, error ? h("div", { className: "dsh-tavern-dock-error" }, error) : null,
 						h("div", { className: "dsh-tavern-preset-summary" }, h("b", null, "编辑前／中／后三段预设"), h("p", null, "前、中、后表示这些内容放在提示词的什么位置。点击条目就能修改；拖动左侧手柄可调整顺序或跨段移动，松开后自动保存。"), h("p", null, "保存后可在“本局设置”中选择预设，让已保存的提示词和正则从下一轮生效；这会使提示词缓存失效。"), h("p", null, "预设会影响游玩时的正文生成。DSH 和酒馆的工作方式不同，同一份预设不一定有同样的效果。"), h("p", null, "在卡片模式里引用预设，只是让 Agent 帮你查看或修改它；负责后台工作的 Agent 不使用这些预设。")),

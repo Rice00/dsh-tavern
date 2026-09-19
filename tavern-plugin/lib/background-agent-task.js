@@ -352,7 +352,7 @@ export function createBackgroundAgentTask(options) {
     state.session = agent.session
     const runtimeInput = state.input
     try { rewindBackgroundSurface(agent.session, input.rewindTo) }
-    catch (error) { console.warn('dsh-tavern: 后台历史回退未完成，继续当前任务:', str(error?.message || error)) }
+    catch (error) { throw new Error('后台历史回退失败，本次任务已停止，未基于旧上下文继续执行。', { cause: error }) }
     const removeTaskTools = installTaskTools(state, runtimeInput, agent.session)
     const cancel = function () { agent.cancel?.({ kind: 'user' }) }
     input.signal?.addEventListener('abort', cancel, { once: true })

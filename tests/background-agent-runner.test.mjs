@@ -1084,7 +1084,7 @@ test('常驻后台 Agent 每轮只挂载本轮工具', async () => {
   assert.equal(disposed, 1)
 })
 
-for (const rewindFails of [false, true]) test('后台 Surface 尽力回退，失败也继续任务: ' + rewindFails, async () => {
+for (const rewindFails of [false, true]) test('后台 Surface 回退失败时停止任务: ' + rewindFails, async () => {
   const parent = { id: 'parent-session', session: { header: { cwd: '/tmp/tavern', delegationDepth: 0 } } }
   const sourceEvents = [
     { seq: 0, type: 'user/message', data: { text: '有效正文' } },
@@ -1136,13 +1136,15 @@ for (const rewindFails of [false, true]) test('后台 Surface 尽力回退，失
     }
   }
   const runner = createBackgroundAgentRunner({ agents, id: () => 'new-candidate' })
-  const result = await runner.run({
+  const pending = runner.run({
     sessionId: parent.id,
     selection: { provider: 'test', model: 'scripted' },
     system: '候选规则', messages: [], tools: [], persistent: true,
     persistentSessionId: 'old-candidate', rewindTo: 2
   })
 
+  if (rewindFails) { await assert.rejects(pending, /后台历史回退失败/); assert.equal(appendCalls.length, 0); assert.equal(createCalls, 0); return }
+  const result = await pending
   assert.equal(result.traceSessionId, 'old-candidate')
   assert.equal(result.traceBoundary, rewindFails ? 7 : 8)
   assert.equal(resumeCalls, 1)

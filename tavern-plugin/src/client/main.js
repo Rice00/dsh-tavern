@@ -6818,26 +6818,29 @@ window.__ModuleLoader__.load({
                 key && reasoning.key === key && reasoning.error ? h("p", { role: "alert" }, reasoning.error) : null);
         }
 
-        function PromptTemplateSettingsEntry() {
-            const [code, setCode] = React.useState(null), [error, setError] = React.useState("");
+        function PromptTemplateSettingsEntry({ sessionId } = {}) {
+            const [error, setError] = React.useState("");
             const request = React.useRef(null);
-            React.useEffect(() => () => { request.current?.close?.(); }, []);
+            React.useEffect(() => () => { request.current?.close?.(); }, [sessionId]);
             function open() {
-                setError("");
-                const detail = { handled: false, openCodeEditor: setCode, onClose: () => setCode(null) };
+                setError(""); request.current?.close?.();
+                if (!sessionId) {
+                    const panel = createServerTemplatePanel({ window, rpc, globalSettings: true });
+                    request.current = panel; panel.open(); return;
+                }
+                const detail = { handled: false, sessionId };
                 request.current = detail;
                 window.dispatchEvent(new CustomEvent("dsh-template-settings", { detail }));
-                if (!detail.handled) setError("请先打开一局游戏，等待加载完成后再进入模板设置。");
+                if (!detail.handled) setError("请等待本局加载完成后重试。");
             }
             const h = React.createElement;
-            return h("section", { className: "dsh-tavern-settings-group" },
+            return h("section", { className: sessionId ? "dsh-local-section" : "dsh-tavern-settings-group" },
                 h("div", { className: "dsh-tavern-settings-row" },
                     h("div", { className: "dsh-tavern-settings-copy" },
-                        h("strong", null, "提示词模板"),
-                        h("p", { className: "dsh-tavern-settings-desc" }, "调整 EJS 模板运行设置、编辑当前游戏的世界书模板，并测试模板命令。")),
-                    h("button", { type: "button", className: "dsh-tavern-btn", onClick: open }, "提示词模板设置与编辑器")),
-                error ? h("p", { className: "dsh-tavern-settings-error", role: "alert" }, error) : null,
-                code ? h(EjsCodeEditor, { ...code, applyHint: "应用后写回条目草稿；点击「保存条目」后生效。", onClose: () => setCode(null), onApply: value => { code.onApply(value); setCode(null); } }) : null);
+                        h("strong", null, sessionId ? "本局模板调试" : "提示词模板"),
+                        h("p", { className: "dsh-tavern-settings-desc" }, sessionId ? "执行 EJS 命令，查看或调整本局变量。" : "调整 EJS 模板运行、兼容性与性能选项，对所有游戏生效。")),
+                    h("button", { type: "button", className: "dsh-tavern-btn", onClick: open }, sessionId ? "本局模板命令" : "提示词模板设置")),
+                error ? h("p", { className: "dsh-tavern-settings-error", role: "alert" }, error) : null);
         }
 
 		function TavernSettingsSection() {
@@ -9523,6 +9526,7 @@ window.__ModuleLoader__.load({
                         h(TavernConversationPreset, { key: owner + ":preset", sessionId: owner }),
                         h(UserPreferenceProfileTab, { key: owner + ":profile", scope: { sessionId: owner }, conversationOnly: true }),
                         h("p", { className: "dsh-local-warning" }, "切换预设或用户画像会使提示词缓存失效，首次请求会增加耗时和费用。")),
+                    h(PromptTemplateSettingsEntry, { key: owner + ":template", sessionId: owner }),
                     h(TavernConversationBackgroundModel, { key: owner, sessionId: owner }), h(TavernConversationWritingSkills, { key: owner + ":skills", sessionId: owner })) : h("p", null, "请选择一个游玩对话。")));
         }
 

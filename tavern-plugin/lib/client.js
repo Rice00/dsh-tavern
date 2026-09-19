@@ -5600,7 +5600,7 @@ window.__ModuleLoader__.load({
 		// The selected game's executor belongs to the plugin, not its disposable header.
 		// Descendants share their owner; unfinished games retain separate sandboxes until idle.
 		// UI only: commands and template evaluation stay in the service.
-		function createServerTemplatePanel({ window: hostWindow, rpc: invoke, isActive = () => true }) {
+		function createServerTemplatePanel({ window: hostWindow, rpc: invoke, isActive = () => true, globalSettings = false }) {
 		  let sessionId = '', panel = null, cleanup = null;
 		  const fields = [
 		    ['enabled', '启用提示词模板', true],
@@ -5627,12 +5627,12 @@ window.__ModuleLoader__.load({
 		  ];
 		  function close() { const done = cleanup; cleanup = null; panel?.close(); panel?.remove(); panel = null; done?.(); }
 		  async function open(event) {
-		    if (!sessionId || !isActive() || event?.detail?.handled) return;
+		    if ((!globalSettings && (!sessionId || !isActive() || (event?.detail?.sessionId && event.detail.sessionId !== sessionId))) || event?.detail?.handled) return;
 		    if (event?.detail) event.detail.handled = true;
 		    close();
 		    const document = hostWindow.document, owner = sessionId, previous = document.activeElement;
 		    const dialog = document.createElement('dialog'); panel = dialog;
-		    const alive = () => panel === dialog && sessionId === owner && isActive();
+		    const alive = () => panel === dialog && (globalSettings || (sessionId === owner && isActive()));
 		    cleanup = () => { event?.detail?.onClose?.(); if (previous?.isConnected) previous.focus(); };
 		    if (event?.detail) event.detail.close = () => { if (panel === dialog) close(); };
 		    function el(tag, text, className) { const node = document.createElement(tag); if (text) node.textContent = text; if (className) node.className = className; return node; }
@@ -5640,16 +5640,13 @@ window.__ModuleLoader__.load({
 		    function section(title, help) { const node = el('section', '', 'dsh-template-section'); node.append(el('h3', title), el('p', help, 'dsh-template-help')); body.append(node); return node; }
 		    function status(parent) { const node = el('p', '', 'dsh-template-feedback'); node.setAttribute('role', 'status'); parent.append(node); return node; }
 		    function report(node, error) { if (alive()) node.textContent = String(error.message || error); }
-		    dialog.className = 'dsh-ejs-editor dsh-template-panel'; dialog.setAttribute('aria-label', '提示词模板设置与编辑器');
+		    dialog.className = 'dsh-ejs-editor dsh-template-panel'; dialog.setAttribute('aria-label', globalSettings ? '提示词模板设置' : '本局模板命令');
 		    const header = el('div', '', 'dsh-ejs-editor-head'), heading = el('div');
-		    heading.append(el('h2', '提示词模板设置与编辑器'), el('p', '模板运行设置 · 当前游戏世界书 · 模板命令测试'));
+		    heading.append(el('h2', globalSettings ? '提示词模板设置' : '本局模板命令'), el('p', globalSettings ? '模板运行、兼容性与性能设置，对所有游戏生效。' : '命令只在打开面板时的游戏中执行。'));
 		    header.append(heading, button('关闭', close));
 		    const body = el('div', '', 'dsh-template-panel-body'); dialog.append(header, body); document.body.append(dialog);
 		    dialog.addEventListener('cancel', e => { e.preventDefault(); close(); }); dialog.showModal();
-		    const settingsSection = section('模板运行设置', '这些设置对所有游戏生效。关闭模板可能影响依赖 EJS 的人物卡或状态栏。修改后点击保存设置。');
-		    const settingsStatus = status(settingsSection); settingsStatus.textContent = '正在读取设置…';
-		    const bookSection = section('世界书模板编辑', '编辑当前游戏使用的世界书。EJS 代码编辑器支持补全、主题和字体；应用后点击保存条目。');
-		    const bookStatus = status(bookSection); bookStatus.textContent = '正在读取世界书…';
+		    if (!globalSettings) {
 		    const commandSection = section('模板命令', '在当前游戏中执行，例如 /ejs <%= 1 + 1 %>。命令可修改变量或游戏数据。');
 		    const command = el('textarea'); command.setAttribute('aria-label', '模板命令'); command.placeholder = '/ejs <%= 1 + 1 %>';
 		    const commandStatus = status(commandSection);
@@ -5661,11 +5658,13 @@ window.__ModuleLoader__.load({
 		      finally { if (alive()) run.disabled = false; }
 		    });
 		    commandSection.insertBefore(command, commandStatus); commandSection.insertBefore(run, commandStatus);
-		    await Promise.all([
-		      (async () => {
-		        try {
-		          const state = await invoke('getFullPromptTemplateState', {}, owner); if (!alive()) return;
-		          let settings = state.environment.extension_settings.EjsTemplate;
+		      return;
+		    }
+		    const settingsSection = section('模板运行设置', '关闭模板可能影响依赖 EJS 的人物卡或状态栏。修改后点击保存设置。');
+		    const settingsStatus = status(settingsSection); settingsStatus.textContent = '正在读取设置…';
+		    try {
+		          const state = await invoke('getGlobalPromptTemplateSettings', {}); if (!alive()) return;
+		          let settings = state.settings;
 		          const form = el('form', '', 'dsh-template-settings-form'), inputs = [];
 		          const basic = el('div', '', 'dsh-template-settings-grid'), advanced = el('details'); advanced.append(el('summary', '高级兼容与性能选项'));
 		          const advancedGrid = el('div', '', 'dsh-template-settings-grid'); advanced.append(advancedGrid); form.append(basic, advanced);
@@ -5689,53 +5688,17 @@ window.__ModuleLoader__.load({
 		            try {
 		              const next = { ...settings };
 		              for (const { key, input, fallback } of inputs) next[key] = typeof fallback === 'boolean' ? input.checked : typeof fallback === 'number' ? Number(input.value) : input.value;
-		              const result = await invoke('saveFullPromptTemplateSettings', { settings: next, expectedSettings: settings }, owner);
+		              const result = await invoke('saveGlobalPromptTemplateSettings', { settings: next, expectedSettings: settings });
 		              if (!alive()) return; if (!result.updated) throw new Error('设置未保存，请重新打开面板后重试');
 		              settings = result.settings; settingsStatus.textContent = '已保存';
 		            } catch (error) { report(settingsStatus, error); }
 		            finally { if (alive()) save.disabled = false; }
 		          };
 		          settingsSection.insertBefore(form, settingsStatus); settingsStatus.textContent = '';
-		        } catch (error) { report(settingsStatus, error); }
-		      })(),
-		      (async () => {
-		        try {
-		          const result = await invoke('getFullTemplateWorldbook', { name: 'current' }, owner); if (!alive()) return;
-		          let book = result?.worldbook;
-		          if (!book?.entries?.length) { bookStatus.textContent = '当前游戏没有可编辑的世界书条目。'; return; }
-		          const select = el('select'), editor = el('textarea'); select.setAttribute('aria-label', '世界书条目'); editor.setAttribute('aria-label', '条目正文');
-		          const drafts = new Map(); let selected = 0;
-		          book.entries.forEach((entry, index) => { const option = el('option', entry.name || entry.comment || String(entry.uid)); option.value = index; select.append(option); });
-		          editor.value = book.entries[0].content || '';
-		          select.onchange = () => { drafts.set(selected, editor.value); selected = Number(select.value); editor.value = drafts.get(selected) ?? book.entries[selected].content ?? ''; };
-		          const code = button('EJS 代码编辑', () => {
-		            if (!alive()) return;
-		            const index = selected;
-		            event.detail.openCodeEditor({ value: editor.value, title: book.entries[index].name || book.entries[index].comment || '世界书条目', onApply: value => {
-		              if (!alive()) return; drafts.set(index, value); if (selected === index) editor.value = value;
-		            } });
-		          });
-		          code.disabled = typeof event?.detail?.openCodeEditor !== 'function';
-		          const saveEntry = button('保存条目', async () => {
-		            if (!alive() || saveEntry.disabled) return;
-		            saveEntry.disabled = true; select.disabled = true; editor.disabled = true; code.disabled = true; bookStatus.textContent = '正在保存…';
-		            try {
-		              drafts.set(selected, editor.value);
-		              const entries = book.entries.map((entry, i) => drafts.has(i) ? { ...entry, content: drafts.get(i) } : { ...entry });
-		              const saved = await invoke('replaceFullTemplateWorldbook', { name: book.name, entries, expectedEntries: book.entries }, owner);
-		              if (!alive()) return; if (!saved.updated) throw new Error('条目未保存，请重新打开面板后重试');
-		              book = saved.worldbook; drafts.clear(); bookStatus.textContent = '已保存';
-		            } catch (error) { report(bookStatus, error); }
-		            finally { if (alive()) { saveEntry.disabled = false; select.disabled = false; editor.disabled = false; code.disabled = typeof event?.detail?.openCodeEditor !== 'function'; } }
-		          });
-		          const actions = el('div', '', 'dsh-template-actions'); actions.append(code, saveEntry);
-		          bookSection.insertBefore(select, bookStatus); bookSection.insertBefore(editor, bookStatus); bookSection.insertBefore(actions, bookStatus); bookStatus.textContent = '';
-		        } catch (error) { report(bookStatus, error); }
-		      })()
-		    ]);
+		    } catch (error) { report(settingsStatus, error); }
 		  }
-		  hostWindow.addEventListener('dsh-template-settings', open);
-		  return { close, sync(id, view) { const next = view?.chatId && isPlayMode(view.mode || 'story') ? id : ''; if (next !== sessionId) close(); sessionId = next; },
+		  if (!globalSettings) hostWindow.addEventListener('dsh-template-settings', open);
+		  return { open, close, sync(id, view) { const next = view?.chatId && isPlayMode(view.mode || 'story') ? id : ''; if (next !== sessionId) close(); sessionId = next; },
 		    dispose() { sessionId = ''; close(); hostWindow.removeEventListener('dsh-template-settings', open); } };
 		}
 
@@ -8868,26 +8831,29 @@ window.__ModuleLoader__.load({
                 key && reasoning.key === key && reasoning.error ? h("p", { role: "alert" }, reasoning.error) : null);
         }
 
-        function PromptTemplateSettingsEntry() {
-            const [code, setCode] = React.useState(null), [error, setError] = React.useState("");
+        function PromptTemplateSettingsEntry({ sessionId } = {}) {
+            const [error, setError] = React.useState("");
             const request = React.useRef(null);
-            React.useEffect(() => () => { request.current?.close?.(); }, []);
+            React.useEffect(() => () => { request.current?.close?.(); }, [sessionId]);
             function open() {
-                setError("");
-                const detail = { handled: false, openCodeEditor: setCode, onClose: () => setCode(null) };
+                setError(""); request.current?.close?.();
+                if (!sessionId) {
+                    const panel = createServerTemplatePanel({ window, rpc, globalSettings: true });
+                    request.current = panel; panel.open(); return;
+                }
+                const detail = { handled: false, sessionId };
                 request.current = detail;
                 window.dispatchEvent(new CustomEvent("dsh-template-settings", { detail }));
-                if (!detail.handled) setError("请先打开一局游戏，等待加载完成后再进入模板设置。");
+                if (!detail.handled) setError("请等待本局加载完成后重试。");
             }
             const h = React.createElement;
-            return h("section", { className: "dsh-tavern-settings-group" },
+            return h("section", { className: sessionId ? "dsh-local-section" : "dsh-tavern-settings-group" },
                 h("div", { className: "dsh-tavern-settings-row" },
                     h("div", { className: "dsh-tavern-settings-copy" },
-                        h("strong", null, "提示词模板"),
-                        h("p", { className: "dsh-tavern-settings-desc" }, "调整 EJS 模板运行设置、编辑当前游戏的世界书模板，并测试模板命令。")),
-                    h("button", { type: "button", className: "dsh-tavern-btn", onClick: open }, "提示词模板设置与编辑器")),
-                error ? h("p", { className: "dsh-tavern-settings-error", role: "alert" }, error) : null,
-                code ? h(EjsCodeEditor, { ...code, applyHint: "应用后写回条目草稿；点击「保存条目」后生效。", onClose: () => setCode(null), onApply: value => { code.onApply(value); setCode(null); } }) : null);
+                        h("strong", null, sessionId ? "本局模板调试" : "提示词模板"),
+                        h("p", { className: "dsh-tavern-settings-desc" }, sessionId ? "执行 EJS 命令，查看或调整本局变量。" : "调整 EJS 模板运行、兼容性与性能选项，对所有游戏生效。")),
+                    h("button", { type: "button", className: "dsh-tavern-btn", onClick: open }, sessionId ? "本局模板命令" : "提示词模板设置")),
+                error ? h("p", { className: "dsh-tavern-settings-error", role: "alert" }, error) : null);
         }
 
 		function TavernSettingsSection() {
@@ -11949,6 +11915,7 @@ window.__ModuleLoader__.load({
                         h(TavernConversationPreset, { key: owner + ":preset", sessionId: owner }),
                         h(UserPreferenceProfileTab, { key: owner + ":profile", scope: { sessionId: owner }, conversationOnly: true }),
                         h("p", { className: "dsh-local-warning" }, "切换预设或用户画像会使提示词缓存失效，首次请求会增加耗时和费用。")),
+                    h(PromptTemplateSettingsEntry, { key: owner + ":template", sessionId: owner }),
                     h(TavernConversationBackgroundModel, { key: owner, sessionId: owner }), h(TavernConversationWritingSkills, { key: owner + ":skills", sessionId: owner })) : h("p", null, "请选择一个游玩对话。")));
         }
 

@@ -6817,6 +6817,18 @@ window.__ModuleLoader__.load({
                 key && reasoning.key === key && reasoning.error ? h("p", { role: "alert" }, reasoning.error) : null);
         }
 
+        function PromptTemplateSettingsEntry() {
+            const [open, setOpen] = React.useState(false);
+            const h = React.createElement;
+            return h("section", { className: "dsh-tavern-settings-group" },
+                h("div", { className: "dsh-tavern-settings-row" },
+                    h("div", { className: "dsh-tavern-settings-copy" },
+                        h("strong", null, "提示词模板"),
+                        h("p", { className: "dsh-tavern-settings-desc" }, "编辑人物卡内置世界书或独立世界书中的 EJS 模板代码。")),
+                    h("button", { type: "button", className: "dsh-tavern-btn", onClick: () => setOpen(true) }, "提示词模板设置与编辑器")),
+                open ? h(worldBookLibraryFeature.TemplateEditorDialog, { onClose: () => setOpen(false) }) : null);
+        }
+
 		function TavernSettingsSection() {
 			const [state, setState] = React.useState({ loading: true, busy: false, defaultForegroundModel: null, defaultBackgroundModel: null, notice: "", webSearchEnabled: false, backgroundModel: null, backgroundTasks: { posture: true, characterDesign: false, variables: true, ledger: false }, modelCatalog: [], sceneImages: false, error: "" });
 			React.useEffect(function () {
@@ -6843,6 +6855,7 @@ window.__ModuleLoader__.load({
                 React.createElement(TavernDefaultModelSetting, { label: "默认后台模型", fallback: "跟随前台", selection: state.defaultBackgroundModel, catalog: state.modelCatalog, disabled: state.loading || state.busy, onChange: selection => saveDefault("defaultBackgroundModel", selection) }),
                 state.notice ? React.createElement("p", { role: "status" }, state.notice) : null,
                 React.createElement(TavernConversationWritingSkills, { globalDefaults: true }),
+                React.createElement(PromptTemplateSettingsEntry),
                 React.createElement(TavernTextColorSettings),
                 React.createElement(ContextCompactionSettings),
 				state.sceneImages ? React.createElement(SceneImageSettings, null) : null,
@@ -7759,7 +7772,7 @@ window.__ModuleLoader__.load({
 				};
 			}, []);
 			React.useEffect(function () { if (requestedSource) load(requestedSource); }, [JSON.stringify(requestedSource)]);
-			function clear() { setRecord(null); setAssociations(null); setSelectedCardPath(""); props.ctx.betterSidebar.updateTab(props.tab.id, { meta: null }); }
+			function clear() { setRecord(null); setAssociations(null); setSelectedCardPath(""); if (props.ctx && props.tab) props.ctx.betterSidebar.updateTab(props.tab.id, { meta: null }); }
 			async function importFile(file) { if (!file) return; setBusy(true); setError(""); try { const result = await rpc("importWorldBook", { payload: await parseTextResourceFile(file) }, props.scope.sessionId); await refresh(); await load({ kind: "standalone", path: result.worldBook.path }); notifyTavernDataChanged(["worldbooks"], "worldbooks"); } catch (err) { setError(String(err && err.message || err)); } finally { setBusy(false); } }
 			async function rename() { if (!record || record.source.kind !== "standalone") return; const current = record.source.path.split("/").pop(); const name = await askTavernText({ title: "重命名世界书文件", initialValue: current, maxLength: 120 }); if (name === null || name === current) return; setBusy(true); try { const result = await rpc("renameResource", { path: record.source.path, name: name }, props.scope.sessionId); await refresh(); await load({ kind: "standalone", path: result.resource.path }); } catch (err) { setError(String(err && err.message || err)); } finally { setBusy(false); } }
 			async function remove(source, name) {
@@ -7831,6 +7844,19 @@ window.__ModuleLoader__.load({
 				catalog ? group("独立世界书", catalog.standalone || []) : null,
 				catalog ? group("人物卡内置世界书", catalog.embedded || []) : null));
 		}
+        function TemplateEditorDialog({ onClose }) {
+            const ref = React.useRef(null);
+            React.useEffect(() => {
+                const dialog = ref.current, previous = document.activeElement;
+                dialog.showModal();
+                return () => { dialog.close(); if (previous?.isConnected) previous.focus(); };
+            }, []);
+            return React.createElement("dialog", { ref, className: "dsh-ejs-editor dsh-template-library-dialog", "aria-label": "提示词模板设置与编辑器", onCancel: event => { event.preventDefault(); event.stopPropagation(); onClose(); } },
+                React.createElement("div", { className: "dsh-ejs-editor-head" },
+                    React.createElement("div", null, React.createElement("h2", null, "提示词模板设置与编辑器"), React.createElement("p", null, "选择世界书和条目，点击「EJS 代码编辑」；应用后保存世界书。")),
+                    React.createElement("button", { type: "button", className: "dsh-tavern-btn", onClick: onClose }, "关闭编辑器")),
+                React.createElement("div", { className: "dsh-template-library-body" }, React.createElement(WorldBookLibraryTab, { scope: { sessionId: "" } })));
+        }
 		function register(input) {
 			const ctx = input.ctx;
 			const appendMention = input.appendMention;
@@ -7842,7 +7868,7 @@ window.__ModuleLoader__.load({
 				component: function (props) { return React.createElement(WorldBookLibraryTab, Object.assign({}, props, { appendMention: function (kind, path, label) { appendMention(props.scope.sessionId, kind, path, label); } })); }
 			}), "dsh-tavern: Better Sidebar worldbook library tab");
 		}
-		return Object.freeze({ register: register });
+		return Object.freeze({ register: register, TemplateEditorDialog: TemplateEditorDialog });
 		}
 		const worldBookLibraryFeature = createWorldBookLibraryFeatureModule();
 

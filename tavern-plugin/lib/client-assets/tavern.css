@@ -1041,3 +1041,6 @@ body.dsh-tavern-shell-active [data-dsh-panel-host] { overflow: clip; }
 .dsh-ejs-editor iframe { flex:1; width:100%; min-height:0; border:0; }
 .dsh-ejs-editor-footer { border-top:1px solid var(--dsw-alias-border-l2); font-size:12px; }
 .dsh-ejs-editor-footer .dsh-tavern-btn { flex-shrink:0; }
+
+.dsh-template-library-body { flex:1; min-height:0; overflow:auto; }
+.dsh-template-library-dialog .dsh-tavern-library { min-height:100%; }

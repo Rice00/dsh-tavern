@@ -343,6 +343,14 @@ export function createForegroundOrchestrationStrategies(options) {
   }
 
   async function prepareStep(input) {
+    if (input.chat?.regenInProgress && Number(input.payload.step) === 1) {
+      const inputs = (input.payload.messages || []).filter(isTurnInput)
+      const saved = input.chat.regenRecovery
+      if (saved?.phase === 'committed' || inputs.length !== 1 || !isRegenerationInput(inputs[0]) ||
+          (saved?.id && inputs[0].source.regenerationId !== saved.id)) {
+        throw new Error('正文重新生成尚未完成，请先完成或恢复后再发送消息')
+      }
+    }
     return await select(input.chat).prepareStep(input)
   }
 

@@ -11693,6 +11693,11 @@ window.__ModuleLoader__.load({
 
 		const candidatePanel = { value: null, listeners: new Set() };
 		function setCandidatePanel(value) {
+            if (value) {
+                const previous = candidatePanel.value;
+                const sameChoices = previous && previous.sessionId === value.sessionId && previous.messageId === value.messageId && previous.phase === value.phase && JSON.stringify(previous.choices) === JSON.stringify(value.choices);
+                value = Object.assign({}, value, { expanded: value.expanded ?? (sameChoices ? previous.expanded : value.phase === "error") });
+            }
 			candidatePanel.value = value;
 			candidatePanel.listeners.forEach(function (listener) { listener(value); });
 		}
@@ -12278,11 +12283,13 @@ window.__ModuleLoader__.load({
 			const running = props.useSession(function (snapshot) { return snapshot.running; });
 			const latestMessageId = props.useChat(latestTavernAssistantMessageId);
 			const [selected, setSelected] = React.useState(-1);
-			const [expanded, setExpanded] = React.useState(false);
-            React.useEffect(() => { if (running) setExpanded(false); }, [running]);
+            const expanded = Boolean(panel && panel.expanded);
+            function setExpanded(value) {
+                if (panel) setCandidatePanel(Object.assign({}, panel, { expanded: value }));
+            }
+            React.useEffect(() => { if (running && panel?.expanded) setExpanded(false); }, [running, panel]);
 			React.useEffect(function () {
 				setSelected(sessionMode === "script" && panel && Array.isArray(panel.choices) && panel.choices.length === 1 ? 0 : -1);
-				setExpanded(panel !== null && panel.phase === "error");
 			}, [panel, sessionMode]);
 			if (panel && panel.sessionId === props.sessionId && panel.phase === "error") {
 				return React.createElement("div", { className: "dsh-tavern-choice-error dsh-tavern-candidate-error-banner" },

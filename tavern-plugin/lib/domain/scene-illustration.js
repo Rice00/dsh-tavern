@@ -1,3 +1,4 @@
+import { postureForContext } from './posture-context.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { projectAgentContent } from './runtime-content-projection.js'
 import { createImageGenerationModule } from '../../packages/dsh-image-gen/src/module.js'
@@ -65,7 +66,7 @@ export function sceneInput(chat, target, stateAtTarget) {
   // No historical snapshot means no historical posture; never borrow the latest
   // game's pose to illustrate an earlier turn.
   const snapshot = stateAtTarget || (latestTurn === target.turn && chat.settleStatus === 'done' ? chat : null)
-  const posture = typeof snapshot?.posture === 'string' ? snapshot.posture : ''
+  const posture = postureForContext(chat, snapshot)
   const state = sceneStateSources(snapshot, target, text + '\n' + posture)
   return { text, posture, ...(state.sources.length || state.omitted.length ? { state } : {}) }
 }

@@ -20,7 +20,7 @@ DSH Tavern 是一个以文字为主的 AI 角色扮演与故事游玩工具，�
 
 ## 宣传视频
 
-[DSH Tavern：类酒馆文字游戏agent，基于Deepseek Harness](https://www.bilibili.com/video/BV1Bibx61EAC/)
+[DSH Tavern：类酒馆文字游戏agent，基于Deepseek Harness](https://www.bilibili.com/video/BV1NAeq6iELC/)
 
 ## 两种主要使用方式
 

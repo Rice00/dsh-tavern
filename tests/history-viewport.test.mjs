@@ -8,7 +8,7 @@ import path from 'node:path'
 import { chromium } from 'playwright'
 const source = await readFile(new URL('../tavern-plugin/src/client/modules/history-viewport.js', import.meta.url), 'utf8')
 const make = new Function(source + ';return createTavernHistoryViewport')()
-test('live window never exceeds 20, evicts before publishing, and counts multiple nodes as one turn', () => {
+test('initial history is limited to 20, explicit loads append 20 and preserve loaded rounds', () => {
   const budget = make(), released = []
   const stops = []
   for (let turn = 1; turn <= 133; turn++) {
@@ -16,22 +16,26 @@ test('live window never exceeds 20, evicts before publishing, and counts multipl
     assert.ok(budget.snapshot().size <= 20)
   }
   assert.equal(budget.snapshot().size, 20)
-  assert.ok(budget.snapshot().has(budget.key('a', 133)))
-  const stopDuplicate = budget.register('a', 1, () => {})
-  budget.focus('a', 1)
-  assert.equal(budget.snapshot().size, 20)
-  assert.ok(budget.snapshot().has(budget.key('a', 1)))
-  stops[0]()
-  assert.ok(budget.snapshot().has(budget.key('a', 1)))
-  stopDuplicate()
-  assert.equal(budget.snapshot().has(budget.key('a', 1)), false)
-  assert.ok(released.includes(133))
+  assert.ok(budget.snapshot().has(budget.key('a', 114)))
+  budget.more('a')
+  assert.equal(budget.snapshot().size, 40)
+  assert.ok(budget.snapshot().has(budget.key('a', 94)))
+  budget.more('a')
+  assert.equal(budget.snapshot().size, 60)
   budget.register('a', 134, () => {})
-  assert.equal(budget.snapshot().has(budget.key('a', 134)), false, 'new replies do not evict history being read')
+  assert.equal(budget.snapshot().size, 61)
+  assert.ok(budget.snapshot().has(budget.key('a', 74)))
+  const stopDuplicate = budget.register('a', 74, () => {})
+  stops[73]()
+  assert.ok(budget.snapshot().has(budget.key('a', 74)))
+  stopDuplicate()
+  assert.equal(budget.snapshot().has(budget.key('a', 74)), false)
+  for (let i = 0; i < 10; i++) budget.more('a')
+  assert.equal(budget.snapshot().size, 133)
 })
 
 const dsh = process.env.DSH_BROWSER_ROOT || path.join(homedir(), '.dsh-tavern/runtime/lib/node_modules/@deepseek-ai/dsh')
-test('real React scrolls 133 rounds with at most 20 retained pages and recreates evicted history', { skip: !existsSync(dsh) && 'Set DSH_BROWSER_ROOT for the browser integration test' }, async () => {
+test('real React keeps 20 rounds while scrolling and appends history only after manual clicks', { skip: !existsSync(dsh) && 'Set DSH_BROWSER_ROOT for the browser integration test' }, async () => {
   const require = createRequire(path.join(dsh, 'node_modules/@deepseek-ai/dsh-client-ui-trajectory/package.json'))
   const names = ['react', 'scheduler', 'react-dom', 'react-dom/client']
   const files = ['react.production.js', 'scheduler.production.js', 'react-dom.production.js', 'react-dom-client.production.js']
@@ -65,18 +69,19 @@ test('real React scrolls 133 rounds with at most 20 retained pages and recreates
       window.maxFrames=0;new MutationObserver(()=>{maxFrames=Math.max(maxFrames,document.querySelectorAll('iframe').length)}).observe(document.body,{subtree:true,childList:true});
     `})
     await page.waitForFunction(() => document.querySelectorAll('iframe').length === 20)
-    for (const turn of [133, 1, 65, 133, 1]) {
-      await page.locator(`[data-tavern-history-turn="${turn}"]`).scrollIntoViewIfNeeded()
-      await page.waitForFunction(turn => document.querySelector(`[data-tavern-history-turn="${turn}"] iframe`), turn)
-      assert.ok(await page.locator('iframe').count() <= 20)
-    }
-    await page.evaluate(() => { window.oldFrame = document.querySelector('[data-tavern-history-turn="1"] iframe'); oldFrame.contentDocument.querySelector('input').value = 'old-state' })
-    await page.locator('[data-tavern-history-turn="133"]').scrollIntoViewIfNeeded()
-    await page.waitForFunction(() => !oldFrame.isConnected)
-    await page.locator('[data-tavern-history-turn="1"]').scrollIntoViewIfNeeded()
-    await page.waitForFunction(() => document.querySelector('[data-tavern-history-turn="1"] iframe')?.contentDocument?.querySelector('input'))
-    assert.equal(await page.evaluate(() => document.querySelector('[data-tavern-history-turn="1"] iframe') !== oldFrame), true)
-    assert.ok(await page.evaluate(() => maxFrames) <= 20)
+    assert.equal(await page.locator('iframe').count(), 20)
+    await page.evaluate(() => { window.saved = document.querySelector('[data-tavern-history-turn="133"] iframe'); saved.contentDocument.querySelector('input').value = 'kept' })
+    await page.evaluate(() => window.scrollTo(0, 0))
+    await page.waitForTimeout(200)
+    assert.equal(await page.locator('iframe').count(), 20, 'scrolling alone must not expand history')
+    await page.getByRole('button', {name:'加载更多（20 轮）', exact:true}).click()
+    await page.waitForFunction(() => document.querySelectorAll('iframe').length === 40)
+    await page.getByRole('button', {name:'加载更多（20 轮）', exact:true}).click()
+    await page.waitForFunction(() => document.querySelectorAll('iframe').length === 60)
+    assert.equal(await page.evaluate(() => saved === document.querySelector('[data-tavern-history-turn="133"] iframe') && saved.contentDocument.querySelector('input').value === 'kept'), true)
+    for (let i = 0; i < 4; i++) await page.getByRole('button', {name:'加载更多（20 轮）', exact:true}).click()
+    await page.waitForFunction(() => document.querySelectorAll('iframe').length === 133)
+    assert.equal(await page.getByRole('button', {name:'加载更多（20 轮）', exact:true}).count(), 0)
     assert.deepEqual(errors, [])
   } finally { await browser.close() }
 })

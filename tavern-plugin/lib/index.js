@@ -2440,7 +2440,11 @@ export async function apply(ctx) {
         return
       } catch (err) {
         if (signal?.aborted) return
-        if (backgroundSessionId === '') backgroundSessionId = str(err && err.traceSessionId)
+        const failedSessionId = str(err && err.traceSessionId)
+        if (failedSessionId && failedSessionId !== backgroundSessionId) {
+          backgroundSessionId = failedSessionId
+          backgroundBoundary = null
+        }
         if (backgroundBoundary === null && Number.isSafeInteger(err && err.traceBoundary)) backgroundBoundary = err.traceBoundary
         const failed = await taskRun.commit({
           status: 'failed',

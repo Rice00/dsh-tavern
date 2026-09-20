@@ -266,7 +266,12 @@ export function createStoryTimeline(options = {}) {
   }
 
   function commitParticipant(chat, operation, value) {
-    const participant = object(value)
+    let participant = object(value)
+    // The identity durably bound before execution outranks a caller's stale
+    // pre-replacement receipt. Never transfer a boundary between sessions.
+    if (operation.startedSessionId && operation.startedSessionId !== str(participant.sessionId)) {
+      participant = { sessionId: operation.startedSessionId, lifetime: 'chat', boundary: null, identityOnly: true }
+    }
     if (operation.kind !== 'agent' || str(participant.sessionId) === '') return
     const lifetime = participantLifetime(participant.lifetime)
     const participantKey = participantRole(operation.role)
@@ -276,7 +281,7 @@ export function createStoryTimeline(options = {}) {
       lifetime,
       sessionId: str(participant.sessionId),
       branchId: chat.timeline.branchId,
-      syncedRevision: chat.timeline.revision,
+      syncedRevision: participant.identityOnly ? null : chat.timeline.revision,
       boundary: Number.isSafeInteger(participant.boundary) ? participant.boundary : null,
       status: 'current',
       rewindTo: null,
@@ -504,6 +509,17 @@ export function createStoryTimeline(options = {}) {
         || operation.basedOn.branchId !== chat.timeline.branchId || operation.basedOn.revision !== chat.timeline.revision) throw new Error('后台任务已过期，不能绑定代理')
       if (!str(intent.sessionId)) throw new Error('后台代理编号为空')
       operation.startedSessionId = str(intent.sessionId)
+      const key = participantRole(operation.role)
+      const previous = object(chat.timeline.participants[key])
+      if (str(previous.sessionId) !== operation.startedSessionId) {
+        // Session ownership is durable before the model runs; task success and
+        // synchronization are separate facts. Old checkpoints remain untouched.
+        chat.timeline.participants[key] = {
+          role: key, lifetime: 'chat', sessionId: operation.startedSessionId,
+          branchId: chat.timeline.branchId, status: 'bound', syncedRevision: null,
+          boundary: null, rewindTo: null, updatedAt: now()
+        }
+      }
       value = { status: 'bound' }
     }
     else if (intent.kind === 'background.recover') value = recoverBackground(chat, intent)

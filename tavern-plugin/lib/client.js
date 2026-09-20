@@ -892,124 +892,85 @@ window.__ModuleLoader__.load({
 			return { phase: String(activity.phase || "idle"), busy: busy, role: role, label: label, blockReason: blockReason };
 		}
 
-		// Display-only projection. Never mutate the host Session or its node store.
-		function tavernHistoryWindow(snapshot, outline, limit) {
-			const byTurn = new Map();
-			for (const item of Array.isArray(outline) ? outline : []) {
-				if (Number.isSafeInteger(item.turn) && Number.isSafeInteger(item.seq)) byTurn.set(item.turn, item.seq);
-			}
-			for (const key of snapshot.order) {
-				const node = snapshot.nodes.get(key);
-				const turn = node?.location?.turn?.turn;
-				if (Number.isSafeInteger(turn) && !byTurn.has(turn)) byTurn.set(turn, node.anchorSeq);
-			}
-			const turns = [...byTurn.keys()].sort((a, b) => a - b);
-			const first = turns[Math.max(0, turns.length - limit)];
-			const order = snapshot.order.filter(key => {
-				const node = snapshot.nodes.get(key);
-				const turn = node?.location?.turn?.turn;
-				return turns.length <= limit || first === undefined || (Number.isSafeInteger(turn) ? turn >= first : Number(node?.anchorSeq) >= Number(byTurn.get(first)));
-			});
-			return { first, seq: byTurn.get(first), total: turns.length, order,
-				outline: (Array.isArray(outline) ? outline : []).filter(item => item.turn >= first),
-				navigation: snapshot.navigation.items().filter(item => item.turn >= first) };
-		}
+        // Bound live story bodies independently of the host's child-slot ownership.
+        // Lightweight placeholders retain scroll geometry; canonical history is untouched.
+        function createTavernHistoryViewport(limit = 20) {
+            const entries = new Map(), listeners = new Set();
+            let snapshot = new Set();
+            function publish(next) {
+                if (next.size === snapshot.size && [...next].every(key => snapshot.has(key))) return;
+                const previous = snapshot;
+                snapshot = next;
+                // Dispose retained documents before admitting their replacements.
+                for (const key of previous) if (!next.has(key)) entries.get(key)?.release();
+                listeners.forEach(fn => fn());
+            }
+            function ordered(sessionId) {
+                return [...entries.values()].filter(item => item.sessionId === sessionId).sort((a, b) => a.turn - b.turn);
+            }
+            function select(sessionId, turn) {
+                const rows = ordered(sessionId);
+                const index = rows.findIndex(item => item.turn === turn);
+                const end = index < 0 ? rows.length : Math.min(rows.length, Math.max(limit, index + Math.ceil(limit / 2)));
+                publish(new Set(rows.slice(Math.max(0, end - limit), end).map(item => item.key)));
+            }
+            return {
+                subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); },
+                snapshot() { return snapshot; },
+                register(sessionId, turn, release) {
+                    const key = JSON.stringify([sessionId, turn]);
+                    const newest = ordered(sessionId).at(-1);
+                    const followingLatest = newest && snapshot.has(newest.key);
+                    let item = entries.get(key);
+                    if (!item) { item = { key, sessionId, turn, release, mounts: 0 }; entries.set(key, item); }
+                    item.mounts++;
+                    // Initial mount and newly appended turns start at the newest window.
+                    if (!snapshot.size || followingLatest && turn >= newest.turn) select(sessionId);
+                    return () => {
+                        if (--item.mounts > 0) return;
+                        item.release();
+                        entries.delete(key);
+                        publish(new Set([...snapshot].filter(k => k !== key)));
+                    };
+                },
+                focus(sessionId, turn) { if (!snapshot.has(JSON.stringify([sessionId, turn]))) select(sessionId, turn); },
+                key(sessionId, turn) { return JSON.stringify([sessionId, turn]); }
+            };
+        }
+        const tavernHistoryViewport = createTavernHistoryViewport();
 
-		function registerTavernHistoryWindow(ctx) {
-			ctx.effect(() => ctx.slots.inject("conversation.view", () => {
-				let remove;
-				function install() {
-				if (remove) return;
-				const original = ctx.slots.entriesOfSlot("conversation.view").find(entry => entry.options.id === "chat");
-				if (!original || typeof original.component !== "function") return;
-				// Child slot ownership is global and cannot be copied to a shadow entry.
-				// Omitting children also removes NativeChat's renderSlot authorization.
-				// Preserve the native view until the host exposes an ownership-safe adapter.
-				if (original.children && Object.keys(original.children).length > 0) return;
-				const NativeChat = original.component;
-				function WindowedChat(props) {
-					const live = useLiveTavernView(props.sessionId, "history-window");
-					if (!live.view) return (live.error || live.phase === "ready") ? React.createElement(NativeChat, props) : React.createElement("div", { role: "status" }, "正在读取对话…");
-					return isPlayMode(live.view.mode) ? React.createElement(PlayHistory, { ...props, key: props.sessionId }) : React.createElement(NativeChat, props);
-				}
-				function PlayHistory(props) {
-					const snapshot = props.useChat(value => value);
-					const outline = props.useProjection("turnOutline");
-					const hasMore = props.useSession(value => value.hasMore);
-					const [limit, setLimit] = React.useState(20);
-					const [busy, setBusy] = React.useState(false);
-					const [error, setError] = React.useState("");
-					const root = React.useRef(null);
-					const anchor = React.useRef(null);
-					const pending = React.useRef(false);
-					const windowed = React.useMemo(() => tavernHistoryWindow(snapshot, outline, limit), [snapshot, outline, limit]);
-					const project = React.useMemo(() => {
-						const cache = new WeakMap();
-						return value => {
-							if (!cache.has(value)) {
-								const bounded = tavernHistoryWindow(value, outline, limit);
-								const navigation = Object.create(value.navigation);
-								navigation.items = () => bounded.navigation;
-								cache.set(value, { ...value, order: bounded.order, navigation });
-							}
-							return cache.get(value);
-						};
-					}, [outline, limit]);
-					const useChat = React.useCallback(selector => props.useChat(value => selector(project(value))), [props.useChat, project]);
-					const useSession = React.useCallback(selector => props.useSession(value => selector({ ...value, hasMore: false })), [props.useSession]);
-					const useProjection = React.useCallback(name => { const value = props.useProjection(name); return name === "turnOutline" ? windowed.outline : value; }, [props.useProjection, windowed]);
-					function scrollport() { return root.current?.closest("[data-conversation-scroll]") || root.current?.querySelector("[data-chat-flow]")?.parentElement || root.current; }
-					function rememberPosition() {
-						const scroller = scrollport();
-						const row = [...(root.current?.querySelectorAll("[data-chat-flow-key]") || [])].find(row => row.getBoundingClientRect().bottom > (scroller?.getBoundingClientRect().top || 0));
-						anchor.current = row ? { key: row.getAttribute("data-chat-flow-key"), top: row.getBoundingClientRect().top } : null;
-					}
-					React.useLayoutEffect(() => {
-						const held = anchor.current;
-						if (!held) return;
-						const scroller = scrollport();
-						if (held.latest) { if (scroller) scroller.scrollTop = scroller.scrollHeight; }
-						else {
-							const row = [...(root.current?.querySelectorAll("[data-chat-flow-key]") || [])].find(row => row.getAttribute("data-chat-flow-key") === held.key);
-							if (row && scroller) scroller.scrollTop += row.getBoundingClientRect().top - held.top;
-						}
-						anchor.current = null;
-					}, [windowed]);
-					// Host pages are event-based; load through the first required turn for a complete 20-turn opening.
-					React.useEffect(() => {
-						if (!hasMore || !Number.isSafeInteger(windowed.seq) || pending.current) return;
-						pending.current = true; setBusy(true);
-						Promise.resolve(props.loadThrough(windowed.seq)).catch(err => setError(String(err?.message || err))).finally(() => { pending.current = false; setBusy(false); });
-					}, [windowed.seq, hasMore, props.loadThrough]);
-					async function earlier() {
-						if (busy || pending.current) return;
-						rememberPosition(); setBusy(true); setError(""); pending.current = true;
-						try {
-							if ((!Array.isArray(outline) || outline.length === 0) && hasMore) throw new Error("历史轮次索引尚未就绪，请稍后重试");
-							const next = tavernHistoryWindow(snapshot, outline, limit + 100);
-							if (Number.isSafeInteger(next.seq)) await props.loadThrough(next.seq);
-							else if (hasMore) await props.loadOlder();
-							rememberPosition(); setLimit(value => value + 100);
-						} catch (err) { setError(String(err?.message || err)); }
-						finally { pending.current = false; setBusy(false); }
-					}
-					function latest() { props.chatScroll?.save(null); anchor.current = { latest: true }; setLimit(20); if (limit === 20) { const scroller = scrollport(); if (scroller) scroller.scrollTop = scroller.scrollHeight; } }
-					return React.createElement("div", { ref: root, className: "dsh-tavern-history-window" },
-						React.createElement("div", { className: "dsh-tavern-history-controls" },
-							(windowed.total > limit || ((!Array.isArray(outline) || outline.length === 0) && hasMore)) ? React.createElement("button", { className: "dsh-tavern-btn", disabled: busy, onClick: earlier }, busy ? "正在加载…" : "查看更早（100 轮）") : null,
-							limit > 20 ? React.createElement("button", { className: "dsh-tavern-btn", disabled: busy, onClick: latest }, "回到最新") : null,
-							React.createElement("small", null, "显示最近 " + Math.min(limit, windowed.total) + " 轮"),
-							error ? React.createElement("span", { role: "alert" }, error) : null),
-						React.createElement(NativeChat, { ...props, useChat, useSession, useProjection }));
-				}
-				remove = ctx.slots.register({ ...original.options, name: "conversation.view", id: "chat", priority: -100,
-					inject: original.inject, children: original.children, store: original.store, locale: original.locale }, WindowedChat);
-				}
-				const unsubscribe = ctx.slots.subscribe("conversation.view", install);
-				install();
-				return () => { unsubscribe(); if (remove) remove(); };
-			}), "dsh-tavern: bounded conversation history");
-		}
+        function TavernWindowedNode(props) {
+            const ref = React.useRef(null), height = React.useRef(160);
+            const turn = Number(props.node.location?.turn?.turn || 0);
+            const key = tavernHistoryViewport.key(props.sessionId, turn);
+            const active = React.useSyncExternalStore(tavernHistoryViewport.subscribe, tavernHistoryViewport.snapshot).has(key);
+            React.useLayoutEffect(() => tavernHistoryViewport.register(props.sessionId, turn, () => {
+                // Story turns and native turns need not have the same numbering.
+                tavernRetainedFrames.invalidateOwner(key);
+            }), [key]);
+            React.useLayoutEffect(() => {
+                if (!active || !ref.current) return;
+                const node = ref.current;
+                const remember = () => { if (node.offsetHeight > 0) height.current = node.offsetHeight; };
+                remember();
+                const observer = typeof ResizeObserver === "function" ? new ResizeObserver(remember) : null;
+                observer?.observe(node);
+                return () => { remember(); observer?.disconnect(); };
+            }, [active]);
+            React.useEffect(() => {
+                const node = ref.current;
+                if (!node || typeof IntersectionObserver !== "function") return;
+                const observer = new IntersectionObserver(entries => {
+                    if (entries.some(entry => entry.isIntersecting)) tavernHistoryViewport.focus(props.sessionId, turn);
+                }, { rootMargin: "240px 0px" });
+                observer.observe(node);
+                return () => observer.disconnect();
+            }, [key]);
+            return React.createElement("div", { ref, "data-tavern-history-turn": turn,
+                style: active ? undefined : { minHeight: height.current + "px" } },
+                active ? React.createElement(props.bodyComponent, { ...props, frameOwner: key }) :
+                    React.createElement("button", { type: "button", className: "dsh-tavern-btn", onClick: () => tavernHistoryViewport.focus(props.sessionId, turn) }, "加载此段历史"));
+        }
 
 		function useLiveTavernView(sessionId, revision) {
 			const subscribe = React.useCallback(function (notify) { return liveTavernView.subscribe(sessionId, notify); }, [sessionId]);
@@ -6605,7 +6566,7 @@ window.__ModuleLoader__.load({
 		            node.className = "dsh-tavern-message-frame-slot";
 		            node.style.position = "relative";
 		            parked().appendChild(node);
-		            record = { key: id, sessionId: props.sessionId, panelId: props.panelId, persistent: props.persistent, node: node, frames: new Map(), unmount: null, unpin: null };
+		            record = { key: id, sessionId: props.sessionId, panelId: props.panelId, persistent: props.persistent, owner: props.frameOwner, node: node, frames: new Map(), unmount: null, unpin: null };
 		            records.set(id, record);
 		            record.lifecycle = options.createLifecycle(props);
 		            paint(record, record.lifecycle.snapshot());
@@ -6641,6 +6602,9 @@ window.__ModuleLoader__.load({
 		                    if (record.unmount) { record.unmount(); record.unmount = null; }
 		                }
 		            };
+		        },
+		        invalidateOwner: function (owner) {
+		            for (const record of Array.from(records.values())) if (record.owner === owner) release(record);
 		        },
 		        invalidatePanel: function (sessionId, panelId) {
 		            for (const record of Array.from(records.values())) if (record.sessionId === sessionId && record.persistent && record.panelId === panelId) release(record);
@@ -7001,7 +6965,7 @@ window.__ModuleLoader__.load({
 			return parts.map(function (part, index) {
 				if (part.kind === "markdown") return h(TavernColoredMarkdown, { key: index, text: String(part.text || ""), streaming: options.streaming, labels: { code: options.codeLabels, footnotes: "脚注" }, codeLabels: options.codeLabels, fileMentions: options.mentions });
 				const content = String(part.content !== undefined ? part.content : part.html || "");
-				return h(TavernMessageFrame, { key: index, content: content, sessionId: options.sessionId, turn: options.turn, partIndex: index, helperContext: options.helperContext, openingPreview: options.openingPreview, onSelectOpening: options.onSelectOpening, onSubmitOpening: options.onSubmitOpening, trustedCardMode: options.trustedCardMode, eager: options.eagerFrame, executeSlash: options.executeSlash });
+				return h(TavernMessageFrame, { key: index, content: content, sessionId: options.sessionId, turn: options.turn, partIndex: index, frameOwner: options.frameOwner, helperContext: options.helperContext, openingPreview: options.openingPreview, onSelectOpening: options.onSelectOpening, onSubmitOpening: options.onSubmitOpening, trustedCardMode: options.trustedCardMode, eager: options.eagerFrame, executeSlash: options.executeSlash });
 			});
 		}
 
@@ -7025,7 +6989,7 @@ window.__ModuleLoader__.load({
 				if (block.kind === "text") {
 					if (input.projection && projected) continue;
 					const projection = input.projection;
-					if (projection) rendered.push(h(React.Fragment, { key: index }, renderTavernProjection(projection, { streaming: input.streaming, codeLabels: codeLabels, mentions: input.mentions, sessionId: input.sessionId, turn: input.turn, helperContext: input.helperContext, trustedCardMode: input.trustedCardMode, eagerFrame: input.eagerFrame, executeSlash: input.executeSlash })));
+					if (projection) rendered.push(h(React.Fragment, { key: index }, renderTavernProjection(projection, { streaming: input.streaming, codeLabels: codeLabels, mentions: input.mentions, sessionId: input.sessionId, turn: input.turn, helperContext: input.helperContext, trustedCardMode: input.trustedCardMode, eagerFrame: input.eagerFrame, frameOwner: input.frameOwner, executeSlash: input.executeSlash })));
 					else rendered.push(h(TavernColoredMarkdown, { key: index, text: String(block.text || ""), streaming: input.streaming, labels: { code: codeLabels, footnotes: "脚注" }, codeLabels: codeLabels, fileMentions: input.mentions }));
 					projected = true;
 					continue;
@@ -7044,7 +7008,7 @@ window.__ModuleLoader__.load({
 				if (block.kind !== "tool-call") rendered.push(h(DshUi.JsonBlock, { key: index, label: translate("message.unknownBlock"), payload: block.block || block, truncatedLabel: function (total) { return translate("json.truncated", { total: total }); } }));
 			}
 			if (input.projection && !projected) {
-				rendered.push(h(React.Fragment, { key: "projection" }, renderTavernProjection(input.projection, { streaming: false, codeLabels: codeLabels, mentions: input.mentions, sessionId: input.sessionId, turn: input.turn, helperContext: input.helperContext, trustedCardMode: input.trustedCardMode, eagerFrame: input.eagerFrame, executeSlash: input.executeSlash })));
+				rendered.push(h(React.Fragment, { key: "projection" }, renderTavernProjection(input.projection, { streaming: false, codeLabels: codeLabels, mentions: input.mentions, sessionId: input.sessionId, turn: input.turn, helperContext: input.helperContext, trustedCardMode: input.trustedCardMode, eagerFrame: input.eagerFrame, frameOwner: input.frameOwner, executeSlash: input.executeSlash })));
 			}
 			if (input.interrupted) rendered.push(h("span", { key: "stopped", className: "dsh-tavern-assistant-stopped" }, translate("message.stopped")));
 			return rendered;
@@ -7203,7 +7167,7 @@ window.__ModuleLoader__.load({
 				});
 				const time = Number.isFinite(Number(data.time)) ? new Date(Number(data.time)).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
 				return React.createElement("div", { className: "dsh-tavern-user-row" },
-					React.createElement("div", { className: "dsh-tavern-user-stack" }, renderedImages, (text !== "" || extras.length > 0) ? React.createElement("div", { className: "dsh-tavern-user-bubble" }, liveState.view?.inputTemplateDisplays?.[turn] ? React.createElement(TavernMessageFrame, {content:liveState.view.inputTemplateDisplays[turn],sessionId:props.sessionId,turn:turn,partIndex:"user-template",eager:true}) : React.createElement(DshUi.MessageText, { text: text }), extras) : null),
+					React.createElement("div", { className: "dsh-tavern-user-stack" }, renderedImages, (text !== "" || extras.length > 0) ? React.createElement("div", { className: "dsh-tavern-user-bubble" }, liveState.view?.inputTemplateDisplays?.[turn] ? React.createElement(TavernMessageFrame, {content:liveState.view.inputTemplateDisplays[turn],sessionId:props.sessionId,turn:turn,partIndex:"user-template",frameOwner:props.frameOwner,eager:true}) : React.createElement(DshUi.MessageText, { text: text }), extras) : null),
 					React.createElement("div", { className: "dsh-tavern-user-actions" }, time ? React.createElement("span", null, time) : null, React.createElement(DshUi.Tooltip, { label: copied ? "已复制" : "复制", side: "bottom" }, React.createElement("button", { type: "button", className: "dsh-tavern-user-copy", "aria-label": copied ? "已复制" : "复制", onClick: copy }, React.createElement(copied ? DshUi.IconCheckOutline16 : DshUi.IconCopyOutline16, null))))
 				);
 			}
@@ -7373,7 +7337,8 @@ window.__ModuleLoader__.load({
 					projection: projection,
 					helperContext: liveState.view && liveState.view.tavernHelper,
 					trustedCardMode: Boolean(liveState.view && liveState.view.tavernRuntimePolicy && liveState.view.tavernRuntimePolicy.trustedCardMode),
-					eagerFrame: storyTurn > 0 && storyTurn === latestProjectionTurn,
+					frameOwner: props.frameOwner,
+                    eagerFrame: storyTurn > 0 && storyTurn === latestProjectionTurn,
 					executeSlash: props.executeSlash,
 					sessionId: props.sessionId,
 					turn: storyTurn,
@@ -12927,7 +12892,7 @@ window.__ModuleLoader__.load({
 			}
 			playControlsFeature.register({ ctx: ctx, slots: slots });
 			assistantRendererFeature.register({ ctx: ctx, slots: slots });
-			registerTavernHistoryWindow(ctx);
+			// Native history paging owns loading; TavernWindowedNode bounds live bodies without shadowing its slots.
 			ctx.effect(function () {
 				return slots.inject("conversation.input.right", function () { return slots.register({
 					name: "conversation.input.right",

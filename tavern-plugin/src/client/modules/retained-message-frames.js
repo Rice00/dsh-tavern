@@ -69,7 +69,7 @@ function createRetainedTavernFrames(options) {
             node.className = "dsh-tavern-message-frame-slot";
             node.style.position = "relative";
             parked().appendChild(node);
-            record = { key: id, sessionId: props.sessionId, panelId: props.panelId, persistent: props.persistent, node: node, frames: new Map(), unmount: null, unpin: null };
+            record = { key: id, sessionId: props.sessionId, panelId: props.panelId, persistent: props.persistent, owner: props.frameOwner, node: node, frames: new Map(), unmount: null, unpin: null };
             records.set(id, record);
             record.lifecycle = options.createLifecycle(props);
             paint(record, record.lifecycle.snapshot());
@@ -105,6 +105,9 @@ function createRetainedTavernFrames(options) {
                     if (record.unmount) { record.unmount(); record.unmount = null; }
                 }
             };
+        },
+        invalidateOwner: function (owner) {
+            for (const record of Array.from(records.values())) if (record.owner === owner) release(record);
         },
         invalidatePanel: function (sessionId, panelId) {
             for (const record of Array.from(records.values())) if (record.sessionId === sessionId && record.persistent && record.panelId === panelId) release(record);

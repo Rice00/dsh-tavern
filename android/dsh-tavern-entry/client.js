@@ -111,7 +111,7 @@ window.__ModuleLoader__.load({
 							react.createElement("button", { onClick: function () { window.location.assign("/api/dsh-tavern-android/open"); } }, "直接打开"),
 							react.createElement("button", { onClick: function () { setFrame(""); } }, "关闭")
 						  ),
-						  react.createElement("iframe", { title: "酒馆工作台", src: frame, key: frameKey, referrerPolicy: "no-referrer", allow: "clipboard-read; clipboard-write" })
+						  react.createElement("iframe", { title: "酒馆工作台", src: frame, key: frameKey, referrerPolicy: "no-referrer", allow: "clipboard-read; clipboard-write; fullscreen", allowFullScreen: true })
 						) : null,
 						react.createElement("div", { className: "dsh-tavern-entry-actions" },
 							react.createElement("button", {

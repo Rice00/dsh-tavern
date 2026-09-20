@@ -4840,9 +4840,62 @@ window.__ModuleLoader__.load({
             const frame = root?.querySelector('iframe:not([aria-hidden="true"])');
             try {
                 if (!frame) throw new Error("面板尚未加载，请稍后重试。");
-                if (typeof frame.requestFullscreen !== "function") throw new Error("当前浏览器不支持大屏模式，可使用固定到右侧。");
-                await frame.requestFullscreen();
+                try {
+                    if (typeof frame.requestFullscreen === "function") {
+                        await frame.requestFullscreen();
+                        return;
+                    }
+                } catch (_) { /* Embedded hosts may deny native fullscreen. */ }
+                if (!frame.isConnected) return;
+                openTavernPageFullscreen(frame);
             } catch (error) { tavernErrorHub.report("展开大屏", error); }
+        }
+
+        let closeTavernPageFullscreen = null;
+        function openTavernPageFullscreen(frame) {
+            closeTavernPageFullscreen?.();
+            const doc = frame.ownerDocument;
+            const previousStyle = frame.getAttribute("style");
+            const previousPopover = frame.getAttribute("popover");
+            const previousFocus = doc.activeElement;
+            const close = doc.createElement("button");
+            close.type = "button";
+            close.className = "dsh-tavern-btn";
+            close.textContent = "退出大屏";
+            close.style.cssText = "position:fixed;inset:16px 16px auto auto;margin:0;padding:10px 16px;z-index:2147483647;";
+            let observer;
+            const restore = () => {
+                observer?.disconnect();
+                if (typeof frame.hidePopover === "function" && frame.matches(":popover-open")) frame.hidePopover();
+                if (previousPopover === null) frame.removeAttribute("popover");
+                else frame.setAttribute("popover", previousPopover);
+                if (previousStyle === null) frame.removeAttribute("style");
+                else frame.setAttribute("style", previousStyle);
+                close.remove();
+                doc.removeEventListener("keydown", onKey);
+                if (closeTavernPageFullscreen === restore) closeTavernPageFullscreen = null;
+                if (previousFocus?.isConnected) previousFocus.focus();
+            };
+            const onKey = event => { if (event.key === "Escape") { event.preventDefault(); restore(); } };
+            closeTavernPageFullscreen = restore;
+            close.addEventListener("click", restore);
+            doc.addEventListener("keydown", onKey);
+            try {
+                // Keep the live iframe in place: reparenting would reload card scripts.
+                frame.style.cssText += ";position:fixed!important;inset:0!important;width:100vw!important;height:100dvh!important;max-width:none!important;max-height:none!important;margin:0!important;padding:0!important;box-sizing:border-box!important;border:0!important;z-index:2147483646!important;";
+                if (typeof frame.showPopover === "function") {
+                    frame.setAttribute("popover", "manual");
+                    frame.showPopover();
+                    close.setAttribute("popover", "manual");
+                }
+                doc.body.append(close);
+                if (close.hasAttribute("popover")) close.showPopover();
+                close.focus();
+                observer = new doc.defaultView.MutationObserver(() => {
+                    if (!frame.isConnected || frame.getAttribute("aria-hidden") === "true") restore();
+                });
+                observer.observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["aria-hidden"] });
+            } catch (error) { restore(); throw error; }
         }
 
 		function TavernMessageFrame(props) {

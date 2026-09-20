@@ -11629,11 +11629,11 @@ window.__ModuleLoader__.load({
 				finally { setGuideBusy(false); }
 			}
 			async function applyUpdatedCard() {
-				if (cardUpdateBusy || !view?.cardUpdate) return;
-				if (!await askConfirm("应用更新会破坏缓存，大幅增加 Token 费用和等待时间，是否继续？")) return;
+				if (cardUpdateBusy || !view?.cardUpdate || view.cardUpdate.error) return;
+				if (!await askConfirm("将最新人物卡和世界书应用到当前游戏，下一轮生效，无需重开。已有剧情和变量保留；更新可能使提示词缓存失效，增加 Token 费用和等待时间。是否继续？")) return;
 				setCardUpdateBusy(true);
 				try { await rpc("applyUpdatedCard", { digest: view.cardUpdate.digest }, props.sessionId); liveTavernView.invalidate(props.sessionId); }
-				catch (error) { tavernErrorHub.report("应用新版人物卡", error); }
+				catch (error) { tavernErrorHub.report("应用人物卡与世界书更新", error); }
 				finally { setCardUpdateBusy(false); }
 			}
 			async function retrySettlement() {
@@ -11679,9 +11679,9 @@ window.__ModuleLoader__.load({
 				),
 					h("div", { className: "dsh-tavern-status-body" },
 					view.requestMode !== "sillytavern" && view.cardUpdate?.available ? h("section", { className: "dsh-tavern-status-section" },
-						h("div", { className: "dsh-tavern-status-label" }, view.cardUpdate.legacy ? "此存档尚未记录人物卡版本" : "人物卡已有修改"),
-						h("p", { className: "dsh-tavern-settings-desc" }, "应用更新会破坏缓存，大幅增加 Token 费用和等待时间。"),
-						h("button", { className: "dsh-tavern-btn", disabled: running || cardUpdateBusy || view.settleStatus === "running", onClick: applyUpdatedCard }, cardUpdateBusy ? "正在应用…" : "应用新版人物卡")
+						h("div", { className: "dsh-tavern-status-label" }, view.cardUpdate.error ? "世界书更新暂不可用" : view.cardUpdate.legacy ? "此存档尚未记录人物卡版本" : view.cardUpdate.worldbookChanged ? (view.cardUpdate.cardChanged ? "人物卡与世界书已有更新" : "世界书已有更新") : "人物卡已有修改"),
+						h("p", { className: "dsh-tavern-settings-desc" }, view.cardUpdate.error || "应用到当前游戏，下一轮生效，无需重开。保留剧情和变量；更新可能使缓存失效，增加 Token 费用和等待时间。"),
+						h("button", { className: "dsh-tavern-btn", disabled: running || cardUpdateBusy || !!view.cardUpdate.error || view.settleStatus === "running", onClick: applyUpdatedCard }, cardUpdateBusy ? "正在应用…" : "应用到当前游戏")
 					) : null,
 					h(TavernCardAppDock, { sessionId: props.sessionId }),
 					view.settleStatus === "error" ? h("div", { className: "dsh-card-error" },

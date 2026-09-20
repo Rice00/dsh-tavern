@@ -71,7 +71,7 @@ import { READABLE_CARD_FIELDS, readCardField } from './domain/card-reading.js'
 import { createConversationInitialization } from './domain/conversation-initialization.js'
 import { assertConversationForkable, conversationForkReceipt, forkConversationChat } from './domain/conversation-fork.js'
 import { normalizeBackgroundModel, resolveChatBackgroundModel, readBackgroundModelReasoning } from './domain/background-model-selection.js'
-import { createPlayCardSnapshots, cardContentDigest } from './domain/play-card-snapshots.js'
+import { createPlayCardSnapshots } from './domain/play-card-snapshots.js'
 import { createUserPreferenceProfile } from './domain/user-preference-profile.js'
 import { createContextPlanner } from './domain/context-planner.js'
 import { createConversationTextExport } from './domain/conversation-text-export.js'
@@ -1340,7 +1340,8 @@ export async function apply(ctx) {
       inputTurn++
       if (message.templateHistoryEdit || message.templateInputSource) inputSources[inputTurn] = message.sourceText ?? message.text
     }
-    const currentCardDigest = cardContentDigest(card)
+    const cardUpdate = ['story', 'script'].includes(chat.mode || 'story') && chat.requestMode !== 'sillytavern'
+      ? await playCardSnapshots.updateStatus(chat, card) : { available: false }
     const helperEnabled = hasTavernScriptRuntime(chat, cardExtensions.helperScripts)
     const helperRuntime = helperEnabled
       ? projectTavernHelperScripts(cardExtensions.helperScripts, chat.tavernHelperScriptVariables)
@@ -1371,7 +1372,7 @@ export async function apply(ctx) {
       bypassPlan: null,
       runtimePreset: activePresetSnapshot === null ? null : { id: activePresetSnapshot.presetPath, name: activePresetSnapshot.presetName },
       card: cardViewOf(card, chat),
-      cardUpdate: { available: !chat.cardContentDigest || chat.cardContentDigest !== currentCardDigest, legacy: !chat.cardContentDigest, digest: currentCardDigest },
+      cardUpdate,
       posture: chat.posture || '',
       ledger: readLedger(chat.ledger),
       characterDesigns: projectCharacterDesignDocument(chat.characterDesignDocument),
@@ -3224,8 +3225,8 @@ export async function apply(ctx) {
         if (!chat || !['story', 'script'].includes(chat.mode || 'story') || chat.requestMode === 'sillytavern') throw new Error('仅支持当前游玩会话')
         if ((await sessionActivity(sessionId))?.busy || agentRegistry.get(sessionId)?.phase?.kind === 'running') throw new Error('请等待当前生成和后台任务完成后再应用人物卡')
         const card = await readChatCard(chat)
-        if (args.digest !== cardContentDigest(card)) throw new Error('人物卡已再次修改，请刷新后确认')
-        const patch = await playCardSnapshots.replacement(chat, card)
+        if (typeof args.digest !== 'string' || !args.digest) throw new Error('请刷新后确认人物卡和世界书更新')
+        const patch = await playCardSnapshots.replacement(chat, card, args.digest)
         const saved = await updateChat(chat.id, current => {
           if (Number(current.cardContextRevision || 0) !== Number(chat.cardContextRevision || 0)) throw new Error('人物卡已应用，请刷新后重试')
           return Object.assign(current, patch)

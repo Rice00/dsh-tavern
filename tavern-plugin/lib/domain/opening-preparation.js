@@ -1,3 +1,4 @@
+import { worldbookContentDigest } from './worldbook-version.js'
 import { projectFullPromptTemplateState, applyFullPromptTemplateState } from './full-prompt-template-state.js'
 import { projectTavernHelperScripts } from './tavern-helper-scripts.js'
 import { mutateScriptPrompts } from './tavern-script-prompts.js'
@@ -44,6 +45,8 @@ export function createOpeningPreparation({ readCard, worldBooks, generateRaw, re
       const record = await worldBooks.bound(cardPath, card, settings.sourceChat)
       const draft = { id: randomUUID(), cardPath, openings: cardOpeningChoices(card),
         document: record ? copy(record.view.raw) : null, source: record ? copy(record.source) : null, touchedAt: now() }
+      draft.libraryDigest = settings.sourceChat?.worldbookLibraryDigest ?? settings.sourceChat?.openingWorldbookSnapshot?.libraryDigest
+        ?? (settings.sourceChat?.openingWorldbookSnapshot ? undefined : worldbookContentDigest(record))
       draft.sourceSessionId = settings.sourceChat?.sessionId || ''
       draft.sourceLifecycleRevision = Number(settings.sourceChat?.tavernHelperLifecycleRevision) || 0
       draft.card = copy(card)
@@ -159,7 +162,7 @@ export function createOpeningPreparation({ readCard, worldBooks, generateRaw, re
       const selected = openingId || 'primary'
       const selectedIndex = draft.openings.findIndex(opening => opening.id === selected)
       if (selectedIndex < 0) throw new Error('人物卡开场白不存在')
-      return copy({ openingVariables: Object.fromEntries(draft.openings.map((opening, index) => [opening.id, draft.chat.messages[0]?.variables?.[index] || {}])), variables: draft.chat.variables || {}, messageVariables: draft.chat.messages[0]?.variables?.[selectedIndex] || {}, openingId: selected, sourceSessionId: draft.sourceSessionId, sourceLifecycleRevision: draft.sourceLifecycleRevision, worldbookSnapshot: { version: 1, source: draft.source, document: draft.document } })
+      return copy({ openingVariables: Object.fromEntries(draft.openings.map((opening, index) => [opening.id, draft.chat.messages[0]?.variables?.[index] || {}])), variables: draft.chat.variables || {}, messageVariables: draft.chat.messages[0]?.variables?.[selectedIndex] || {}, openingId: selected, sourceSessionId: draft.sourceSessionId, sourceLifecycleRevision: draft.sourceLifecycleRevision, worldbookSnapshot: { version: 1, libraryDigest: draft.libraryDigest, source: draft.source, document: draft.document } })
     }
   }
 }

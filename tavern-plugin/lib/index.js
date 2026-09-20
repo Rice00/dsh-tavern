@@ -1868,10 +1868,13 @@ export async function apply(ctx) {
     activity: chat => backgroundTasks.activity(chat),
     exclusive: backgroundTasks.exclusive,
     settle: chat => queueSettlement(chat.id),
-    pressure: (agent, signal, pendingMessages = []) => measureForegroundPressure({
-      agent, signal, pendingMessages, projections: ctx.get('sessionProjections'),
-      defaultModel: agentDefaultModel, llm: ctx.llm, meter: ctx.get('tokenMeter')
-    }),
+    pressure: (agent, signal, pendingMessages = [], sessionId) => {
+      const measure = target => measureForegroundPressure({
+        agent: target, signal, pendingMessages, projections: ctx.get('sessionProjections'),
+        defaultModel: agentDefaultModel, llm: ctx.llm, meter: ctx.get('tokenMeter')
+      })
+      return agent ? measure(agent) : withCompactionSession(sessionId, measure)
+    },
     checkpoint: id => withCompactionSession(id, agent => agent.session.seq),
     recover: (id, before) => withCompactionSession(id, agent => {
       const events = sessionEvents(agent.session).filter(event => event.seq >= before)
@@ -1909,22 +1912,10 @@ export async function apply(ctx) {
       if (background && !['image', 'phone'].includes(background.task)) {
         return compactBackgroundIfNeeded({
           trigger, forced, native: fallback,
-          thresholdRatio: engine.config?.modelPolicies?.find(policy => policy.provider === background.selection.provider && policy.model === background.selection.model)?.thresholdRatio ?? engine.config?.thresholdRatio ?? 0.8,
           pressure: () => measureBackgroundBudget({
             agent: target, background, signal, llm: ctx.llm, meter: ctx.get('tokenMeter'),
             pending: pendingCompactionMessages.get(target) || []
-          }),
-          mark: async () => {
-            const chat = await chatForSession(background.parentSessionId)
-            if (!chat) throw new Error('后台压缩找不到所属对话')
-            await updateChat(chat.id, current => {
-              const participant = current.timeline?.participants?.background
-              if (participant?.sessionId !== target.session.id) throw new Error('后台会话已变更，取消旧会话压缩')
-              participant.requiresNewSessionOnRewind = true
-              participant.compactionPlannedAt = Date.now()
-              return current
-            }, { source: 'compaction.background' })
-          }
+          })
         })
       }
       const chat = await chatForSession(target.session.id)
@@ -1939,7 +1930,19 @@ export async function apply(ctx) {
         record: () => autoCompaction.recordForeground(target.session.id),
         scheduled: () => autoCompaction.run(target.session.id, { agent: target, signal, openTurnCompact: forced, pendingMessages })
       })
-    })
+    }, { beforeRegion: async target => {
+      const background = backgroundAgentRunner.requestContext(target.session.id)
+      if (!background || ['image', 'phone'].includes(background.task)) return
+      const chat = await chatForSession(background.parentSessionId)
+      if (!chat) throw new Error('后台压缩找不到所属对话')
+      await updateChat(chat.id, current => {
+        const participant = current.timeline?.participants?.background
+        if (participant?.sessionId !== target.session.id) throw new Error('后台会话已变更，取消旧会话压缩')
+        participant.requiresNewSessionOnRewind = true
+        participant.compactionPlannedAt = Date.now()
+        return current
+      }, { source: 'compaction.background' })
+    } })
     compactionDisposers.add(dispose)
     collectedCompactionEngines.register(engine, dispose, dispose)
     return engine

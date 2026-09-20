@@ -113,8 +113,8 @@ test('real background loop recovers provider overflow and retains the pending ca
   const engine = new BasicCompactionEngine(h.ctx, { auto: true })
   let protectedRewind = false, rejectNext = false, rejected = 0
   t.after(installCompactionPolicy(engine, (agent, trigger, signal, fallback, forced) => compactBackgroundIfNeeded({
-    trigger, forced, pressure: async () => null, mark: async () => { protectedRewind = true }
-  })))
+    trigger, forced, native: async () => null, pressure: async () => null
+  }), { beforeRegion: async () => { protectedRewind = true } }))
   h.ctx.on('llm/stream', (request, next) => {
     if (request.purpose === 'compaction') assert.equal(protectedRewind, true)
     if (rejectNext && request.purpose !== 'compaction') {
@@ -146,8 +146,8 @@ test('real background loop stops after the native overflow retry budget', native
   const engine = new BasicCompactionEngine(h.ctx, { auto: true })
   let protectedRewind = false, rejectNext = false, rejected = 0
   t.after(installCompactionPolicy(engine, (agent, trigger, signal, fallback, forced) => compactBackgroundIfNeeded({
-    trigger, forced, pressure: async () => null, mark: async () => { protectedRewind = true }
-  })))
+    trigger, forced, native: async () => null, pressure: async () => null
+  }), { beforeRegion: async () => { protectedRewind = true } }))
   h.ctx.on('llm/stream', (request, next) => {
     if (request.purpose === 'compaction') assert.equal(protectedRewind, true)
     if (rejectNext && request.purpose !== 'compaction') {
@@ -235,5 +235,34 @@ test('real foreground: native pressure keeps the priced recent tail instead of f
   await agent.whenIdle()
   assert.equal(recorded, 1)
   assert.ok(kept.every(seq => agent.session.surface.nodes.includes(seq)), 'native 16% recent history remains verbatim')
+  assert.equal(sessionEvents(agent.session).filter(event => event.type === 'turn/end').at(-1).data.reason.kind, 'completed')
+})
+
+test('real background: unknown extra budget does not suppress native pressure and rewind guard precedes summary', native, async t => {
+  const { compactBackgroundIfNeeded } = await import('../tavern-plugin/lib/domain/background-compaction.js')
+  const h = await createInitializationNative(process.env.DSH_BOOT_MODULE)
+  t.after(() => h.dispose())
+  const { BasicCompactionEngine } = await import(new URL('../../dsh-compaction-basic/lib/index.js', pathToFileURL(process.env.DSH_BOOT_MODULE)))
+  const engine = new BasicCompactionEngine(h.ctx, { auto: true })
+  let enabled = false, protectedCount = 0
+  t.after(installCompactionPolicy(engine, (agent, trigger, signal, fallback, forced) => enabled
+    ? compactBackgroundIfNeeded({ trigger, native: fallback, forced, pressure: async () => null }) : null,
+  { beforeRegion: async () => { protectedCount++ } }))
+  h.ctx.on('llm/stream', (request, next) => {
+    if (request.purpose === 'compaction') assert.ok(protectedCount > 0)
+    return next()
+  })
+  const agent = h.target.agent
+  for (let i = 0; i < 8; i++) {
+    agent.followup({ id: 'background-seed-' + i, role: 'user', content: [{ type: 'text', text: `第${i}段剧情与结算。`.repeat(200) }], source: { kind: 'human' } })
+    await agent.whenIdle()
+  }
+  assert.equal(protectedCount, 0)
+  assert.ok(h.ctx.tokenMeter.measure(agent.session).totalTokens >= 1600)
+  enabled = true
+  agent.followup({ id: 'next-background', role: 'user', content: [{ type: 'text', text: '继续结算。' }], source: { kind: 'human' } })
+  await agent.whenIdle()
+  assert.equal(protectedCount, 1)
+  assert.ok(sessionEvents(agent.session).some(event => event.type === 'compaction/summary'))
   assert.equal(sessionEvents(agent.session).filter(event => event.type === 'turn/end').at(-1).data.reason.kind, 'completed')
 })

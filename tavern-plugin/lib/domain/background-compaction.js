@@ -1,19 +1,13 @@
 // Background maintenance runs inside the owning Agent turn, never through the
 // idle Tavern compaction queue (which would wait for this same task to finish).
-export async function compactBackgroundIfNeeded({ trigger, forced, native, mark, pressure, thresholdRatio = 0.8 }) {
-  let budget
-  if (trigger !== 'context-overflow') {
-    budget = await pressure()
-    if (!budget || budget.inputTokens < budget.capacity * thresholdRatio && budget.inputTokens + budget.outputTokens < budget.capacity) return null
-  }
-  // Persist first: even an interrupted summary may already have replaced history.
-  await mark()
-  if (trigger !== 'context-overflow' && native) {
-    const result = await native()
-    if (result) return result
-    if (budget.inputTokens + budget.outputTokens < budget.capacity) return null
-  }
-  // Pending input/output may exceed capacity before the durable meter catches up.
+export async function compactBackgroundIfNeeded({ trigger, forced, native, pressure }) {
+  // Native policy owns its threshold, pruning, retained tail and retries. Extra
+  // task budgeting must never veto that check, even when metadata is unavailable.
+  if (trigger === 'context-overflow') return forced()
+  const result = await native()
+  if (result) return result
+  const budget = await pressure()
+  if (!budget || budget.inputTokens + budget.outputTokens < budget.capacity) return null
   return forced()
 }
 

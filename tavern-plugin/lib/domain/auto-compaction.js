@@ -25,19 +25,29 @@ export function createAutoCompaction(deps) {
     const chat = await deps.readChat(sessionId)
     if (!chat || !['story', 'script'].includes(chat.mode)) return null
     if (jobs.has(chat.id)) {
-      const active = jobs.get(chat.id), result = await active
-      if (result?.status !== 'deferred' || !options.openTurnCompact) return result
+      const active = jobs.get(chat.id)
+      let result
+      try { result = await active.promise } catch (error) {
+        if (!options.manual || active.manual || active.performed) throw error
+      }
+      const needsManual = options.manual && !active.manual && !active.performed
+      const retryDeferred = result?.status === 'deferred' && (options.openTurnCompact || options.manual)
+      if (!needsManual && !retryDeferred) return result
       if (jobs.get(chat.id) === active) jobs.delete(chat.id)
+      options.signal?.throwIfAborted()
       return run(sessionId, options)
     }
-    const job = execute(chat, options)
+    const job = { manual: Boolean(options.manual), performed: false }
+    job.promise = execute(chat, options, job)
     jobs.set(chat.id, job)
-    try { return await job } catch (error) {
+    try { return await job.promise } catch (error) {
       await save(chat.id, old => ({ ...old, warning: compactionFailureMessage(error) }))
       throw error
-    } finally { jobs.delete(chat.id); reserved.delete(chat.id) }
+    } finally {
+      if (jobs.get(chat.id) === job) { jobs.delete(chat.id); reserved.delete(chat.id) }
+    }
   }
-  async function execute(initial, options) {
+  async function execute(initial, options, job) {
     const signal = options.signal || new AbortController().signal
     let chat = initial, state = chat.contextCompaction || {}, policy = compactionPolicy(await deps.policy())
     // An idle manual policy has no work or baseline to maintain. In particular,
@@ -61,7 +71,7 @@ export function createAutoCompaction(deps) {
       const fresh = rounds.filter(key => !(state.baseline || []).includes(key))
       if (policy.mode === 'rounds' && fresh.length < policy.rounds) return null
       if (policy.mode === 'percent') {
-        const pressure = await deps.pressure(options.agent, signal, options.pendingMessages)
+        const pressure = await deps.pressure(options.agent, signal, options.pendingMessages, initial.sessionId)
         if (!pressure || !Number.isFinite(pressure.percent)) {
           if (state.warning !== CAPACITY_WARNING) await save(chat.id, old => ({ ...old, warning: CAPACITY_WARNING }))
           return null
@@ -98,6 +108,7 @@ export function createAutoCompaction(deps) {
       const activity = deps.activity(chat)
       if (activity.busy || (!recover && activity.phase === 'pending')) throw new Error('后台任务刚开始，请稍后重试压缩')
       reserved.add(chat.id)
+      job.performed = true
       if (!recover) {
         rounds = storyRoundKeys(chat)
         const previous = options.manual && ['partial', 'failed'].includes(state.operation?.status)
@@ -154,14 +165,26 @@ export function createAutoCompaction(deps) {
       const success = side => ['succeeded', 'skipped'].includes(operation[side].status)
       operation.status = success('foreground') && success('background') ? 'completed' : operation.foreground.status === 'succeeded' || operation.background.status === 'succeeded' ? 'partial' : 'failed'
       operation.completedAt = Date.now()
+      let measurementWarning = ''
       if (policy.mode === 'percent') {
-        const after = await deps.pressure(options.agent, signal, options.pendingMessages)
-        if (Number.isFinite(after?.percent)) operation.afterPercent = after.percent
+        try {
+          const after = await deps.pressure(options.agent, signal, options.pendingMessages, initial.sessionId)
+          if (Number.isFinite(after?.percent)) operation.afterPercent = after.percent
+        } catch {
+          // Measurement is advisory; even cancellation here cannot undo the
+          // already committed per-side receipts or leave maintenance running.
+          measurementWarning = '压缩后上下文占用测量失败，压缩结果已保存。'
+        }
       }
       const failures = ['foreground', 'background'].filter(side => operation[side].status === 'failed')
         .map(side => `${side === 'foreground' ? '前台' : '后台'}：${operation[side].message}`).join('；')
       chat = await deps.readChat(initial.sessionId)
-      await save(chat.id, old => ({ ...old, operation: structuredClone(operation), ...(operation.foreground.status === 'succeeded' && operation.rounds ? { baseline: operation.rounds } : {}), warning: operation.status === 'completed' ? (operation.afterPercent >= policy.percent ? '压缩后上下文仍较高，请检查固定背景长度或选择更大窗口的模型。' : '') : `上下文压缩未全部完成。${failures} 请根据具体原因处理。` }))
+      const resultWarning = operation.status === 'completed'
+        ? (operation.afterPercent >= policy.percent ? '压缩后上下文仍较高，请检查固定背景长度或选择更大窗口的模型。' : '')
+        : `上下文压缩未全部完成。${failures} 请根据具体原因处理。`
+      await save(chat.id, old => ({ ...old, operation: structuredClone(operation),
+        ...(operation.foreground.status === 'succeeded' && operation.rounds ? { baseline: operation.rounds } : {}),
+        warning: [resultWarning, measurementWarning].filter(Boolean).join(' ') }))
       return operation
     } finally { reserved.delete(chat.id) }
   }
@@ -185,15 +208,23 @@ function policyDisposer(reference, token) {
     const policy = policies?.get(token)
     if (!policy) return
     if (engine.compactIfNeeded === policy.routed) engine.compactIfNeeded = policy.original
+    if (policy.region && engine.compactRegion === policy.region) engine.compactRegion = policy.originalRegion
     policies.delete(token)
     if (!policies.size) installedPolicies.delete(engine)
   }
 }
 
 /** Scope native automatic policy to bound Tavern sessions; other agents keep their host policy. */
-export function installCompactionPolicy(engine, handler) {
+export function installCompactionPolicy(engine, handler, { beforeRegion } = {}) {
   if (!engine || typeof engine.compactIfNeeded !== 'function') throw new Error('当前 DSH 缺少自动压缩策略接口，请检查宿主版本')
-  const original = engine.compactIfNeeded
+  const original = engine.compactIfNeeded, originalRegion = engine.compactRegion
+  if (beforeRegion && typeof originalRegion !== 'function') throw new Error('当前 DSH 缺少压缩区间保护接口')
+  const region = beforeRegion && async function (start, end, agent, signal) {
+    await beforeRegion(agent, signal)
+    signal?.throwIfAborted()
+    return originalRegion.call(this, start, end, agent, signal)
+  }
+  if (region) engine.compactRegion = region
   async function routed(agent, trigger, signal) {
     return handler(agent, trigger, signal, () => original.call(this, agent, trigger, signal), () => original.call(this, agent, 'context-overflow', signal))
   }
@@ -201,6 +232,6 @@ export function installCompactionPolicy(engine, handler) {
   let policies = installedPolicies.get(engine)
   if (!policies) installedPolicies.set(engine, policies = new Map())
   const token = Symbol('compaction-policy')
-  policies.set(token, { original, routed })
+  policies.set(token, { original, routed, originalRegion, region })
   return policyDisposer(new WeakRef(engine), token)
 }

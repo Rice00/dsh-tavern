@@ -183,3 +183,51 @@ test('native foreground protection resets round counting without clearing a back
   h.round(4); h.fail = ''; await h.run(); assert.equal(h.calls.length, 2)
   h.round(5); await h.run(); assert.equal(h.calls.length, 4)
 })
+
+test('manual request joining an automatic no-op still executes, concurrent clicks share the work', async () => {
+  const h = fixture()
+  let release
+  const gate = new Promise(resolve => { release = resolve })
+  h.deps.policy = async () => { await gate; return { mode: 'manual' } }
+  const automatic = h.run()
+  await new Promise(resolve => setImmediate(resolve))
+  const first = h.run({ manual: true }), second = h.run({ manual: true })
+  await new Promise(resolve => setImmediate(resolve)); release()
+  await automatic
+  assert.equal((await first).status, 'completed')
+  assert.equal((await second).status, 'completed')
+  assert.deepEqual(h.calls, ['foreground', 'background'])
+})
+
+test('failed post-compaction measurement does not leave a completed operation blocking the chat', async () => {
+  const h = fixture(); h.policy = { mode: 'percent', percent: 80 }
+  let measurements = 0
+  h.deps.pressure = async () => { if (++measurements > 1) throw Error('meter unavailable'); return { percent: 90 } }
+  const result = await h.run()
+  assert.equal(result.status, 'completed')
+  assert.equal(h.chat.contextCompaction.operation.status, 'completed')
+  assert.equal(h.blocked(), false)
+  assert.match(h.chat.contextCompaction.warning, /占用.*测量|测量.*占用/)
+})
+
+test('manual retry joining an automatic failure suppression still retries the failed side', async () => {
+  const h = fixture(); h.policy = { mode: 'rounds', rounds: 1 }; await h.run(); h.round(1)
+  h.fail = 'background'; await h.run(); h.fail = ''
+  let release
+  const gate = new Promise(resolve => { release = resolve })
+  h.deps.policy = async () => { await gate; return { mode: 'rounds', rounds: 1 } }
+  const automatic = h.run(); await new Promise(resolve => setImmediate(resolve))
+  const manual = h.run({ manual: true }); await new Promise(resolve => setImmediate(resolve)); release()
+  await automatic; assert.equal((await manual).status, 'completed')
+  assert.deepEqual(h.calls, ['foreground', 'background', 'background'])
+})
+
+test('cancellation during the final measurement still publishes committed results', async () => {
+  const h = fixture(); h.policy = { mode: 'percent', percent: 80 }
+  const controller = new AbortController()
+  h.deps.pressure = async () => { controller.abort(); controller.signal.throwIfAborted() }
+  const result = await h.run({ manual: true, signal: controller.signal })
+  assert.equal(result.status, 'completed')
+  assert.equal(h.blocked(), false)
+  assert.deepEqual(h.calls, ['foreground', 'background'])
+})

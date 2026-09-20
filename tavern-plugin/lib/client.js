@@ -10897,8 +10897,11 @@ window.__ModuleLoader__.load({
 		}
 		function hideUserForTurnTail(tail) {
 			if (!tail) return;
+			const turn = tailTurnOf(tail);
 			let sib = tail.previousElementSibling;
 			while (sib) {
+                const siblingTurn = sib.getAttribute("data-chat-turn");
+                if (turn && siblingTurn && siblingTurn !== turn) break;
 				const kind = sib.getAttribute("data-chat-flow-kind");
 				if (kind === "user") {
 					hideRow(sib);
@@ -10925,8 +10928,11 @@ window.__ModuleLoader__.load({
 		function hideTurnTail(el) {
 			if (!el) return;
 			hideRow(el);
+			const turn = tailTurnOf(el);
 			let sib = el.previousElementSibling;
 			while (sib) {
+                const siblingTurn = sib.getAttribute("data-chat-turn");
+                if (turn && siblingTurn && siblingTurn !== turn) break;
 				const kind = sib.getAttribute("data-chat-flow-kind");
 				if (kind === "user" || kind === "turn-tail") break;
 				hideRow(sib);
@@ -10936,8 +10942,11 @@ window.__ModuleLoader__.load({
 		function showTurnTail(el) {
 			if (!el) return;
 			el.style.display = "";
+			const turn = tailTurnOf(el);
 			let sib = el.previousElementSibling;
 			while (sib) {
+                const siblingTurn = sib.getAttribute("data-chat-turn");
+                if (turn && siblingTurn && siblingTurn !== turn) break;
 				const kind = sib.getAttribute("data-chat-flow-kind");
 				if (kind === "user" || kind === "turn-tail") break;
 				sib.style.display = "";
@@ -11026,6 +11035,18 @@ window.__ModuleLoader__.load({
                 restoreHiddenRows();
 				applySuppressedDshTurns(turns, regeneratedDshTurns);
 				applyRegeneratedDshTurns(regeneratedDshTurns);
+                // Native rows can mount without their turn tail. Explicit ownership
+                // must remain authoritative during streaming and partial hydration.
+                const suppressed = new Set((Array.isArray(turns) ? turns : []).map(String));
+                const mappings = regeneratedDshTurns || {};
+                const replacements = new Set(Object.values(mappings).map(String));
+                for (const row of root().querySelectorAll('[data-chat-turn]')) {
+                    const turn = row.getAttribute("data-chat-turn");
+                    const kind = row.getAttribute("data-chat-flow-kind");
+                    if (!kind) continue;
+                    if (suppressed.has(turn) && (!replacements.has(turn) || kind === "user")) hideRow(row);
+                    if (Object.prototype.hasOwnProperty.call(mappings, turn) && kind !== "user") hideRow(row);
+                }
 				applyHiddenTurns(sessionId);
 				applyRolledBackTurns(sessionId);
 				applyHiddenRegenUserTurns(sessionId);

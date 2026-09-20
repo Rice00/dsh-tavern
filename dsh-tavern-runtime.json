@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "ee998c67343e6f9709c6779eb7a43b6db49b2134",
-  "releaseSequence": 309,
+  "revision": "ca7c44e2cc0c33ec44f90aeaf50004f0dc41885f",
+  "releaseSequence": 310,
   "version": "2.0.0",
   "files": [
     {
@@ -1046,8 +1046,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/story-timeline.js",
-      "sha256": "9abb3a42fedb430d886a232d98a00990a09e77e4dd798710c2ca9b34b9742267",
-      "size": 31938
+      "sha256": "8dc7fbb7f9fa34577c17a1706a6d3d43c24a7f234d278127ad1d8d6506a9c2ec",
+      "size": 32968
     },
     {
       "path": "tavern-plugin/lib/domain/surface-restoration.js",
@@ -1316,8 +1316,8 @@
     },
     {
       "path": "tavern-plugin/lib/index.js",
-      "sha256": "bbd9e916dd0a5b47b2fcc8e222959feb078215d7e5bde4cf020707038e518483",
-      "size": 293300
+      "sha256": "eb06ae9668efc2d500fb6375bc2fa3490993d80ccdbfb7182afb734fda3da6dd",
+      "size": 293438
     },
     {
       "path": "tavern-plugin/lib/profile-data-store.js",

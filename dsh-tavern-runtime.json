@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "c5c5b83c267a441e8f2486cc0d1d4fe23e0ad7aa",
-  "releaseSequence": 304,
+  "revision": "856fea0f0b4e4db3f152a82c1af88c9a598dda38",
+  "releaseSequence": 305,
   "version": "2.0.0",
   "files": [
     {
@@ -951,8 +951,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/server-template-runtime.js",
-      "sha256": "0386b16f9fbdadb38e22dc83f7d0dca1d1652549a2cb8407cbc9afae14ef92c0",
-      "size": 9447
+      "sha256": "66f52a79d646015114d9817acd5f4ffa997f22d62e3da9e47fb3e02427d2f62d",
+      "size": 9466
     },
     {
       "path": "tavern-plugin/lib/domain/server-template-sync.js",
@@ -1131,8 +1131,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/tavern-remote-assets.js",
-      "sha256": "584cd8dfe65d22df29b8812a5998fa088e1c136b91708beed0312d3dc34a3bd6",
-      "size": 16055
+      "sha256": "f261f6e3dc8028b2e0602579740c72bca4c3bc19a5cd9d7a4ec5a60e412bdb1b",
+      "size": 16074
     },
     {
       "path": "tavern-plugin/lib/domain/tavern-retry-limiter.js",

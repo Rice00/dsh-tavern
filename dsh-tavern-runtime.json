@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "ca7c44e2cc0c33ec44f90aeaf50004f0dc41885f",
-  "releaseSequence": 310,
+  "revision": "d90e297429a69743778b1f007508d0fb2447ad3c",
+  "releaseSequence": 311,
   "version": "2.0.0",
   "files": [
     {
@@ -456,8 +456,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/context-planner.js",
-      "sha256": "481645c9a682f1abc35d245b4c7fe1a9d0e35670c2d2f36e9ac09e1bee4e3f88",
-      "size": 10878
+      "sha256": "4c2b116cb6f6ee6eef10950d1aec994920756b4cafdca78eed4bcdcc230c96bc",
+      "size": 10984
     },
     {
       "path": "tavern-plugin/lib/domain/conversation-background.js",
@@ -701,8 +701,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/phone-chat.js",
-      "sha256": "5aef765d8efe0326fe4025961960037367e610aa925cc8b7bb01fbb96724cdfb",
-      "size": 10819
+      "sha256": "f2440294612164b02173b72c330513b34345b802b00931dbc9e0bbfca2ae79fb",
+      "size": 10910
     },
     {
       "path": "tavern-plugin/lib/domain/play-card-snapshots.js",
@@ -713,6 +713,11 @@
       "path": "tavern-plugin/lib/domain/play-chat-debug.js",
       "sha256": "a20da658ade1238fac6354fffb5b46d637d8bfb977af5d23eda4e1e4f4237a22",
       "size": 10956
+    },
+    {
+      "path": "tavern-plugin/lib/domain/posture-context.js",
+      "sha256": "524c9e224d2df2ec9b4e81fdcfea1ada92ab68084e31e16384d27d276cb12604",
+      "size": 393
     },
     {
       "path": "tavern-plugin/lib/domain/posture-submission.js",
@@ -831,8 +836,8 @@
     },
     {
       "path": "tavern-plugin/lib/domain/scene-illustration.js",
-      "sha256": "13d186076e9673feafa612411c6ad02108460229ff9f2ed7466052cbcba874e4",
-      "size": 44118
+      "sha256": "a6f3a1b6dca99ab4f05d7fea795519e8e82e036a46bdeb29b695c1e1c5c85ef3",
+      "size": 44147
     },
     {
       "path": "tavern-plugin/lib/domain/scene-image-adjustment.js",

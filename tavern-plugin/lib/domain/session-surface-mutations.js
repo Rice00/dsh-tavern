@@ -39,7 +39,7 @@ export function replaceSessionSurface(session, type, data, { start, end, sourceE
 }
 
 // Accounting and mutation validation live together; the meter only adapts transport.
-export function isTavernSurfaceEdit(session, event, priorNodes) {
+export function isTavernSurfaceEdit(session, event, priorNodes, resolvePreset) {
   if (event?.type !== 'assistant/message') return false
   const message = event.data?.message
   const source = message?.source
@@ -47,13 +47,16 @@ export function isTavernSurfaceEdit(session, event, priorNodes) {
   if (source.provider === 'dsh-tavern' && source.model === 'synthetic-trajectory' &&
       message.id?.startsWith('tavern-seed-trajectory:')) return true
   const owned = source.provider === 'dsh-tavern' && source.model === 'reply-projection'
-  // The header records creation defaults; selection is persisted as an event.
-  const selected = sessionEvents(session).findLast(item => item.type === 'agent-preset/selected' && item.seq < event.seq)
-  const preset = selected?.data?.agentPreset ?? session.header?.agentPreset
-  if (!owned && !['tavern', 'tavern-background'].includes(preset)) return false
   const replacement = event.surfaceOp
   const refs = event.sourceEventSeqs
   if (replacement?.op !== 'replace' || !Array.isArray(refs) || refs.length === 0) return false
+  if (!owned) {
+    // Ordinary model replies never need a history lookup. The meter supplies a
+    // replay-local cursor; standalone validation retains the historical fallback.
+    const preset = resolvePreset ? resolvePreset() :
+      sessionEvents(session).findLast(item => item.type === 'agent-preset/selected' && item.seq < event.seq)?.data?.agentPreset ?? session.header?.agentPreset
+    if (!['tavern', 'tavern-background'].includes(preset)) return false
+  }
   // Tavern cites replaced surface messages, not provider streaming chunks.
   // Keep genuine malformed provider replies subject to the native validation.
   const range = surfaceReplacementRange(replacement)

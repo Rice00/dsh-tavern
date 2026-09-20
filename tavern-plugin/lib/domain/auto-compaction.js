@@ -53,8 +53,11 @@ export function createAutoCompaction(deps) {
     let operation = state.operation
     const recover = operation?.status === 'running'
     if (!options.manual && !recover) {
-      // A partial/failed operation requires explicit retry. Never spin at the same threshold.
-      if (['partial', 'failed'].includes(operation?.status)) return operation
+      // Suppress repeated failures for the same history, not all future rounds.
+      if (['partial', 'failed'].includes(operation?.status)) {
+        const added = rounds.filter(key => !(operation.rounds || state.baseline || []).includes(key))
+        if (added.length < (policy.mode === 'rounds' ? policy.rounds : 1)) return operation
+      }
       const fresh = rounds.filter(key => !(state.baseline || []).includes(key))
       if (policy.mode === 'rounds' && fresh.length < policy.rounds) return null
       if (policy.mode === 'percent') {
@@ -96,12 +99,25 @@ export function createAutoCompaction(deps) {
       if (activity.busy || (!recover && activity.phase === 'pending')) throw new Error('后台任务刚开始，请稍后重试压缩')
       reserved.add(chat.id)
       if (!recover) {
-        const previous = options.manual && ['partial', 'failed'].includes(state.operation?.status) ? state.operation : null
+        rounds = storyRoundKeys(chat)
+        const previous = options.manual && ['partial', 'failed'].includes(state.operation?.status)
+          && state.operation.branch === (chat.timeline?.branchId || '')
+          && state.operation.revision === chat.timeline?.revision
+          && JSON.stringify(state.operation.rounds) === JSON.stringify(rounds) ? state.operation : null
+        async function receipt(side, target) {
+          const old = previous?.[side]
+          if (old?.status === 'succeeded' && previous[side + 'SessionId'] === target
+            && old.after !== undefined) {
+            // An unavailable side must not prevent the other side from running.
+            try { if (old.after === await deps.checkpoint(target)) return old } catch {}
+          }
+          return { status: target ? 'pending' : 'skipped' }
+        }
         const backgroundSessionId = chat.timeline?.participants?.background?.sessionId || ''
         operation = { id: randomUUID(), status: 'running', reason: options.manual ? 'manual' : policy.mode, startedAt: Date.now(),
-          foregroundSessionId: chat.sessionId, backgroundSessionId,
-          foreground: previous?.foreground?.status === 'succeeded' ? previous.foreground : { status: 'pending' },
-          background: previous?.background?.status === 'succeeded' && previous.backgroundSessionId === backgroundSessionId ? previous.background : { status: backgroundSessionId ? 'pending' : 'skipped' } }
+          foregroundSessionId: chat.sessionId, backgroundSessionId, rounds, branch: chat.timeline?.branchId || '', revision: chat.timeline?.revision,
+          foreground: await receipt('foreground', chat.sessionId),
+          background: await receipt('background', backgroundSessionId) }
         await save(chat.id, old => ({ ...old, operation, warning: '' }))
       }
     })
@@ -113,7 +129,7 @@ export function createAutoCompaction(deps) {
           signal.throwIfAborted()
           if (operation[side].status === 'dispatching') {
             const evidence = await deps.recover(target, operation[side].before)
-            if (evidence === 'succeeded') operation[side] = { status: 'succeeded', message: '已从原生压缩记录恢复' }
+            if (evidence === 'succeeded') operation[side] = { status: 'succeeded', after: await deps.checkpoint(target), message: '已从原生压缩记录恢复' }
             else throw new Error('上次压缩结果未确认，请检查会话后手动重试')
           } else {
             const before = await deps.checkpoint(target)
@@ -121,7 +137,7 @@ export function createAutoCompaction(deps) {
             await save(chat.id, old => ({ ...old, operation: structuredClone(operation) }))
             if (side === 'background') await deps.markBackground(chat.id, target)
             const result = await deps.compact(target, side, options, signal)
-            operation[side] = { status: 'succeeded', message: result?.message || (result ? '压缩完成' : '没有可压缩的历史') }
+            operation[side] = { status: 'succeeded', after: await deps.checkpoint(target), message: result?.message || (result ? '压缩完成' : '没有可压缩的历史') }
           }
         } catch (error) {
           // A queued player message can win the idle-maintenance race. Retry at its pre-step.
@@ -145,11 +161,18 @@ export function createAutoCompaction(deps) {
       const failures = ['foreground', 'background'].filter(side => operation[side].status === 'failed')
         .map(side => `${side === 'foreground' ? '前台' : '后台'}：${operation[side].message}`).join('；')
       chat = await deps.readChat(initial.sessionId)
-      await save(chat.id, old => ({ ...old, operation: structuredClone(operation), ...(operation.status === 'completed' ? { baseline: storyRoundKeys(chat) } : {}), warning: operation.status === 'completed' ? (operation.afterPercent >= policy.percent ? '压缩后上下文仍较高，请检查固定背景长度或选择更大窗口的模型。' : '') : `上下文压缩未全部完成。${failures} 请根据具体原因处理。` }))
+      await save(chat.id, old => ({ ...old, operation: structuredClone(operation), ...(operation.foreground.status === 'succeeded' && operation.rounds ? { baseline: operation.rounds } : {}), warning: operation.status === 'completed' ? (operation.afterPercent >= policy.percent ? '压缩后上下文仍较高，请检查固定背景长度或选择更大窗口的模型。' : '') : `上下文压缩未全部完成。${failures} 请根据具体原因处理。` }))
       return operation
     } finally { reserved.delete(chat.id) }
   }
-  return { run, blocked }
+  async function recordForeground(sessionId) {
+    const chat = await deps.readChat(sessionId)
+    if (!chat) return
+    const policyKey = JSON.stringify(compactionPolicy(await deps.policy()))
+    await save(chat.id, old => ({ ...old, sessionId, branch: chat.timeline?.branchId || '', policyKey, baseline: storyRoundKeys(chat),
+      ...(old.operation?.status === 'completed' ? { operation: null, warning: '' } : {}) }))
+  }
+  return { run, blocked, recordForeground }
 }
 
 // Ephemeron storage lets a policy and its closures die with their engine even

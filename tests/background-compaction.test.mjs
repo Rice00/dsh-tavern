@@ -65,3 +65,23 @@ test('budget uses the current model, explicit output reservation and uncommitted
   options.signal = AbortSignal.abort()
   await assert.rejects(measureBackgroundBudget(options), /metadata unavailable/)
 })
+
+test('80 percent input pressure uses native retained-tail compression before hard overflow', async () => {
+  const h = harness({ inputTokens: 810, outputTokens: 10, capacity: 1000 })
+  const result = await compactBackgroundIfNeeded({ ...h.options, trigger: 'pressure', native: async () => { h.calls.push('native'); return { summary: 'retained tail' } } })
+  assert.deepEqual(result, { summary: 'retained tail' })
+  assert.deepEqual(h.calls, ['mark', 'native'])
+})
+
+test('output reservation still forces reduction when native input pressure is below threshold', async () => {
+  const h = harness({ inputTokens: 700, outputTokens: 400, capacity: 1000 })
+  await compactBackgroundIfNeeded({ ...h.options, trigger: 'pressure', native: async () => { h.calls.push('native'); return null } })
+  assert.deepEqual(h.calls, ['mark', 'native', 'compact'])
+})
+
+test('normal pressure with no native compactable range does not discard the retained tail', async () => {
+  const h = harness({ inputTokens: 810, outputTokens: 10, capacity: 1000 })
+  const result = await compactBackgroundIfNeeded({ ...h.options, trigger: 'pressure', native: async () => null })
+  assert.equal(result, null)
+  assert.deepEqual(h.calls, ['mark'])
+})

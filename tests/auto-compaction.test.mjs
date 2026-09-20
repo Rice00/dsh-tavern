@@ -15,7 +15,7 @@ function fixture() {
     run: options => service.run('front', options), round(n) { chat.messages.push({ role: 'assistant', turn: n }) },
     restart() { service = createAutoCompaction(deps) }, blocked: () => service.blocked(chat) }
 }
-test('default manual never follows native pressure; settings validate bounds', async () => {
+test('default manual disables only the extra joint schedule; settings validate bounds', async () => {
   assert.equal(compactionPolicy().mode, 'manual')
   for (const policy of [{ mode: 'bad' }, { rounds: 0 }, { percent: 100 }, { rounds: 1.5 }]) assert.throws(() => compactionPolicy(policy))
   const h = fixture(); h.pressure = 100; h.round(1); await h.run(); assert.deepEqual(h.calls, [])
@@ -132,4 +132,54 @@ test('后台摘要变长时保留未完成状态并解释原因，不附加立�
   assert.match(state.warning, /后台：摘要未缩短内容，已保留原始记录/)
   assert.match(state.warning, /无需立即重复压缩/)
   assert.doesNotMatch(state.warning, /请在更多.*重试/)
+})
+
+test('new rounds resume automatic compaction after a background failure', async () => {
+  const h = fixture(); h.policy = { mode: 'rounds', rounds: 2 }; await h.run()
+  h.round(1); h.round(2); h.fail = 'background'; await h.run()
+  await h.run(); assert.equal(h.calls.length, 2)
+  h.round(3); await h.run(); assert.equal(h.calls.length, 2)
+  h.round(4); h.fail = ''; await h.run()
+  assert.deepEqual(h.calls, ['foreground', 'background', 'foreground', 'background'])
+})
+
+test('manual retry after new history cannot reuse the old foreground receipt', async () => {
+  const h = fixture(); h.round(1); h.fail = 'background'; await h.run({ manual: true })
+  h.round(2); h.fail = ''; await h.run({ manual: true })
+  assert.deepEqual(h.calls, ['foreground', 'background', 'foreground', 'background'])
+})
+
+test('baseline includes only the rounds captured before compaction', async () => {
+  const h = fixture(); h.round(1)
+  const compact = h.deps.compact
+  h.deps.compact = async (...args) => { if (args[1] === 'background') h.round(2); return compact(...args) }
+  await h.run({ manual: true })
+  assert.deepEqual(h.chat.contextCompaction.baseline, ['1'])
+})
+
+test('retry invalidates a successful receipt when its native session grew without a story round', async () => {
+  const h = fixture(); h.fail = 'foreground'; await h.run({ manual: true })
+  h.fail = ''; h.deps.checkpoint = async id => id === 'back' ? 8 : 7
+  await h.run({ manual: true })
+  assert.deepEqual(h.calls, ['foreground', 'background', 'foreground', 'background'])
+})
+
+test('an unavailable previously successful side does not block retrying the other side', async () => {
+  const h = fixture(); h.fail = 'foreground'; await h.run({ manual: true })
+  h.fail = ''; h.deps.checkpoint = async id => { if (id === 'back') throw Error('missing background session'); return 7 }
+  await h.run({ manual: true })
+  assert.equal(h.chat.contextCompaction.operation.foreground.status, 'succeeded')
+  assert.equal(h.chat.contextCompaction.operation.background.status, 'failed')
+  assert.deepEqual(h.calls, ['foreground', 'background', 'foreground'])
+})
+
+test('native foreground protection resets round counting without clearing a background failure', async () => {
+  const h = fixture(); h.policy = { mode: 'rounds', rounds: 2 }; await h.run()
+  h.round(1); h.round(2); h.fail = 'background'; await h.run()
+  h.round(3)
+  await createAutoCompaction(h.deps).recordForeground('front')
+  assert.deepEqual(h.chat.contextCompaction.baseline, ['1', '2', '3'])
+  assert.equal(h.chat.contextCompaction.operation.background.status, 'failed')
+  h.round(4); h.fail = ''; await h.run(); assert.equal(h.calls.length, 2)
+  h.round(5); await h.run(); assert.equal(h.calls.length, 4)
 })

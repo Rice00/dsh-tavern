@@ -29,6 +29,7 @@ import { marked } from 'marked'
 import { presentModelError } from './domain/model-error-presentation.js'
 import { validateCardFile } from './domain/card-validation.js'
 import { resolveAgentCompaction } from './agent-compaction.js'
+import { compactForegroundIfNeeded } from './domain/foreground-compaction.js'
 import { compactBackgroundIfNeeded, measureBackgroundBudget } from './domain/background-compaction.js'
 import { createAutoCompaction, installCompactionPolicy } from './domain/auto-compaction.js'
 import { observeHttpRequests } from './domain/http-performance-diagnostics.js'
@@ -1842,6 +1843,7 @@ export async function apply(ctx) {
   }
   const configuredCompactionEngines = new WeakSet()
   const pendingCompactionMessages = new WeakMap()
+  const checkedCompactionPressure = new WeakSet()
   const compactionDisposers = new Set()
   const collectedCompactionEngines = new FinalizationRegistry(dispose => compactionDisposers.delete(dispose))
   ctx.effect(() => () => {
@@ -1897,10 +1899,17 @@ export async function apply(ctx) {
     if (configuredCompactionEngines.has(engine)) return engine
     configuredCompactionEngines.add(engine)
     const dispose = installCompactionPolicy(engine, async (target, trigger, signal, fallback, forced) => {
+      // Our early pre-step and the host hook share one pressure attempt. Overflow
+      // recovery remains independent and retains the host request retry budget.
+      if (trigger === 'pressure' && pendingCompactionMessages.has(target)) {
+        if (checkedCompactionPressure.has(target)) return null
+        checkedCompactionPressure.add(target)
+      }
       const background = backgroundAgentRunner.requestContext(target.session.id)
       if (background && !['image', 'phone'].includes(background.task)) {
         return compactBackgroundIfNeeded({
-          trigger, forced,
+          trigger, forced, native: fallback,
+          thresholdRatio: engine.config?.modelPolicies?.find(policy => policy.provider === background.selection.provider && policy.model === background.selection.model)?.thresholdRatio ?? engine.config?.thresholdRatio ?? 0.8,
           pressure: () => measureBackgroundBudget({
             agent: target, background, signal, llm: ctx.llm, meter: ctx.get('tokenMeter'),
             pending: pendingCompactionMessages.get(target) || []
@@ -1920,8 +1929,16 @@ export async function apply(ctx) {
       }
       const chat = await chatForSession(target.session.id)
       if (!chat || !['story', 'script'].includes(chat.mode)) return fallback()
-      await autoCompaction.run(target.session.id, { agent: target, signal, openTurnCompact: forced, pendingMessages: pendingCompactionMessages.get(target) || [] })
-      return null
+      const pendingMessages = pendingCompactionMessages.get(target) || []
+      return compactForegroundIfNeeded({
+        trigger, native: fallback, forced,
+        pressure: () => measureForegroundPressure({
+          agent: target, signal, pendingMessages, projections: ctx.get('sessionProjections'),
+          defaultModel: agentDefaultModel, llm: ctx.llm, meter: ctx.get('tokenMeter')
+        }),
+        record: () => autoCompaction.recordForeground(target.session.id),
+        scheduled: () => autoCompaction.run(target.session.id, { agent: target, signal, openTurnCompact: forced, pendingMessages })
+      })
     })
     compactionDisposers.add(dispose)
     collectedCompactionEngines.register(engine, dispose, dispose)
@@ -1936,9 +1953,23 @@ export async function apply(ctx) {
       const engine = await configureAgentCompaction(payload.agent)
       pendingCompactionMessages.set(payload.agent, payload.messages || [])
       try {
-        await engine.compactIfNeeded(payload.agent, 'pressure', payload.signal)
+        try { await engine.compactIfNeeded(payload.agent, 'pressure', payload.signal) }
+        catch (error) {
+          payload.signal.throwIfAborted()
+          // Match native pressure behavior: warn, then let the request proceed.
+          // A provider-confirmed overflow still has its own bounded recovery.
+          const warning = compactionFailureMessage(error)
+          console.warn('dsh-tavern: 自动容量压缩未完成:', warning)
+          if (chat) await updateChat(chat.id, current => {
+            current.contextCompaction = { ...current.contextCompaction, warning }
+            return current
+          }, { source: 'compaction.pressure-failed' })
+        }
         return await next()
-      } finally { pendingCompactionMessages.delete(payload.agent) }
+      } finally {
+        pendingCompactionMessages.delete(payload.agent)
+        checkedCompactionPressure.delete(payload.agent)
+      }
     }
     return next()
   }, { prepend: true })

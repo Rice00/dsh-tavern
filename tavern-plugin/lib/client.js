@@ -8911,7 +8911,7 @@ window.__ModuleLoader__.load({
             }
             return React.createElement("div", { className: "dsh-tavern-settings-group dsh-tavern-compaction-settings" },
                 React.createElement("h3", { className: "dsh-tavern-settings-title" }, "上下文压缩"),
-                React.createElement("p", { className: "dsh-tavern-settings-desc" }, "默认手动。自动模式在剧情后台结算后联合压缩前后台，再继续下一轮；不会删除原始剧情记录。"),
+                React.createElement("p", { className: "dsh-tavern-settings-desc" }, "默认手动，也可按轮数或占用比例自动压缩前后台。所有模式都保留接近容量或请求超限时的自动保护，不会删除原始剧情记录。"),
                 policy ? React.createElement("label", { className: "dsh-tavern-compaction-field" }, "压缩模式", React.createElement("select", { className: "dsh-tavern-settings-select", value: policy.mode, disabled: busy, onChange: function (e) { setPolicy(Object.assign({}, policy, { mode: e.target.value })); } }, [["manual", "手动压缩（默认）"], ["rounds", "每 N 轮自动压缩"], ["percent", "上下文达到 X% 自动压缩"]].map(function (item) { return React.createElement("option", { key: item[0], value: item[0] }, item[1]); }))) : null,
                 policy && policy.mode !== "manual" ? React.createElement("label", { className: "dsh-tavern-compaction-field" }, policy.mode === "rounds" ? "剧情轮数（1–1000）" : "上下文占用百分比（10–95，估算）", React.createElement("input", { className: "dsh-tavern-settings-select", type: "number", min: policy.mode === "rounds" ? 1 : 10, max: policy.mode === "rounds" ? 1000 : 95, step: 1, value: policy[policy.mode], disabled: busy, onChange: function (e) { setPolicy(Object.assign({}, policy, { [policy.mode]: e.target.value })); } })) : null,
                 React.createElement("p", { className: "dsh-tavern-settings-desc" }, "重写同一轮、工具调用和生图不计轮数。模型窗口未知时百分比模式会提示；可改用轮数模式。"),

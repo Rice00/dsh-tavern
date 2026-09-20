@@ -743,7 +743,15 @@ test('消息 iframe 清理完整 HTML 文档泄漏到正文层的顶级排版空
   const nestedWhitespace = { nodeType: 3, nodeValue: '\n保留', parentNode: {} }
   const body = { childNodes: [topLevelWhitespace, inlineSpace, meaningfulText] }
   nestedWhitespace.parentNode = { childNodes: [nestedWhitespace] }
-  vm.runInNewContext(normalizer[1], { document: { body }, Array })
+  let onMutation
+  vm.runInNewContext(normalizer[1], { document: { body }, Array,
+    MutationObserver: class { constructor(fn) { onMutation = fn } observe(target, options) { assert.equal(target, body); assert.equal(options.childList, true) } disconnect() {} },
+    addEventListener() {}
+  })
+  const loadedWhitespace = { nodeType: 3, nodeValue: '\n    ' }
+  body.childNodes.push(loadedWhitespace)
+  onMutation()
+  assert.equal(loadedWhitespace.nodeValue, '')
 
   assert.equal(topLevelWhitespace.nodeValue, '')
   assert.equal(inlineSpace.nodeValue, ' ')

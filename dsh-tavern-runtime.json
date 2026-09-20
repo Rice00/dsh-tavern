@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "8ccedbfa67b2358fe13a3d24b16feb500bcd0ccf",
-  "releaseSequence": 301,
+  "revision": "5bcc78dff80ec8236afeff4f0d386a65dbac9d05",
+  "releaseSequence": 302,
   "version": "2.0.0",
   "files": [
     {
@@ -266,8 +266,8 @@
     },
     {
       "path": "tavern-plugin/lib/client.js",
-      "sha256": "e6460279f7097a9d223aa586d99d3d74b715aa6a576c1c701966211f1de362a9",
-      "size": 1044014
+      "sha256": "69c57e4e005e243381ffd299aae2be0dff9fe8a5a5405f0cd359e51e7d916e5e",
+      "size": 1047105
     },
     {
       "path": "tavern-plugin/lib/cordis-inspect.js",
@@ -3766,8 +3766,8 @@
     },
     {
       "path": "tavern-plugin/src/client/main.js",
-      "sha256": "a49a4a1e08e8ac3e66b90a85b180f9387c42dba14f77a9556dc478c3c8c362b2",
-      "size": 761954
+      "sha256": "980060a75b1f0b06c744755b82b203d48512b6cfc435657ba84d6a09dab337d3",
+      "size": 765045
     },
     {
       "path": "tavern-plugin/src/client/modules/confirm-dialog.js",

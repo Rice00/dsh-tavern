@@ -114,7 +114,9 @@ curl -fsSL https://cdn.jsdelivr.net/gh/flizzywine/dsh-tavern@main/install.sh | D
 
 ### 命令行（Windows / macOS / Linux）
 
-需要 **Node.js 22.19 或更高版本**，无需预装 DSH。安装器使用独立的 DSH `0.1.2-rc.1`，不修改全局 DSH。
+需要 **Node.js 22.19 或更高版本**，无需预装 DSH。安装器使用独立的 DSH `0.1.2-rc.1`。
+
+**命令行版与电脑上已经安装的 DSH（包括全局 DSH 和 DSH Desktop）相互独立，互不影响。** 运行时、配置和游戏数据分别存放；安装或更新命令行版不会修改已有 DSH，已有 DSH 的升级也不会更换命令行版的独立运行时。
 
 Windows PowerShell：
 

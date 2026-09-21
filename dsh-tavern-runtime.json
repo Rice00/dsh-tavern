@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": "ac0a1d865a603b33b360fe694e867bd27340f37f",
-  "releaseSequence": 315,
+  "revision": "3512f2401ff1359b7b4c562af50b77fd531a0feb",
+  "releaseSequence": 316,
   "version": "2.0.0",
   "files": [
     {
@@ -131,12 +131,12 @@
     },
     {
       "path": "patches/dsh-better-sidebar@0.17.1.patch",
-      "sha256": "7a52a0f297b795762438b7490834078a77e43b6075146b4a6297fc3d80bd1d1f",
-      "size": 488
+      "sha256": "f8d4bf62a0fc5a996b6f8f0d1665302e315bfc938b832e9b3a82e15a66efe0ff",
+      "size": 4146
     },
     {
       "path": "pnpm-lock.yaml",
-      "sha256": "0b75e1fee52253790e4d53252a9764cd880c5368e2ac2987a04697153903a94c",
+      "sha256": "be7459af8dc2728b69a913ece98a0c397502598fd2e78a036ba5bf13012a1495",
       "size": 61589
     },
     {

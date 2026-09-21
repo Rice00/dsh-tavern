@@ -7782,6 +7782,30 @@ window.__ModuleLoader__.load({
 			return groups;
 		}
 
+		const WORLD_BOOK_SORT_STORAGE_KEY = "dsh-tavern-worldbook-sort";
+		function normalizeWorldBookSort(value) {
+			const legacy = { imported: "newest", updated: "recent", name: "az" };
+			const normalized = legacy[value] || value;
+			return ["newest", "oldest", "recent", "az", "za"].includes(normalized) ? normalized : "newest";
+		}
+		function orderWorldBookCatalogItems(items, mode) {
+			const selected = normalizeWorldBookSort(mode);
+			return (items || []).slice().sort(function (left, right) {
+				if (["newest", "oldest", "recent"].includes(selected)) {
+					const field = selected === "recent" ? "updatedAt" : "importedAt";
+					const direction = selected === "oldest" ? 1 : -1;
+					const byTime = ((Number(left && left[field]) || 0) - (Number(right && right[field]) || 0)) * direction;
+					if (byTime !== 0) return byTime;
+				}
+				const byName = String(left && left.name || "").localeCompare(String(right && right.name || ""), "zh-CN");
+				if (byName !== 0) return selected === "za" ? -byName : byName;
+				const leftPath = String(left && (left.path || left.cardPath) || "");
+				const rightPath = String(right && (right.path || right.cardPath) || "");
+				const byPath = leftPath.localeCompare(rightPath, "zh-CN");
+				return selected === "za" ? -byPath : byPath;
+			});
+		}
+
 		function createWorldBookLibraryFeatureModule() {
 		function WorldBookEditor(props) {
             const askConfirm = useTavernConfirm(props.sessionId || props.scope?.sessionId);
@@ -7940,6 +7964,10 @@ window.__ModuleLoader__.load({
 			const [recordLoading, setRecordLoading] = React.useState(false);
 			const [busy, setBusy] = React.useState(false);
 			const [bindingBusy, setBindingBusy] = React.useState(false);
+			const [sortMode, setSortMode] = React.useState(function () {
+				try { return normalizeWorldBookSort(window.localStorage.getItem(WORLD_BOOK_SORT_STORAGE_KEY)); }
+				catch (_) { return "newest"; }
+			});
 			const [error, setError] = usePersistentError("世界书库");
 			const importInput = React.useRef(null);
 			const bindingDisclosure = React.useRef(null);
@@ -7991,6 +8019,11 @@ window.__ModuleLoader__.load({
 			}, []);
 			React.useEffect(function () { if (requestedSource) load(requestedSource); }, [JSON.stringify(requestedSource)]);
 			function clear() { setRecord(null); setAssociations(null); setSelectedCardPath(""); if (props.ctx && props.tab) props.ctx.betterSidebar.updateTab(props.tab.id, { meta: null }); }
+			function changeSortMode(value) {
+				const next = normalizeWorldBookSort(value);
+				setSortMode(next);
+				try { window.localStorage.setItem(WORLD_BOOK_SORT_STORAGE_KEY, next); } catch (_) {}
+			}
 			async function importFile(file) { if (!file) return; setBusy(true); setError(""); try { const result = await rpc("importWorldBook", { payload: await parseTextResourceFile(file) }, props.scope.sessionId); await refresh(); await load({ kind: "standalone", path: result.worldBook.path }); notifyTavernDataChanged(["worldbooks"], "worldbooks"); } catch (err) { setError(String(err && err.message || err)); } finally { setBusy(false); } }
 			async function rename() { if (!record || record.source.kind !== "standalone") return; const current = record.source.path.split("/").pop(); const name = await askTavernText({ title: "重命名世界书文件", initialValue: current, maxLength: 120 }); if (name === null || name === current) return; setBusy(true); try { const result = await rpc("renameResource", { path: record.source.path, name: name }, props.scope.sessionId); await refresh(); await load({ kind: "standalone", path: result.resource.path }); } catch (err) { setError(String(err && err.message || err)); } finally { setBusy(false); } }
 			async function remove(source, name) {
@@ -8056,11 +8089,22 @@ window.__ModuleLoader__.load({
 			function group(title, items) { return h("section", { className: "dsh-tavern-resource-group" }, h("div", { className: "dsh-tavern-resource-group-title" }, h("span", null, title + " · " + items.length)), items.length ? items.map(row) : h("div", { className: "dsh-tavern-status-empty" }, "暂无")); }
 			return h("div", { className: "dsh-tavern-library" }, h("div", { className: "dsh-tavern-status-head" }, h("div", { className: "dsh-tavern-status-title" }, "世界书库"), h("div", { className: "dsh-tavern-question-sub" }, "独立世界书与人物卡内置世界书共用编辑界面"), h("button", { className: "dsh-tavern-btn", disabled: busy, onClick: function () { importInput.current && importInput.current.click(); } }, "导入世界书"), h("input", { ref: importInput, type: "file", accept: ".json,application/json", style: { display: "none" }, onChange: function (event) { const file = event.target.files && event.target.files[0]; importFile(file); event.target.value = ""; } })), h("div", { className: "dsh-tavern-resource-body" },
 				h("div", { className: "dsh-tavern-worldbook-note" }, "非常驻条目按作者关键词和优先级匹配，使用可配置的估算 Token 软预算，实际注入后冷却 10 个剧情回合。常驻条目不计入该预算；混合位置随本轮共同编排。尚未支持的酒馆字段仍会原样保留。"),
+				h("label", { className: "dsh-tavern-worldbook-sort" },
+					h("span", { className: "dsh-tavern-worldbook-sort-icon", "aria-hidden": "true" }, "↕"),
+					h("span", { className: "dsh-tavern-worldbook-sort-label" }, "排序"),
+					h("span", { className: "dsh-tavern-worldbook-sort-control" },
+						h("select", { value: sortMode, "aria-label": "世界书排序方式", onChange: function (event) { changeSortMode(event.target.value); } },
+							h("option", { value: "az" }, "A-Z"),
+							h("option", { value: "za" }, "Z-A"),
+							h("option", { value: "newest" }, "最新"),
+							h("option", { value: "oldest" }, "最旧"),
+							h("option", { value: "recent" }, "最近")),
+						h("span", { className: "dsh-tavern-worldbook-sort-chevron", "aria-hidden": "true" }, "⌄"))),
 				loading && !catalog ? h("div", { className: "dsh-tavern-empty" }, "正在读取世界书…") : null,
 				error ? h("div", { className: "dsh-tavern-dock-error" }, error, h("button", { className: "dsh-tavern-btn", onClick: refresh }, "重新读取")) : null,
 				catalogWarning ? h("div", { className: "dsh-tavern-dock-error" }, catalogWarning) : null,
-				catalog ? group("独立世界书", catalog.standalone || []) : null,
-				catalog ? group("人物卡内置世界书", catalog.embedded || []) : null));
+				catalog ? group("独立世界书", orderWorldBookCatalogItems(catalog.standalone || [], sortMode)) : null,
+				catalog ? group("人物卡内置世界书", orderWorldBookCatalogItems(catalog.embedded || [], sortMode)) : null));
 		}
 		function register(input) {
 			const ctx = input.ctx;
@@ -10562,6 +10606,7 @@ window.__ModuleLoader__.load({
 		exports.createTavernFrameSlashExecutor = createTavernFrameSlashExecutor;
 		exports.createWorldBookLibraryRefreshModule = createWorldBookLibraryRefreshModule;
 		exports.groupWorldBookEditorEntries = groupWorldBookEditorEntries;
+		exports.orderWorldBookCatalogItems = orderWorldBookCatalogItems;
 		exports.groupPresetEntriesByPhase = groupPresetEntriesByPhase;
 		exports.createCardLibraryRefreshModule = createCardLibraryRefreshModule;
 		exports.tavernDataChangeAffects = tavernDataChangeAffects;

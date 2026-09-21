@@ -635,6 +635,7 @@ export async function apply(ctx) {
     resources: {
       list: async function (kind) { return await fileResources.list(kind) },
       readText: async function (path) { return await fileResources.readText(path) },
+      metadata: async function (path) { return await fileResources.metadata(path) },
       import: async function (prepared, working) { return await fileResources.importWorldBook(prepared, working) },
       write: async function (path, text) { return await fileResources.writeWorking(path, text) },
       bindingForCard: async function (cardPath) { return await fileResources.worldBookBindingForCard(cardPath) },
@@ -645,6 +646,7 @@ export async function apply(ctx) {
     cards: {
       listPaths: async function () { return await fileResources.list('card') },
       read: readCard,
+      metadata: async function (cardPath) { return await fileResources.metadata(cardPath) },
       update: async function (cardPath, patch) { return await updateCard(cardPath, patch) }
     },
     removeStandalone: async function (path) { return await deleteLibraryResource(path, 'worldbook') }

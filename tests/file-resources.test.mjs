@@ -67,6 +67,14 @@ test('导入世界书分别保存不可变原版和 JSON 工作版', async () =>
     assert.equal(await readFile(path.join(root, 'originals', resourcePath), 'utf8'), originalText)
     assert.deepEqual(JSON.parse(await readFile(path.join(root, 'resources', resourcePath), 'utf8')), { name: '王都', entries: {} })
     assert.deepEqual(await store.list('worldbook'), ['worldbooks/王都.json'])
+    const imported = await store.metadata(resourcePath)
+    assert(imported.importedAt > 0)
+    assert(imported.updatedAt > 0)
+    await new Promise(function (resolve) { setTimeout(resolve, 10) })
+    await store.writeWorking(resourcePath, JSON.stringify({ name: '新王都', entries: {} }))
+    const updated = await store.metadata(resourcePath)
+    assert.equal(updated.importedAt, imported.importedAt)
+    assert(updated.updatedAt > imported.updatedAt)
   } finally { await rm(root, { recursive: true, force: true }) }
 })
 

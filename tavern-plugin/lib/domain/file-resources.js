@@ -238,6 +238,24 @@ export function createFileResourceStore(options = {}) {
     return value === undefined ? undefined : value.toString('utf8')
   }
 
+  async function metadata(relative) {
+    const normalized = normalizeResourcePath(relative)
+    const workingPath = absolute(normalized)
+    let originalPath = absolute(normalized, true)
+    if (resourceKind(normalized) === 'card') {
+      const originalName = await originalCardName(normalized)
+      if (originalName !== null) originalPath = path.join(path.dirname(originalPath), originalName)
+    }
+    const readStat = async function (target) {
+      try { return await stat(target) } catch (error) { if (error && error.code === 'ENOENT') return null; throw error }
+    }
+    const [working, original] = await Promise.all([readStat(workingPath), readStat(originalPath)])
+    return {
+      importedAt: Number(original && original.mtimeMs) || Number(working && working.mtimeMs) || 0,
+      updatedAt: Number(working && working.mtimeMs) || 0
+    }
+  }
+
   async function readCard(relative) {
     const normalized = normalizeResourcePath(relative, 'card')
     const text = await readText(normalized)
@@ -919,5 +937,5 @@ export function createFileResourceStore(options = {}) {
     return result
   }
 
-  return Object.freeze({ absolute, copyCard, bindMaterial, bindWorldBook, bindWorldBooks, cardsForMaterial, ensure, ensureCardWorkspace, hasCardImage, importCard, importText, importWorldBook, list, migrateLegacy, readCard, readCardImage, readText, remove, rename: renameResource, replaceScript, restoreCard, scriptBindingsForCards, scriptForCard, unbindMaterial, unbindWorldBook, worldBookBindingForCard, writeWorking })
+  return Object.freeze({ absolute, copyCard, bindMaterial, bindWorldBook, bindWorldBooks, cardsForMaterial, ensure, ensureCardWorkspace, hasCardImage, importCard, importText, importWorldBook, list, metadata, migrateLegacy, readCard, readCardImage, readText, remove, rename: renameResource, replaceScript, restoreCard, scriptBindingsForCards, scriptForCard, unbindMaterial, unbindWorldBook, worldBookBindingForCard, writeWorking })
 }

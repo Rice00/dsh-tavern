@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
@@ -492,3 +492,24 @@ test('无图人物卡复制不伪造图片，孤立原版也阻止覆盖', async
   assert.equal(await readFile(path.join(root, 'originals/cards/occupied.PNG'), 'utf8'), 'existing')
   await assert.rejects(store.copyCard('../source.json', 'escape'), /路径不合法/)
 })
+
+for (const kind of ['worldbook', 'json', 'png']) {
+  test('重命名保留导入和更新时间：' + kind, async t => {
+    const root = await mkdtemp(path.join(os.tmpdir(), 'tavern-rename-time-'))
+    t.after(() => rm(root, { recursive: true, force: true }))
+    const store = createFileResourceStore({ dataRoot: root })
+    const resource = kind === 'worldbook'
+      ? await store.importWorldBook({ name: 'old.json' }, { entries: {} })
+      : await store.importCard({ name: 'old.' + kind, kind, fileB64: Buffer.from('image').toString('base64') }, { name: 'old', character_book: { entries: [] } })
+    const original = kind === 'png' ? 'cards/old.png' : resource
+    await utimes(path.join(root, 'originals', original), 1600000000, 1600000000)
+    await utimes(path.join(root, 'resources', resource), 1600000100, 1600000100)
+    const before = await store.metadata(resource)
+    const renamed = await store.rename(resource, 'new')
+    assert.deepEqual(await store.metadata(renamed.path), before)
+    await rm(path.join(root, 'originals', kind === 'png' ? 'cards/new.png' : renamed.path))
+    const fallback = await store.metadata(renamed.path)
+    const again = await store.rename(renamed.path, 'again')
+    assert.deepEqual(await store.metadata(again.path), fallback)
+  })
+}

@@ -1,12 +1,77 @@
 diff --git a/lib/index.js b/lib/index.js
 --- a/lib/index.js
 +++ b/lib/index.js
-@@ -11 +11 @@
+@@ -8,11 +8,22 @@ import { once } from "node:events";
+ import { chmodSync, createWriteStream, existsSync, readFileSync, realpathSync } from "node:fs";
+ import { fileURLToPath } from "node:url";
+ import { spawn } from "node:child_process";
 -import { SettingsConflictError, settingsNamespace } from "@deepseek-ai/dsh-settings";
 +import { SettingsConflictError } from "@deepseek-ai/dsh-settings";
-@@ -4133 +4133 @@
+ import { homedir, userInfo } from "node:os";
+ import { defineTool } from "@deepseek-ai/dsh-tools";
+ import { createUserMessage } from "@deepseek-ai/dsh-llm";
+ import { snapshotSubagentDescriptor } from "@deepseek-ai/dsh-subagent";
++/**
++ * DSH >= 0.1.2-rc.1 removed the live `Session.events` array: the event log is
++ * now read through `snapshotEvents()` (full log) / `ownEvents()` (fork-relative
++ * view). Read whichever the host offers, keeping the old array supported.
++ */
++function sessionLogEvents(session) {
++	if (session === void 0 || session === null) return [];
++	if (Array.isArray(session.events)) return session.events;
++	if (typeof session.snapshotEvents === "function") return session.snapshotEvents();
++	return [];
++}
+ //#region src/prefs-shared.ts
+ /**
+ * Shared "Side card" preference vocabulary (types + constants), consumed by
+@@ -3027,7 +3038,7 @@ function buildJobsApi(ctx, outputLimit) {
+ 			const sessionId = requireString(payload, "sessionId");
+ 			const id = requireString(payload, "id");
+ 			const bySeq = /* @__PURE__ */ new Map();
+-			for (const event of ctx.sessions.get(sessionId)?.events ?? []) {
++			for (const event of sessionLogEvents(ctx.sessions.get(sessionId))) {
+ 				const trace = traceOf(event);
+ 				if (trace !== void 0) bySeq.set(trace.seq, trace);
+ 			}
+@@ -3422,7 +3433,7 @@ function buildSubagentLiveApi(ctx) {
+ 			if (entry.kind !== "child" || entry.activity !== "running") continue;
+ 			if (entry.label?.startsWith("Side: ") ?? false) continue;
+ 			try {
+-				const activity = lastActivity(ctx.sessions.get(entry.id)?.events ?? [], 12);
++				const activity = lastActivity(sessionLogEvents(ctx.sessions.get(entry.id)), 12);
+ 				if (activity.text !== void 0 || activity.tool !== void 0) live[entry.id] = activity;
+ 			} catch {}
+ 		}
+@@ -3544,8 +3555,8 @@ function buildSidechatApi(ctx) {
+ 			const parent = liveThreadAgent(ctx, sessionId);
+ 			if (parent === void 0) throw new SidebarError("sidechat-error", `parent session "${sessionId}" is not running`, 409);
+ 			const parentSession = parent.session;
+-			const inheritance = buildSidechatInheritance(parentSession.events);
+-			const { agentPreset, setup } = await composeChildSetup(ctx, resolvePresetId(parentSession.header, parentSession.events));
++			const inheritance = buildSidechatInheritance(sessionLogEvents(parentSession));
++			const { agentPreset, setup } = await composeChildSetup(ctx, resolvePresetId(parentSession.header, sessionLogEvents(parentSession)));
+ 			const childId = `session-${randomUUID()}`;
+ 			const label = question === "" ? SIDE_NEW_THREAD_TITLE : sideLabel(question);
+ 			const descriptor = snapshotSubagentDescriptor({
+@@ -3624,7 +3635,7 @@ function buildSidechatApi(ctx) {
+ 					throw new SidebarError("sidechat-error", `thread resume failed: ${error instanceof Error ? error.message : String(error)}`, 500);
+ 				}
+ 			}
+-			if (boundaryDelivered(agent.session.events)) admitFollowup(agent, textPrompt(text));
++			if (boundaryDelivered(sessionLogEvents(agent.session))) admitFollowup(agent, textPrompt(text));
+ 			else {
+ 				const parts = [SIDE_BOUNDARY_PROMPT];
+ 				const snapshot = pendingSnapshots.get(childId);
+@@ -4130,7 +4141,7 @@ function apply(ctx, config) {
+ 		}
+ 	};
+ 	ctx.inject(["settings"], (sctx) => {
 -		const ns = settingsNamespace(SIDEBAR_PREFS_NS);
 +		const ns = SIDEBAR_PREFS_NS;
+ 		const scope = sctx.settings.register(ns, PrefsSchema);
+ 		const viewOf = () => {
+ 			const descriptor = sctx.settings.describe({ redactSecrets: true }).find((candidate) => candidate.ns === ns);
 diff --git a/package.json b/package.json
 --- a/package.json
 +++ b/package.json

@@ -3946,7 +3946,12 @@ export async function apply(ctx) {
     }
   })
   const fullTemplateRequests = new WeakMap()
-  installWorkspaceInstructionPresentation(ctx, async sessionId => backgroundAgentRunner.owns(sessionId) || Boolean(await chatForSession(sessionId)))
+  installWorkspaceInstructionPresentation(ctx, async sessionId => {
+    if (backgroundAgentRunner.owns(sessionId)) return true
+    const chat = await chatForSession(sessionId)
+    // Card agents work with files and Skills, so keep the host's workspace guidance.
+    return Boolean(chat) && (chat.mode || 'story') !== 'card'
+  })
   installCompactionRequestProjection(ctx, async sessionId => backgroundAgentRunner.owns(sessionId) || Boolean(await chatForSession(sessionId)))
 
   ctx.on('llm/stream', function (options, next) {

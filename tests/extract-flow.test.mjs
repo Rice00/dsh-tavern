@@ -999,7 +999,7 @@ test('人物卡绑定目录超时后可在原位置重新读取', () => {
   assert.match(panel, /onClick: function \(\) \{ loadWorldBookCatalog\(true\); \}/)
 })
 
-test('人物卡全部字段合并在默认展开的基本信息中，并位于世界书上方', () => {
+test('人物卡世界书优先展示，基本信息保留全部字段，两者默认展开', () => {
   const panel = between(clientSource, 'function CardFieldsPanel', 'function TavernStatusPanel')
   const basic = panel.indexOf('h("summary", null, "基本信息")')
   const alternateGreetings = panel.indexOf('F("alternate_greetings"')
@@ -1009,7 +1009,9 @@ test('人物卡全部字段合并在默认展开的基本信息中，并位于�
   assert.ok(basic >= 0)
   assert.ok(alternateGreetings > basic)
   assert.ok(creatorNotes > alternateGreetings)
-  assert.ok(worldBook > creatorNotes)
+  assert.ok(worldBook >= 0 && worldBook < basic)
+  assert.match(panel, /h\("details", \{ ref: worldBookDetailsRef, open: true,/)
+  assert.match(panel, /h\("details", \{ className: "dsh-tavern-card-advanced", open: true \}, h\("summary", null, "基本信息"\)/)
   assert.doesNotMatch(panel, /h\("summary", null, "高级字段"\)/)
 })
 

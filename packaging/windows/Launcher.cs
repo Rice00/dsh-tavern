@@ -51,14 +51,18 @@ class Launcher : Form {
  }
  bool SelectInstallation() {
   string beside=Path.GetDirectoryName(Application.ExecutablePath);
-  string selected=null;
+  string selected=null; bool freshInstallation=false;
   if(File.Exists(Path.Combine(beside,SettingsName)))selected=beside;
   else if(TestRoot!=null)selected=Path.GetFullPath(TestRoot);
   else {
    string registered=ReadRegisteredRoot();
    if(!string.IsNullOrEmpty(registered)) {
-    if(!HasInstallation(registered))throw new Exception("已记录的安装目录暂时不可用："+registered+"。请先连接原磁盘或恢复原目录，避免误建一份空白数据。");
-    selected=registered;
+    if(HasInstallation(registered))selected=registered;
+    else using(var recovery=new MissingInstallationDialog(registered,HasInstallation)) {
+     if(recovery.ShowDialog(this)!=DialogResult.OK)return false;
+     selected=recovery.ExistingRoot;
+     freshInstallation=selected==null;
+    }
    }
    else foreach(string old in new[]{@"D:\Workspace\.DSH-Tavern",Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DSH-Tavern-Portable"),Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DSH-Tavern")}) {
     if(HasInstallation(old)){selected=old;break;}
@@ -84,7 +88,7 @@ class Launcher : Form {
   } else {
    data=Path.Combine(root,"data");
    var legacy=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"DSH-Tavern");
-   if(TestRoot==null&&!Directory.Exists(data)&&Directory.Exists(Path.Combine(legacy,"harness")))data=legacy;
+   if(!freshInstallation&&TestRoot==null&&!Directory.Exists(data)&&Directory.Exists(Path.Combine(legacy,"harness")))data=legacy;
   }
   return true;
  }

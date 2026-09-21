@@ -34,3 +34,30 @@ class SetupDialog : Form {
   };
  }
 }
+
+// Do not change the remembered installation until the user accepts setup.
+class MissingInstallationDialog : Form {
+ public string ExistingRoot { get; private set; }
+ public MissingInstallationDialog(string previous,Func<string,bool> hasInstallation) {
+  Text="找不到原安装位置";ClientSize=new Size(640,310);AutoScaleMode=AutoScaleMode.Dpi;
+  StartPosition=FormStartPosition.CenterParent;FormBorderStyle=FormBorderStyle.FixedDialog;MaximizeBox=false;MinimizeBox=false;
+  var note=new Label{Text="原安装目录已删除、移动，或所在磁盘尚未连接。\n要保留旧聊天和角色卡，请连接原磁盘或选择原安装文件夹。"};
+  note.SetBounds(24,20,590,52);Controls.Add(note);
+  var directory=new TextBox{Text=previous};directory.SetBounds(24,84,474,28);Controls.Add(directory);
+  var browse=new Button{Text="浏览…"};browse.SetBounds(510,82,106,30);Controls.Add(browse);
+  browse.Click+=delegate{using(var picker=new FolderBrowserDialog{Description="选择原安装文件夹（包含 launcher-settings.xml 或 runtime 文件夹）"})if(picker.ShowDialog(this)==DialogResult.OK)directory.Text=picker.SelectedPath;};
+  var warning=new Label{Text="如果已卸载并希望重新开始，请选择「重新安装」。\n下一步可选择安装位置；不会删除旧文件，也不会恢复已删除的数据。"};
+  warning.SetBounds(24,138,590,60);Controls.Add(warning);
+  var cancel=new Button{Text="取消",DialogResult=DialogResult.Cancel};cancel.SetBounds(240,242,100,34);Controls.Add(cancel);CancelButton=cancel;
+  var fresh=new Button{Text="重新安装"};fresh.SetBounds(350,242,120,34);Controls.Add(fresh);
+  fresh.Click+=delegate{ExistingRoot=null;DialogResult=DialogResult.OK;Close();};
+  var restore=new Button{Text="使用原目录"};restore.SetBounds(480,242,136,34);Controls.Add(restore);AcceptButton=restore;
+  restore.Click+=delegate{
+   try {
+    string path=directory.Text.Trim();
+    if(!Path.IsPathRooted(path)||!hasInstallation(path))throw new Exception("此目录中没有找到原安装，请检查文件夹或连接原磁盘。");
+    ExistingRoot=Path.GetFullPath(path);DialogResult=DialogResult.OK;Close();
+   }catch(Exception e){MessageBox.Show(this,e.Message,"DSH Tavern",MessageBoxButtons.OK,MessageBoxIcon.Warning);}
+  };
+ }
+}
